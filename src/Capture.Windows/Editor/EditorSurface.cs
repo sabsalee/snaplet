@@ -42,7 +42,9 @@ internal sealed class EditorSurface : FrameworkElement
     private DateTime digitTime;
     private Guid? digitObject;
     private Guid? editingTextId;
-    internal void SetTextEditing(Guid? id){editingTextId=id;InvalidateVisual();}
+    internal Annotation? TextPreview { get; private set; }
+    internal void SetTextPreview(Annotation preview){TextPreview=preview;InvalidateVisual();}
+    internal void SetTextEditing(Guid? id){editingTextId=id;TextPreview=null;InvalidateVisual();}
     internal bool IsDragging=>gesture!=Gesture.None;
     internal Annotation? Selection => Document.Annotations.FirstOrDefault(a=>a.Id==Selected);
     internal EditorSurface(BitmapSource image,EditableDocument document)
@@ -72,6 +74,10 @@ internal sealed class EditorSurface : FrameworkElement
         if(draft!=null && !preview.Any(a=>a.Id==draft.Id))preview.Add(PreviewAnnotation(draft));
         var effectDraft=draft?.Kind is AnnotationKind.Pixelate or AnnotationKind.Blur or AnnotationKind.Erase;
         ImageRenderer.Paint(dc,source,preview,ImageRenderer.RectOf(Document.Crop),effectDraft?draft!.Id:null);
+        if(TextPreview is Annotation typing && typing.Appearance.Bubble) {
+            var body=ImageRenderer.TextBounds(typing);
+            ImageRenderer.PaintAnnotation(dc,source,typing with {Text="",End=new(body.Right,body.Bottom)});
+        }
         if(PendingCrop is RectD crop) {
             var outer=new RectangleGeometry(ImageRenderer.RectOf(Document.Crop));var inner=new RectangleGeometry(ImageRenderer.RectOf(crop));
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(110,0,0,0)),null,new CombinedGeometry(GeometryCombineMode.Exclude,outer,inner));
@@ -363,7 +369,9 @@ internal sealed class EditorSurface : FrameworkElement
         var owns=!Document.IsEditing;if(owns)Document.BeginEdit();
         try {
             if(a.Kind is AnnotationKind.Image or AnnotationKind.Magnifier or AnnotationKind.Text) {
-                var b=ImageRenderer.BoundsOf(a);Document.ExpandToInclude(new(b.X,b.Y,b.Width,b.Height));
+                var b=ImageRenderer.BoundsOf(a);
+                if(a.Kind==AnnotationKind.Text && !ImageRenderer.TailGeometry(a).Bounds.IsEmpty)b.Union(ImageRenderer.TailGeometry(a).Bounds);
+                Document.ExpandToInclude(new(b.X,b.Y,b.Width,b.Height));
             }
             if(add)Document.Add(a);else Document.Replace(a);
             if(owns)Document.EndEdit();

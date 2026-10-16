@@ -362,7 +362,7 @@ public sealed class EditorWindow : Window
         if(!FinishTextEdit(true))return;if(textEditor!=null)return;surface.CancelGesture();selectionBeforeTextEdit=surface.Selected;editingText=a;newText=create;composingText=false;surface.Selected=create?null:a.Id;
         surface.SetTextEditing(create?null:a.Id);
         textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=a.Text,MaxLength=8192,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
-            Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=a.Appearance.Bubble?ImageRenderer.BrushOf(a.Color):Brushes.White,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
+            Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=Brushes.Transparent,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
         textLayer.Children.Add(textEditor);UpdateTextEditorLayout();
         textEditor.TextChanged+=(_,_)=>UpdateTextEditorLayout();
         TextCompositionManager.AddPreviewTextInputStartHandler(textEditor,(_,_)=>composingText=true);
@@ -374,7 +374,7 @@ public sealed class EditorWindow : Window
     private void UpdateTextEditorLayout()
     {
         if(textEditor is null || editingText is not Annotation a)return;
-        var z=surface.Zoom;var preview=a with {Text=textEditor.Text};
+        var z=surface.Zoom;var preview=EditedText(a,textEditor.Text);surface.SetTextPreview(preview);
         var b=ImageRenderer.TextBounds(preview);
         textEditor.FontSize=Math.Max(14,a.Thickness*5)*z;
         textEditor.Padding=a.Appearance.Bubble?new Thickness(10*z,8*z,10*z,8*z):new Thickness(0);
@@ -386,6 +386,16 @@ public sealed class EditorWindow : Window
         textLayer.Height=Math.Max(surface.Height,(b.Y-document.Crop.Y)*z+textEditor.Height+4);
         stage.Width=Math.Max(surface.Width,textLayer.Width);stage.Height=Math.Max(surface.Height,textLayer.Height);
     }
+    private Annotation EditedText(Annotation original,string value)
+    {
+        var updated=original with {Text=value};
+        if(newText && updated.Appearance.Bubble && updated.Appearance.ShowTail) {
+            var b=ImageRenderer.TextBounds(updated);var crop=document.Crop;
+            var y=b.Bottom+28<=crop.Bottom?b.Bottom+28:b.Top-28>=crop.Y?b.Top-28:b.Bottom+28;
+            updated=updated with {Tail=new(b.Left+b.Width*.35,y)};
+        }
+        return updated;
+    }
     internal bool FinishTextEdit(bool commit)
     {
         FinishNudge();
@@ -396,7 +406,7 @@ public sealed class EditorWindow : Window
             if(commit) {
                 if(!string.IsNullOrWhiteSpace(value)) {
                     // Keep the width used during typing, including an existing manually resized body.
-                    var updated=a with {Text=value};
+                    var updated=EditedText(a,value);
                     if(newText) {
                         var bounds=ImageRenderer.TextBounds(updated);var crop=document.Crop;
                         var tipY=bounds.Bottom+18<=crop.Bottom?bounds.Bottom+18:Math.Max(crop.Y,bounds.Top-18);

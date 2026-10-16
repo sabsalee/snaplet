@@ -65,6 +65,8 @@ internal static class RefinementSmokeTest
             window.BeginTextEdit(callout,true);window.ActiveTextEditor!.Text=content;window.UpdateLayout();
             var typingWidth=(window.ActiveTextEditor.Width-4)/surface.Zoom;
             var typingHeight=(window.ActiveTextEditor.Height-4)/surface.Zoom;
+            check(surface.TextPreview is Annotation typing && typing.Text==content && !ImageRenderer.TextBounds(typing).Contains(ImageRenderer.P(ImageRenderer.TailTip(typing))),"typing keeps a live callout background and positions the new default tail outside the growing body");
+            check(window.ActiveTextEditor.Background==Brushes.Transparent,"inline text remains on its actual callout or source image instead of a replacement background");
             check(typingHeight>80 && typingWidth==200,"inline callout grows vertically while keeping a predictable wrapping width");
             check(window.ActiveTextEditor.ExtentHeight<=window.ActiveTextEditor.ViewportHeight+2 && window.ActiveTextEditor.VerticalOffset==0,
                 "actual WPF multiline editor fits the text without silently scrolling or clipping its first lines");
@@ -74,6 +76,7 @@ internal static class RefinementSmokeTest
             check(Descendants(window).OfType<Slider>().Any(c=>c.IsVisible),"committing inline text restores its editable property panel");
             var text=document.Annotations.Single(a=>a.Kind==AnnotationKind.Text);
             var body=ImageRenderer.TextBounds(text);
+            check(!body.Contains(ImageRenderer.P(ImageRenderer.TailTip(text))) && surface.TextPreview is null,"committed multiline callout retains a visible default tail and clears the transient typing layer");
             check(Math.Abs(body.Width-typingWidth)<.01 && Math.Abs(body.Height-typingHeight)<.01,"committed callout preserves the wrapping width and height shown during typing");
             document.Undo();check(document.Annotations.All(a=>a.Kind!=AnnotationKind.Text),"typing and committing new multiline text is a single undo operation");
             document.Redo();text=document.Annotations.Single(a=>a.Kind==AnnotationKind.Text);

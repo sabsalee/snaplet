@@ -86,7 +86,8 @@ internal static class ImageRenderer
             case AnnotationKind.Text:
                 var body=TextBounds(a);var bubble=a.Appearance.Bubble;
                 if(bubble) {
-                    var bodyGeometry = new RectangleGeometry(body, a.Appearance.CornerRadius, a.Appearance.CornerRadius);
+                    var bubbleRadius=Math.Min(a.Appearance.CornerRadius,Math.Min(body.Width,body.Height)/2);
+                    var bodyGeometry = new RectangleGeometry(body, bubbleRadius, bubbleRadius);
                     dc.DrawGeometry(brush, null, a.Appearance.ShowTail
                         ? new CombinedGeometry(GeometryCombineMode.Union, bodyGeometry, TailGeometry(a)) : bodyGeometry);
                 }
