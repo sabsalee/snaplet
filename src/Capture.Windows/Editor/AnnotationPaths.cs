@@ -191,47 +191,45 @@ internal static class AnnotationPaths
         var tip = P(target);
         if (body.Width<=0 || body.Height<=0 || body.Contains(tip)) return Geometry.Empty;
         var corner=Math.Min(radius,Math.Min(body.Width,body.Height)*.5);
-        var center = new Point(body.X + body.Width / 2, body.Y + body.Height / 2);
-        var dx = tip.X - center.X; var dy = tip.Y - center.Y;
-        Vector normal, tangent; Point anchor; double half;
-        if (Math.Abs(dx) / body.Width > Math.Abs(dy) / body.Height)
-        {
-            normal = new(dx < 0 ? -1 : 1, 0); tangent = new(0, 1);
-            half = Math.Min(width/2, body.Height*.3);
-            var x = dx < 0 ? body.Left : body.Right;
-            anchor = new(x, Math.Clamp(center.Y + dy * (x - center.X) / dx, body.Top + half, body.Bottom - half));
+        var horizontal=body.Width-2*corner;var vertical=body.Height-2*corner;
+        var arc=corner*Math.PI/2;var perimeter=2*(horizontal+vertical)+4*arc;
+        var starts=new[]{new Point(body.Left+corner,body.Top),new Point(body.Right,body.Top+corner),new Point(body.Right-corner,body.Bottom),new Point(body.Left,body.Bottom-corner)};
+        var centers=new[]{new Point(body.Right-corner,body.Top+corner),new Point(body.Right-corner,body.Bottom-corner),new Point(body.Left+corner,body.Bottom-corner),new Point(body.Left+corner,body.Top+corner)};
+        var directions=new[]{new Vector(1,0),new Vector(0,1),new Vector(-1,0),new Vector(0,-1)};
+        (Point Point,Vector Tangent) Edge(double distance) {
+            distance=(distance%perimeter+perimeter)%perimeter;
+            for(int i=0;i<4;i++) {
+                var line=i%2==0?horizontal:vertical;
+                if(distance<line)return (starts[i]+directions[i]*distance,directions[i]);
+                distance-=line;
+                if(distance<arc) {
+                    var angle=-Math.PI/2+i*Math.PI/2+distance/corner;
+                    return (centers[i]+new Vector(Math.Cos(angle),Math.Sin(angle))*corner,new Vector(-Math.Sin(angle),Math.Cos(angle)));
+                }
+                distance-=arc;
+            }
+            return (starts[0],directions[0]);
         }
-        else
-        {
-            normal = new(0, dy < 0 ? -1 : 1); tangent = new(1, 0);
-            half = Math.Min(width/2, body.Width*.3);
-            var y = dy < 0 ? body.Top : body.Bottom;
-            anchor = new(Math.Clamp(center.X + dx * (y - center.Y) / dy, body.Left + half, body.Right - half), y);
+        // Follow the whole rounded perimeter so a base can straddle a corner,
+        // rather than folding a tail over one arbitrarily chosen flat side.
+        double best=0,bestDistance=double.MaxValue;
+        for(int i=0;i<64;i++) {
+            var at=perimeter*i/64;var d=(Edge(at).Point-tip).LengthSquared;
+            if(d<bestDistance){best=at;bestDistance=d;}
         }
-        // Keep both shoulders on a straight edge when there is room. Rounded ends
-        // use their actual contour tangent, so a tail never kinks at a corner.
-        var lowEdge=normal.X!=0?body.Top:body.Left;
-        var highEdge=normal.X!=0?body.Bottom:body.Right;
-        var straight=highEdge-lowEdge-2*corner;
-        if(straight>1) {
-            half=Math.Min(half,straight*.45);
-            if(normal.X!=0)anchor.Y=Math.Clamp(tip.Y,lowEdge+corner+half,highEdge-corner-half);
-            else anchor.X=Math.Clamp(tip.X,lowEdge+corner+half,highEdge-corner-half);
+        var low=best-perimeter/64;var high=best+perimeter/64;
+        for(int i=0;i<24;i++) {
+            var first=low+(high-low)/3;var second=high-(high-low)/3;
+            if((Edge(first).Point-tip).LengthSquared<(Edge(second).Point-tip).LengthSquared)high=second;else low=first;
         }
-        (Point Point,Vector Tangent) Root(Point point) {
-            var along=normal.X!=0?point.Y:point.X;
-            var low=normal.X!=0?body.Top:body.Left;var high=normal.X!=0?body.Bottom:body.Right;
-            var signedOffset=along<low+corner?along-(low+corner):along>high-corner?along-(high-corner):0;
-            var outward=Math.Sqrt(Math.Max(0,corner*corner-signedOffset*signedOffset));
-            var inset=corner-outward;
-            var direction=corner>0?Unit(tangent*outward-normal*signedOffset):tangent;
-            return (point-normal*(inset+.15),direction);
-        }
-        var (a,ta) = Root(anchor - tangent * half); var (b,tb) = Root(anchor + tangent * half);
-        double reach = Math.Max(1, Vector.Multiply(tip - anchor, normal));
-        var tipRounding = Math.Min(.8, reach * .12);
-        var tipLeft = tip - normal * tipRounding - tangent * tipRounding;
-        var tipRight = tip - normal * tipRounding + tangent * tipRounding;
+        var position=(low+high)/2;var (anchor,tangent)=Edge(position);
+        var normal=Unit(tip-anchor);var half=Math.Min(width/2,Math.Min(body.Width,body.Height)*.3);
+        var (a,ta)=Edge(position-half);var (b,tb)=Edge(position+half);
+        a+=new Vector(-ta.Y,ta.X)*.15;b+=new Vector(-tb.Y,tb.X)*.15;
+        var reach=Math.Max(1,(tip-anchor).Length);
+        var tipRounding=Math.Min(.8,reach*.12);
+        var tipLeft=tip-normal*tipRounding-tangent*tipRounding;
+        var tipRight=tip-normal*tipRounding+tangent*tipRounding;
         var geo = new StreamGeometry();
         using (var g = geo.Open())
         {
