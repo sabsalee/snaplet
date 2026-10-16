@@ -37,6 +37,7 @@ internal sealed class EditorSurface : FrameworkElement
     private int handle;
     private ModifierKeys pointerModifiers;
     private Vector cornerDirection;
+    private double cornerRadiusStart;
     private Guid? selectionBeforeGesture;
     private RectD cropBefore;
     private string digits="";
@@ -180,7 +181,7 @@ internal sealed class EditorSurface : FrameworkElement
         var selected=Selection;var selectedHandle=selected is null?null:NearHandle(Handles(selected),start);
         if(selectedHandle is Handle sh) {
             original=selected;handle=sh.Index;
-            if(handle==-6) {var b=ImageRenderer.BoundsOf(selected!);cornerDirection=new(b.X+b.Width/2-start.X,b.Y+b.Height/2-start.Y);if(cornerDirection.LengthSquared>0)cornerDirection.Normalize();}
+            if(handle==-6) {var b=ImageRenderer.BoundsOf(selected!);cornerRadiusStart=Math.Min(selected!.Appearance.CornerRadius,Math.Min(b.Width,b.Height)/2);cornerDirection=new(b.X+b.Width/2-start.X,b.Y+b.Height/2-start.Y);if(cornerDirection.LengthSquared>0)cornerDirection.Normalize();}
             gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:handle==-6?Gesture.Corner:Gesture.Resize;CaptureMouse();return;
         }
         if(hit!=null && (Tool is null || hit.Id==Selected || clickCount==2 || Tool==AnnotationKind.Text && hit.Kind==AnnotationKind.Text)) {
@@ -273,7 +274,7 @@ internal sealed class EditorSurface : FrameworkElement
     {
         if(gesture==Gesture.None)return;
         current=position;pointerModifiers=modifiers;
-        if(gesture is Gesture.Move or Gesture.SampleMove && AnnotationGeometry.Distance(start,current)<3/Zoom && draft is null)return;
+        if(gesture is Gesture.Move or Gesture.SampleMove or Gesture.Corner && AnnotationGeometry.Distance(start,current)<3/Zoom && draft is null)return;
         if(gesture==Gesture.CropNew)PendingCrop=RectD.FromPoints(start,Constrained(start,current));
         else if(gesture==Gesture.CropMove) {
             var x=Math.Clamp(cropBefore.X+current.X-start.X,Document.Crop.X,Document.Crop.Right-cropBefore.Width);
@@ -285,7 +286,7 @@ internal sealed class EditorSurface : FrameworkElement
                 Gesture.Move=>SnapMove(a.Move(current.X-start.X,current.Y-start.Y)),
                 Gesture.Bend=>AnnotationGeometry.BendThrough(a,current),
                 Gesture.Tail=>a with {Tail=current},
-                Gesture.Corner=>a with {Style=a.Appearance with {CornerRadius=Math.Clamp(a.Appearance.CornerRadius+(current.X-start.X)*cornerDirection.X+(current.Y-start.Y)*cornerDirection.Y,0,Math.Min(48,Math.Min(ImageRenderer.BoundsOf(a).Width,ImageRenderer.BoundsOf(a).Height)/2))}},
+                Gesture.Corner=>a with {Style=a.Appearance with {CornerRadius=Math.Clamp(cornerRadiusStart+(current.X-start.X)*cornerDirection.X+(current.Y-start.Y)*cornerDirection.Y,0,Math.Min(48,Math.Min(ImageRenderer.BoundsOf(a).Width,ImageRenderer.BoundsOf(a).Height)/2))}},
                 Gesture.SampleMove=>a with {SampleRegion=AdvancedDrawing.SampleBounds(a) with {X=AdvancedDrawing.SampleBounds(a).X+current.X-start.X,Y=AdvancedDrawing.SampleBounds(a).Y+current.Y-start.Y}},
                 Gesture.SampleResize=>ResizeSample(a,current),
                 Gesture.Resize when handle==-1=>ResizeEndpoint(a,Constrained(a.End,current,a.Kind),true),

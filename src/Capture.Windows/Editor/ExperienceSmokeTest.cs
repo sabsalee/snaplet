@@ -23,6 +23,9 @@ internal static class ExperienceSmokeTest
         surface.Selected=bubble.Id;surface.UpdateHover(new(160,215));
         check(surface.PointerHint.Contains("말꼬리"),"tail handle explains its role independently of resize handles");
         surface.UpdateHover(new(284,86));check(surface.PointerHint.Contains("모서리"),"corner radius handle advertises direct rounding adjustment");
+        surface.BeginPointer(new(284,86));surface.EndPointer(new(284,86));doc.Undo();
+        check(doc.Annotations.Count==0,"clicking a radius control without dragging does not create a spurious undo entry");
+        doc.Redo();surface.Selected=bubble.Id;
         surface.BeginPointer(new(284,86));surface.EndPointer(new(275,95));
         check(doc.Annotations.Single().Appearance.CornerRadius>16 && doc.Annotations.Single().Appearance.CornerRadius<=48,"dragging the exterior radius diamond inward increases rounding without covering text");
         doc.Undo();check(doc.Annotations.Single()==bubble,"corner rounding is one undoable action preserving text and tail");
