@@ -40,6 +40,11 @@ internal static class AdvancedModelChecks
         var shiftedImage = image.Move(-25, 7);
         check(ReferenceEquals(shiftedImage.Image, asset), "Moving an image shares its immutable raster asset.");
 
+        var invalidStyleDoc=new EditableDocument(100,80);
+        Reject(()=>invalidStyleDoc.Add(image with {Style=new(CornerRadius:double.NaN)}),"Corner radius rejects non-finite values.");
+        Reject(()=>invalidStyleDoc.Add(image with {Style=new(CornerRadius:49)}),"Corner radius enforces supported bounds.");
+        Reject(()=>invalidStyleDoc.Add(image with {Style=new(TailWidth:0)}),"Tail width rejects zero width.");
+        Reject(()=>invalidStyleDoc.Add(image with {Style=new(TailWidth:double.PositiveInfinity)}),"Tail width rejects non-finite values.");
         var doc = new EditableDocument(100, 80);
         doc.Add(image);
         doc.Replace(shiftedImage);

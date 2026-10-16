@@ -15,6 +15,9 @@ internal static class UiSmokeTest
     internal static void Run(string directory)
     {
         var checks=new List<string>();void Check(bool value,string label){if(!value)throw new InvalidOperationException("UI check failed: "+label);checks.Add(label);}
+        foreach(var name in FluentIcons.Paths.Keys) {
+            var icon=Ui.Icon(name);Check(icon is Viewbox {Child:Canvas {Width:24,Height:24}},"Fluent icon retains consistent design grid: "+name);
+        }
         var image=ImageActions.Demo();var settings=new AppSettings();var commands=new List<string>();
         var home=new HomeWindow(settings,commands.Add,()=>commands.Add("open"),()=>{},()=>{},()=>{},_=>{},new TextBlock());
         try {

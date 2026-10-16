@@ -80,7 +80,7 @@ internal static class AnnotationPaths
             distances[i] = distances[i - 1] + (Curve(a, i / (double)samples) - Curve(a, (i - 1) / (double)samples)).Length;
         var length = distances[^1];
         if (length < .5) return new EllipseGeometry(P(a.Start), a.Thickness / 2, a.Thickness / 2);
-        // The observed filled tool is a broad ribbon with a short wedge nose, without a flared head.
+        // A broad ribbon uses a short wedge nose and a softly concave tail.
         var noseLength = Math.Min(a.Thickness * 4, length * .3);
         var halfWidth = Math.Min(a.Thickness * 3, length * .3);
         var neckDistance = length - noseLength;
@@ -186,29 +186,36 @@ internal static class AnnotationPaths
         geometry.Freeze(); return geometry;
     }
 
-    internal static Geometry CalloutTail(Rect body, PointD target)
+    internal static Geometry CalloutTail(Rect body, PointD target, double width=24, double radius=8)
     {
         var tip = P(target);
         if (body.Width<=0 || body.Height<=0 || body.Contains(tip)) return Geometry.Empty;
-        var corner=Math.Min(8,Math.Min(body.Width,body.Height)*.2);
+        var corner=Math.Min(radius,Math.Min(body.Width,body.Height)*.5);
         var center = new Point(body.X + body.Width / 2, body.Y + body.Height / 2);
         var dx = tip.X - center.X; var dy = tip.Y - center.Y;
         Vector normal, tangent; Point anchor; double half;
         if (Math.Abs(dx) / body.Width > Math.Abs(dy) / body.Height)
         {
             normal = new(dx < 0 ? -1 : 1, 0); tangent = new(0, 1);
-            half = Math.Min(10, Math.Max(.1, (body.Height - corner*2) / 4));
+            half = Math.Min(width/2, body.Height*.3);
             var x = dx < 0 ? body.Left : body.Right;
-            anchor = new(x, Math.Clamp(center.Y + dy * (x - center.X) / dx, body.Top + corner + half, body.Bottom - corner - half));
+            anchor = new(x, Math.Clamp(center.Y + dy * (x - center.X) / dx, body.Top + half, body.Bottom - half));
         }
         else
         {
             normal = new(0, dy < 0 ? -1 : 1); tangent = new(1, 0);
-            half = Math.Min(10, Math.Max(.1, (body.Width - corner*2) / 4));
+            half = Math.Min(width/2, body.Width*.3);
             var y = dy < 0 ? body.Top : body.Bottom;
-            anchor = new(Math.Clamp(center.X + dx * (y - center.Y) / dy, body.Left + corner + half, body.Right - corner - half), y);
+            anchor = new(Math.Clamp(center.X + dx * (y - center.Y) / dy, body.Left + half, body.Right - half), y);
         }
-        var a = anchor - tangent * half; var b = anchor + tangent * half;
+        Point Root(Point point) {
+            var along=normal.X!=0?point.Y:point.X;
+            var low=normal.X!=0?body.Top:body.Left;var high=normal.X!=0?body.Bottom:body.Right;
+            var offset=Math.Max(0,Math.Max(low+corner-along,along-(high-corner)));
+            var inset=corner-Math.Sqrt(Math.Max(0,corner*corner-offset*offset));
+            return point-normal*(inset+.15);
+        }
+        var a = Root(anchor - tangent * half); var b = Root(anchor + tangent * half);
         double reach = Math.Max(1, Vector.Multiply(tip - anchor, normal));
         var tipRounding = Math.Min(.8, reach * .12);
         var tipLeft = tip - normal * tipRounding - tangent * tipRounding;
@@ -217,20 +224,16 @@ internal static class AnnotationPaths
         using (var g = geo.Open())
         {
             g.BeginFigure(a, true, true);
-            var leftDirection = Unit(tipLeft - a); var rightDirection = Unit(tipRight - b);
-            var shoulder = Math.Min(half * .6, reach * .25);
-            var nearA = a + leftDirection * shoulder;
-            var nearB = b + rightDirection * shoulder;
-            g.BezierTo(a + tangent * shoulder * .55, nearA - leftDirection * shoulder * .3, nearA, true, true);
-            g.LineTo(tipLeft, true, true);
-            g.QuadraticBezierTo(tip + normal * tipRounding * .2, tipRight, true, true);
-            g.LineTo(nearB, true, true);
-            g.BezierTo(nearB - rightDirection * shoulder * .3, b - tangent * shoulder * .55, b, true, true);
+            // Tangent shoulders flow into tapered sides with a softly rounded tip.
+            var sweep=Math.Min(half*.85,reach*.45);
+            g.BezierTo(a+tangent*sweep, tipLeft-normal*Math.Min(reach*.45,half*1.5)-tangent*half*.15,tipLeft,true,true);
+            g.QuadraticBezierTo(tip+normal*tipRounding*.2,tipRight,true,true);
+            g.BezierTo(tipRight-normal*Math.Min(reach*.45,half*1.5)+tangent*half*.15,b-tangent*sweep,b,true,true);
         }
         geo.Freeze(); return geo;
     }
 
-    internal static Geometry EllipseTail(Rect body,PointD target)
+    internal static Geometry EllipseTail(Rect body,PointD target,double width=24)
     {
         if(body.Width<=0 || body.Height<=0)return Geometry.Empty;
         var center=new Point(body.X+body.Width/2,body.Y+body.Height/2);
@@ -238,7 +241,7 @@ internal static class AnnotationPaths
         var normalized=new Vector((tip.X-center.X)/rx,(tip.Y-center.Y)/ry);
         if(normalized.Length<=1)return Geometry.Empty;
         var angle=Math.Atan2(normalized.Y,normalized.X);
-        var spread=Math.Clamp(10/Math.Min(rx,ry),.08,.55);
+        var spread=Math.Clamp(width/2/Math.Min(rx,ry),.08,.7);
         Point Edge(double theta)=>new(center.X+rx*Math.Cos(theta),center.Y+ry*Math.Sin(theta));
         Vector TangentAt(double theta)=>Unit(new(-rx*Math.Sin(theta),ry*Math.Cos(theta)));
         var left=Edge(angle-spread);var right=Edge(angle+spread);
@@ -261,7 +264,7 @@ internal static class AnnotationPaths
     {
         var bounds = ImageRenderer.RectOf(a.Bounds);
         if (!a.Appearance.Sketch)
-            return a.Kind == AnnotationKind.Ellipse ? new EllipseGeometry(bounds) : new RectangleGeometry(bounds, Math.Min(8, Math.Min(bounds.Width, bounds.Height) * .12), Math.Min(8, Math.Min(bounds.Width, bounds.Height) * .12));
+            return a.Kind == AnnotationKind.Ellipse ? new EllipseGeometry(bounds) : new RectangleGeometry(bounds, Math.Min(a.Appearance.CornerRadius, Math.Min(bounds.Width, bounds.Height) * .5), Math.Min(a.Appearance.CornerRadius, Math.Min(bounds.Width, bounds.Height) * .5));
         // Stable organic contours: moving/resizing a shape never makes its texture flicker.
         var seed = a.Id.ToByteArray();
         double Bias(int i) => (seed[i % seed.Length] / 255.0 - .5);

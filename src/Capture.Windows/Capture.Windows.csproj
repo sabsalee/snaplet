@@ -8,7 +8,7 @@
     <AssemblyName>Snaplet</AssemblyName>
     <Product>Snaplet</Product>
     <Title>Snaplet</Title>
-    <Version>0.7.0</Version>
+    <Version>0.8.0</Version>
     <StartupObject>Capture.Windows.Program</StartupObject>
     <Description>Local screenshots and annotations for Windows 11</Description>
     <RootNamespace>Capture.Windows</RootNamespace>

@@ -79,7 +79,7 @@ public sealed class EditorWindow : Window
         void Tool(string glyph,string tip,AnnotationKind? kind) {var b=ToolButton(toolStrip,glyph,tip,()=>SetTool(kind));toolButtons.Add((kind,b));}
         Tool("↖","선택 · V",null);Tool("➜","화살표 · A",AnnotationKind.Arrow);Tool("T","텍스트 / 말풍선 · T",AnnotationKind.Text);
         Tool("①","번호 / 포인터 · N",AnnotationKind.Step);Tool("▢","사각형 · R",AnnotationKind.Rectangle);Tool("○","타원 · O",AnnotationKind.Ellipse);
-        Tool("✎","펜 · P",AnnotationKind.Pen);Tool("▧","모자이크 · M",AnnotationKind.Pixelate);
+        Tool("highlight","형광펜 · H",AnnotationKind.Highlight);Tool("✎","펜 · P",AnnotationKind.Pen);Tool("▧","모자이크 · M",AnnotationKind.Pixelate);
         var more=ToolButton(toolStrip,"···","도구 및 이미지 메뉴",()=>{});
         toolStrip.Children.Remove(more);info.Children.Insert(0,more);
         toolbar.SizeChanged+=(_,_)=>{
@@ -110,7 +110,8 @@ public sealed class EditorWindow : Window
         var workspace=new Grid {Background=CanvasBrush()};root.Children.Add(workspace);
         stage.Children.Add(surface);stage.Children.Add(textLayer);
         scroll=new ScrollViewer {Content=stage,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
-        inspector=new Border {Background=PanelBrush,CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=Ui.Line,Padding=new Thickness(10),Margin=new Thickness(14),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Top,MaxWidth=510,Visibility=Visibility.Collapsed,Child=propertyControls};workspace.Children.Add(inspector);
+        inspector=new Border {Background=PanelBrush,BorderThickness=new Thickness(0,0,0,1),BorderBrush=Ui.Line,Padding=new Thickness(12,4,12,6),Visibility=Visibility.Collapsed,Child=propertyControls};
+        DockPanel.SetDock(inspector,Dock.Top);root.Children.Insert(root.Children.IndexOf(workspace),inspector);
         Point? panStart=null;double panX=0,panY=0;
         scroll.PreviewMouseDown+=(_,e)=>{
             if(textEditor!=null)return;
@@ -131,6 +132,7 @@ public sealed class EditorWindow : Window
         PreviewMouseWheel+=(_,e)=>{if(textEditor==null && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){ChangeZoom(e.Delta>0?1.25:.8,e.GetPosition(scroll));e.Handled=true;}};
         document.Changed+=(_,_)=>{revision++;undoButton.IsEnabled=document.CanUndo;redoButton.IsEnabled=document.CanRedo;if(fitMode)Fit();SyncStage();UpdateStatus();SyncInspector();};
         surface.OperationFailed+=message=>NoticeWindow.Alert(this,"편집 작업",message);
+        surface.PointerHintChanged+=hint=>{if(textEditor==null && !string.IsNullOrEmpty(hint))status.Text=hint;};
         surface.SelectionChanged+=SyncInspector;surface.TextEditRequested+=BeginTextEdit;
         PreviewKeyDown+=OnKey;
         PreviewKeyUp+=(_,e)=>NudgeKeyUp(e.Key);
@@ -160,6 +162,7 @@ public sealed class EditorWindow : Window
         button.Style=(Style)Application.Current.FindResource("EditorIconButton");
         Ui.BindIcon((FrameworkElement)button.Content,button);
         System.Windows.Automation.AutomationProperties.SetName(button,tip.Split('·')[0].Trim());
+        ToolTipService.SetInitialShowDelay(button,450);ToolTipService.SetShowDuration(button,10000);
         button.Click+=(_,_)=>action();parent.Children.Add(button);return button;
     }
     private static void Item(ContextMenu menu,string title,Action action){var item=new MenuItem {Header=title};item.Click+=(_,_)=>action();menu.Items.Add(item);}
@@ -180,11 +183,14 @@ public sealed class EditorWindow : Window
         if(!FinishTextEdit(true))return;document.EndEdit();surface.CancelGesture();surface.ClearCrop();
         if((surface.Selection?.Kind ?? surface.Tool) is AnnotationKind previous)toolStyles[previous]=(surface.Ink,surface.Thickness,surface.InkStyle);
         if(kind is AnnotationKind next) {
-            var preset=toolStyles.GetValueOrDefault(next,(new ColorRgba(240,65,70,255),4d,new AnnotationStyle(Elliptical:next==AnnotationKind.Magnifier)));
+            var first=EditorPresets.For(next)[0];
+            var defaults=next is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line
+                ?(first.Color,first.Size,first.Style):(new ColorRgba(240,65,70,255),4d,new AnnotationStyle(Elliptical:next==AnnotationKind.Magnifier));
+            var preset=toolStyles.GetValueOrDefault(next,defaults);
             surface.Ink=preset.Item1;surface.Thickness=preset.Item2;surface.InkStyle=preset.Item3;
         }
         surface.Tool=kind;surface.Selected=null;surface.Focus();SyncInspector();
-        status.Text=kind is null?"객체 선택·이동 · Alt+드래그 복제 · Delete 삭제":"드래그하여 그리기 · 흰 핸들로 굽힘·꼬리 수정 · Shift 각도/비율 · Esc 선택 모드";
+        status.Text=kind is null?"객체 선택·이동 · Alt+드래그 복제 · Delete 삭제":"드래그하여 그리기 · 파란 원은 꼬리 · 마름모는 곡률/모서리 · Shift 각도/비율 · Esc 선택 모드";
     }
     private void StartCrop(){SetTool(null);if(textEditor!=null)return;surface.CropTool=true;SyncInspector();status.Text="범위 선택·재조정 → Enter 적용 · Esc 취소 · Shift 정사각형";}
     private void SyncInspector()
@@ -202,16 +208,23 @@ public sealed class EditorWindow : Window
         syncingControls=true;
         try {
             var kind=a?.Kind ?? surface.Tool;
+            if(kind is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line) {
+                var presets=new Button {Content="프리셋 ▾",Padding=new Thickness(10,5,10,5),Margin=new Thickness(2),ToolTip="완성된 스타일을 미리 보고 한 번에 적용"};
+                System.Windows.Automation.AutomationProperties.SetName(presets,"스타일 프리셋");
+                presets.Click+=(_,_)=>ShowPresets(presets,kind.Value);propertyControls.Children.Add(presets);
+            }
             var title=new TextBlock {Text=ToolName(kind),Margin=new Thickness(2,8,10,0),Foreground=MutedBrush,FontSize=11};propertyControls.Children.Add(title);
             if(kind is not (AnnotationKind.Image or AnnotationKind.Spotlight or AnnotationKind.Erase or AnnotationKind.Blur or AnnotationKind.Pixelate)) {
             var color=ToolButton(propertyControls,"●","색상 / 직접 HEX 입력",()=>{});color.Foreground=ImageRenderer.BrushOf(surface.Ink);
             color.Click+=(_,_)=>ShowColors(color);
             }
             if(kind is not (AnnotationKind.Image or AnnotationKind.Spotlight or AnnotationKind.Erase)) {
-            var slider=new Slider {Minimum=1,Maximum=20,Value=surface.Thickness,Width=115,Margin=new Thickness(7,5,9,5),VerticalAlignment=VerticalAlignment.Center,ToolTip="크기 / 굵기 / 효과 강도"};propertyControls.Children.Add(slider);
+            var slider=new Slider {Minimum=1,Maximum=20,Value=surface.Thickness,Width=85,Margin=new Thickness(7,5,9,5),VerticalAlignment=VerticalAlignment.Center,ToolTip="크기 / 굵기 / 효과 강도"};propertyControls.Children.Add(slider);
+            var sizeReadout=new TextBlock {Text=$"{surface.Thickness:0.#} px",MinWidth=38,FontSize=11,VerticalAlignment=VerticalAlignment.Center,Foreground=Ui.Text};propertyControls.Children.Add(sizeReadout);
+            System.Windows.Automation.AutomationProperties.SetName(slider,"크기 / 굵기 / 효과 강도");
             slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
             slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
-            slider.ValueChanged+=(_,_)=>{if(syncingControls)return;surface.Thickness=slider.Value;surface.ApplyStyle();};
+            slider.ValueChanged+=(_,_)=>{if(syncingControls)return;surface.Thickness=slider.Value;sizeReadout.Text=$"{slider.Value:0.#} px";surface.ApplyStyle();};
             }
             if(kind==AnnotationKind.Magnifier) {
                 Choice(new[]{"사각 렌즈","원형 렌즈"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
@@ -242,15 +255,19 @@ public sealed class EditorWindow : Window
                 var sketch=new CheckBox {Content="손그림",IsChecked=surface.InkStyle.Sketch,Margin=new Thickness(8,8,4,0),ToolTip="살짝 휘어진 선과 부드러운 모서리"};propertyControls.Children.Add(sketch);
                 sketch.Click+=(_,_)=>{surface.InkStyle=surface.InkStyle with {Sketch=sketch.IsChecked==true};surface.ApplyStyle();};
             }
+            if(kind==AnnotationKind.Rectangle || kind==AnnotationKind.Text && surface.InkStyle.Bubble)
+                ValueSlider("모서리 둥글기",0,48,surface.InkStyle.CornerRadius,value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
             if(kind==AnnotationKind.Text) {
                 Choice(new[]{"말풍선","일반 글자"},surface.InkStyle.Bubble?0:1,index=>surface.InkStyle=surface.InkStyle with {Bubble=index==0});
                 if(a!=null)ToolButton(propertyControls,"✎","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));
             }
             if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Step || kind==AnnotationKind.Text && surface.InkStyle.Bubble) {
                 var shapeTail=kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse;
-                var tail=new CheckBox {Content="말꼬리",IsChecked=shapeTail?surface.InkStyle.ShapeTail:surface.InkStyle.ShowTail,Margin=new Thickness(8,8,4,0),ToolTip="끝의 흰 핸들로 말꼬리를 움직이세요"};propertyControls.Children.Add(tail);
+                var tail=new CheckBox {Content="말꼬리",IsChecked=shapeTail?surface.InkStyle.ShapeTail:surface.InkStyle.ShowTail,Margin=new Thickness(8,8,4,0),ToolTip="파란 원을 드래그해 방향·길이 조절 · 민트색 마름모로 모서리 조절"};propertyControls.Children.Add(tail);
                 tail.Click+=(_,_)=>{surface.InkStyle=shapeTail?surface.InkStyle with {ShapeTail=tail.IsChecked==true}:surface.InkStyle with {ShowTail=tail.IsChecked==true};surface.ApplyStyle();SyncInspector();};
             }
+            if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Text && AnnotationGeometry.HasTail(a ?? new Annotation(Guid.NewGuid(),kind.Value,new(0,0),new(80,40),surface.Ink,Style:surface.InkStyle)))
+                ValueSlider("말꼬리 너비",8,64,surface.InkStyle.TailWidth,value=>surface.InkStyle=surface.InkStyle with {TailWidth=value});
             if(a?.Kind==AnnotationKind.Step) {
                 var value=new TextBox {Text=a.Text,Width=48,Padding=new Thickness(6,4,6,4),Margin=new Thickness(7,5,0,5),ToolTip="번호 0–99 · Enter 적용"};propertyControls.Children.Add(value);
                 value.KeyDown+=(_,e)=>{if(e.Key==Key.Enter && int.TryParse(value.Text,out int n) && n is >=0 and <=99){surface.ChangeSelected(x=>x with {Text=n.ToString()});surface.Focus();e.Handled=true;}};
@@ -260,14 +277,34 @@ public sealed class EditorWindow : Window
             var caption=new TextBlock {Text=label.Split('·')[0].Trim(),FontSize=11,Foreground=MutedBrush,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5)};propertyControls.Children.Add(caption);
             var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=110,Margin=new Thickness(6),ToolTip=label,VerticalAlignment=VerticalAlignment.Center};
             System.Windows.Automation.AutomationProperties.SetName(control,label);propertyControls.Children.Add(control);
+            var readout=new TextBlock {Text=$"{value:0.#}",MinWidth=28,FontSize=11,VerticalAlignment=VerticalAlignment.Center};propertyControls.Children.Add(readout);
             control.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
             control.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
-            control.ValueChanged+=(_,_)=>{if(syncingControls)return;try{update(control.Value);surface.ApplyStyle();}catch(Exception error) when(error is InvalidOperationException or ArgumentException){document.CancelEdit();status.Text=error.Message;SyncInspector();}};
+            control.ValueChanged+=(_,_)=>{if(syncingControls)return;try{readout.Text=$"{control.Value:0.#}";update(control.Value);surface.ApplyStyle();}catch(Exception error) when(error is InvalidOperationException or ArgumentException){document.CancelEdit();status.Text=error.Message;SyncInspector();}};
         }
         void Choice(string[] labels,int selected,Action<int> update) {
             var combo=new ComboBox {ItemsSource=labels,SelectedIndex=selected,MinWidth=90,Margin=new Thickness(4),VerticalAlignment=VerticalAlignment.Center};propertyControls.Children.Add(combo);
             combo.SelectionChanged+=(_,_)=>{if(syncingControls || combo.SelectedIndex<0)return;update(combo.SelectedIndex);surface.ApplyStyle();};
         }
+    }
+    private void ShowPresets(Button anchor,AnnotationKind kind)
+    {
+        var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true};
+        var panel=new StackPanel {Width=300};
+        panel.Children.Add(new TextBlock {Text="스타일 프리셋",FontWeight=FontWeights.SemiBold,Margin=new Thickness(6,4,6,8)});
+        foreach(var preset in EditorPresets.For(kind)) {
+            var sample=preset.Sample(kind);var drawing=new DrawingGroup();
+            using(var dc=drawing.Open()) {
+                dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(247,249,252)),null,new Rect(0,0,164,70));
+                ImageRenderer.PaintAnnotation(dc,source,sample);
+            }
+            var row=new DockPanel();var preview=new Image {Source=new DrawingImage(drawing),Width=132,Height=56,Margin=new Thickness(0,0,10,0)};DockPanel.SetDock(preview,Dock.Left);row.Children.Add(preview);
+            row.Children.Add(new TextBlock {Text=preset.Name,VerticalAlignment=VerticalAlignment.Center,FontSize=12});
+            var button=new Button {Content=row,HorizontalContentAlignment=HorizontalAlignment.Left,Margin=new Thickness(2),Padding=new Thickness(6),ToolTip=preset.Name+" · 선택 객체와 다음 그리기에 적용"};
+            System.Windows.Automation.AutomationProperties.SetName(button,preset.Name);
+            button.Click+=(_,_)=>{surface.Ink=preset.Color;surface.Thickness=preset.Size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,preset.Size,preset.Style);popup.IsOpen=false;SyncInspector();surface.Focus();};panel.Children.Add(button);
+        }
+        popup.Child=new Border {Child=panel,Background=PanelBrush,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(8)};popup.IsOpen=true;
     }
     private void StyleButtons(AnnotationKind kind,(string Label,AnnotationStyle Style)[] choices)
     {

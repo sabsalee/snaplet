@@ -86,7 +86,7 @@ internal static class ImageRenderer
             case AnnotationKind.Text:
                 var body=TextBounds(a);var bubble=a.Appearance.Bubble;
                 if(bubble) {
-                    var bodyGeometry = new RectangleGeometry(body, 8, 8);
+                    var bodyGeometry = new RectangleGeometry(body, a.Appearance.CornerRadius, a.Appearance.CornerRadius);
                     dc.DrawGeometry(brush, null, a.Appearance.ShowTail
                         ? new CombinedGeometry(GeometryCombineMode.Union, bodyGeometry, TailGeometry(a)) : bodyGeometry);
                 }
@@ -208,11 +208,11 @@ internal static class ImageRenderer
         if (a.Kind == AnnotationKind.Text && a.Appearance.Bubble)
         {
             var b = TextBounds(a);
-            return AnnotationPaths.CalloutTail(b, a.Tail ?? new(b.X + b.Width * .35, b.Bottom + 28));
+            return AnnotationPaths.CalloutTail(b, a.Tail ?? new(b.X + b.Width * .35, b.Bottom + 28),a.Appearance.TailWidth,a.Appearance.CornerRadius);
         }
         if(a.Kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse) {
             var body=RectOf(a.Bounds);
-            return a.Kind==AnnotationKind.Ellipse ? AnnotationPaths.EllipseTail(body,TailTip(a)) : AnnotationPaths.CalloutTail(body,TailTip(a));
+            return a.Kind==AnnotationKind.Ellipse ? AnnotationPaths.EllipseTail(body,TailTip(a),a.Appearance.TailWidth) : AnnotationPaths.CalloutTail(body,TailTip(a),a.Appearance.TailWidth,a.Appearance.CornerRadius);
         }
         return a.Kind == AnnotationKind.Step ? AnnotationPaths.CounterTail(a) : Geometry.Empty;
     }

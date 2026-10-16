@@ -6,3 +6,11 @@
 - **tessdata_fast English/Korean models** — Tesseract contributors; Apache-2.0. Exact revision, source URLs and SHA-256 digests: `tessdata/provenance.json`. License text: `tessdata/LICENSE`.
 
 - **Velopack 1.2.161** — Velopack Ltd., Caelan Sayler and contributors; MIT. https://github.com/velopack/velopack . See `licenses/Velopack-1.2.161-LICENSE.txt`.
+
+## Fluent UI System Icons
+
+The toolbar uses a curated subset of Microsoft's Fluent UI System Icons (24 px regular), licensed under MIT. Original vector outlines are preserved on their 24 × 24 design grid.
+
+Source: https://github.com/microsoft/fluentui-system-icons
+
+The complete license is included in `assets/licenses/Fluent-System-Icons-LICENSE.txt` and distributed with the application.

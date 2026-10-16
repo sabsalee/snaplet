@@ -9,7 +9,7 @@ public enum ArrowHead { Filled, Open, Simple, Double }
 public enum ShapeFill { Outline, Translucent, Solid, Hatched }
 public sealed record AnnotationStyle(ArrowHead ArrowHead = ArrowHead.Filled, ShapeFill Fill = ShapeFill.Outline,
     bool Bubble = true, bool ShowTail = true, double Opacity = 1, bool Sketch = false, bool ShapeTail = false, double Magnification = 3, double Dim = .6, bool Elliptical = false,
-    MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat);
+    MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat, double CornerRadius = 8, double TailWidth = 24);
 
 public sealed record Annotation(Guid Id, AnnotationKind Kind, PointD Start, PointD End, ColorRgba Color,
     double Thickness = 4, string Text = "", IReadOnlyList<PointD>? Points = null,
@@ -140,6 +140,8 @@ public sealed class EditableDocument
             (value.Control is PointD c && !c.IsFinite) || (value.Tail is PointD t && !t.IsFinite) ||
             (value.Kind==AnnotationKind.Image && value.Image is null) || (value.SampleRegion is RectD sample && sample.IsEmpty) ||
             !double.IsFinite(value.Appearance.Magnification) || value.Appearance.Magnification is < 1 or > 8 ||
+            !double.IsFinite(value.Appearance.CornerRadius) || value.Appearance.CornerRadius is < 0 or > 48 ||
+            !double.IsFinite(value.Appearance.TailWidth) || value.Appearance.TailWidth is < 8 or > 64 ||
             !double.IsFinite(value.Appearance.Dim) || value.Appearance.Dim is < 0 or > 1 ||
             !Enum.IsDefined(value.Appearance.HighlightShape) || !Enum.IsDefined(value.Appearance.MarkerCap) ||
             !Enum.IsDefined(value.Appearance.ArrowHead) || !Enum.IsDefined(value.Appearance.Fill) || !double.IsFinite(value.Appearance.Opacity) || value.Appearance.Opacity is < 0 or > 1)

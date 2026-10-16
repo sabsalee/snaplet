@@ -15,6 +15,9 @@ internal sealed class EditorSurface : FrameworkElement
     internal bool CropTool;
     internal bool SnapToObjects=true;
     private double? guideX,guideY;
+    private Guid? hovered;
+    internal string PointerHint { get; private set; }="";
+    internal event Action<string>? PointerHintChanged;
     private readonly DispatcherTimer digitCommit=new() {Interval=TimeSpan.FromMilliseconds(800)};
     internal ColorRgba Ink = new(240,65,70,255);
     internal double Thickness = 4;
@@ -25,7 +28,7 @@ internal sealed class EditorSurface : FrameworkElement
     internal event Action? SelectionChanged;
     internal event Action<string>? OperationFailed;
     internal event Action<Annotation,bool>? TextEditRequested;
-    private enum Gesture { None, Create, Move, Resize, Bend, Tail, CropNew, CropMove, CropResize, SampleMove, SampleResize }
+    private enum Gesture { None, Create, Move, Resize, Bend, Tail, Corner, CropNew, CropMove, CropResize, SampleMove, SampleResize }
     private Gesture gesture;
     private PointD start,current;
     private Annotation? original,draft;
@@ -74,14 +77,40 @@ internal sealed class EditorSurface : FrameworkElement
             dc.DrawRectangle(null,new Pen(Brushes.White,1/Zoom){DashStyle=DashStyles.Dash},ImageRenderer.RectOf(crop));
             foreach(var h in BoxHandles(ImageRenderer.RectOf(crop)))DrawHandle(dc,h.Point);
         } else if(!CropTool && (draft ?? Selection) is Annotation a && a.Id!=editingTextId) {
-            foreach(var h in Handles(PreviewAnnotation(a)))DrawHandle(dc,h.Point);
+            var shown=PreviewAnnotation(a);
+            DrawSelection(dc,shown,false);
+            foreach(var h in Handles(shown))DrawControl(dc,h);
+        }
+        if(gesture==Gesture.None && hovered is Guid hover && hover!=Selected && Document.Annotations.FirstOrDefault(x=>x.Id==hover) is Annotation over) {
+            DrawSelection(dc,over,true);
         }
         var guidePen=new Pen(new SolidColorBrush(Color.FromArgb(210,50,140,255)),1/Zoom) {DashStyle=DashStyles.Dash};
         if(guideX is double gx)dc.DrawLine(guidePen,new(gx,Document.Crop.Y),new(gx,Document.Crop.Bottom));
         if(guideY is double gy)dc.DrawLine(guidePen,new(Document.Crop.X,gy),new(Document.Crop.Right,gy));
         dc.Pop();dc.Pop();dc.Pop();
     }
-    private void DrawHandle(DrawingContext dc,PointD p)=>dc.DrawRoundedRectangle(Brushes.White,new Pen(Brushes.DimGray,1/Zoom),new(p.X-4/Zoom,p.Y-4/Zoom,8/Zoom,8/Zoom),2/Zoom,2/Zoom);
+    private static readonly Brush SelectionInk=new SolidColorBrush(Color.FromRgb(104,165,255));
+    private void DrawSelection(DrawingContext dc,Annotation a,bool hover)
+    {
+        var pen=new Pen(SelectionInk,(hover?1.5:1)/Zoom);
+        if(a.Kind is AnnotationKind.Arrow or AnnotationKind.Line) {
+            dc.DrawGeometry(null,pen,ImageRenderer.ArrowStrokeGeometry(a));return;
+        }
+        if(a.Kind==AnnotationKind.Pen) {dc.DrawGeometry(null,pen,ImageRenderer.PenGeometry(a));return;}
+        var b=ImageRenderer.BoundsOf(a);b.Inflate(2/Zoom,2/Zoom);
+        dc.DrawRectangle(null,pen,b);
+    }
+    private void DrawControl(DrawingContext dc,Handle h)
+    {
+        var p=ImageRenderer.P(h.Point);var pen=new Pen(SelectionInk,1.25/Zoom);
+        if(h.Index is -3 or -6) {
+            var radius=5/Zoom;var diamond=new StreamGeometry();
+            using(var g=diamond.Open()) {g.BeginFigure(new(p.X,p.Y-radius),true,true);g.LineTo(new(p.X+radius,p.Y),true,false);g.LineTo(new(p.X,p.Y+radius),true,false);g.LineTo(new(p.X-radius,p.Y),true,false);}
+            dc.DrawGeometry(h.Index==-6?Brushes.MediumAquamarine:Brushes.White,pen,diamond);
+        } else if(h.Index<0)dc.DrawEllipse(h.Index==-4?SelectionInk:Brushes.White,new Pen(Brushes.White,1.5/Zoom),p,5/Zoom,5/Zoom);
+        else DrawHandle(dc,h.Point);
+    }
+    private void DrawHandle(DrawingContext dc,PointD p)=>dc.DrawRoundedRectangle(Brushes.White,new Pen(SelectionInk,1/Zoom),new(p.X-4/Zoom,p.Y-4/Zoom,8/Zoom,8/Zoom),2/Zoom,2/Zoom);
     private readonly record struct Handle(int Index,PointD Point);
     private static IEnumerable<Handle> BoxHandles(Rect r)
     {
@@ -96,6 +125,10 @@ internal sealed class EditorSurface : FrameworkElement
             if(a.Kind==AnnotationKind.Arrow)yield return new(-3,AnnotationGeometry.CurvePoint(a,.5));
         } else if(a.Kind!=AnnotationKind.Pen && a.Kind!=AnnotationKind.Step && !(a.Kind==AnnotationKind.Highlight && a.Appearance.HighlightShape==MarkerShape.Freehand)) {
             foreach(var h in BoxHandles(ImageRenderer.BoundsOf(a)))yield return h;
+        }
+        if(a.Kind==AnnotationKind.Rectangle && !a.Appearance.Sketch || a.Kind==AnnotationKind.Text && a.Appearance.Bubble) {
+            var box=ImageRenderer.BoundsOf(a);var radius=Math.Min(a.Appearance.CornerRadius,Math.Min(box.Width,box.Height)/2);
+            var inset=Math.Max(12,radius);yield return new(-6,new(box.Left+inset,box.Top+inset));
         }
         if(a.Kind==AnnotationKind.Magnifier) {
             var sample=AdvancedDrawing.SampleBounds(a);
@@ -124,10 +157,10 @@ internal sealed class EditorSurface : FrameworkElement
         }
         var selected=Selection;var selectedHandle=selected is null?null:NearHandle(Handles(selected),start);
         if(selectedHandle is Handle sh) {
-            original=selected;handle=sh.Index;gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:Gesture.Resize;CaptureMouse();return;
+            original=selected;handle=sh.Index;gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:handle==-6?Gesture.Corner:Gesture.Resize;CaptureMouse();return;
         }
         var hit=ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,start));
-        if(hit!=null && (Tool is null || hit.Id==Selected)) {
+        if(hit!=null && (Tool is null || hit.Id==Selected || clickCount==2)) {
             Selected=hit.Id;SelectionChanged?.Invoke();
             if(hit.Kind==AnnotationKind.Text && clickCount==2){TextEditRequested?.Invoke(hit,false);return;}
             original=hit;
@@ -186,14 +219,29 @@ internal sealed class EditorSurface : FrameworkElement
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);var position=ImagePoint(e);
-        if(gesture==Gesture.None)current=position;
-        if(gesture==Gesture.None) {
-            var near=Selection is Annotation a?NearHandle(Handles(a),current):null;
-            Cursor=near is Handle h?HandleCursor(h.Index):Tool is null?Cursors.Arrow:Cursors.Cross;return;
-        }
+        if(gesture==Gesture.None) {UpdateHover(position);return;}
         if(e.LeftButton!=MouseButtonState.Pressed)return;
         UpdatePointer(position,Keyboard.Modifiers);
     }
+    protected override void OnMouseLeave(MouseEventArgs e)
+    {
+        base.OnMouseLeave(e);hovered=null;SetPointerHint("");if(!IsDragging)InvalidateVisual();
+    }
+    internal void UpdateHover(PointD position)
+    {
+        current=position;
+        var near=CropTool && PendingCrop is RectD crop?NearHandle(BoxHandles(ImageRenderer.RectOf(crop)),position):Selection is Annotation selected?NearHandle(Handles(selected),position):null;
+        var hit=CropTool?null:ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,position));
+        hovered=Tool is null?hit?.Id:null;
+        var editable=hit!=null && (Tool is null || hit.Id==Selected);
+        Cursor=near is Handle h?HandleCursor(h.Index):editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
+        SetPointerHint(near is Handle control?control.Index switch {
+            -3=>"곡률 · 드래그해 화살표를 휘세요",-4=>"말꼬리 · 파란 원을 드래그해 방향과 길이를 바꾸세요",
+            -6=>"모서리 · 민트색 마름모를 드래그해 둥글기를 바꾸세요",-5=>"원본 영역 이동",_=>"크기 조절 · Shift 비율 유지"
+        }:editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":"객체를 가리키면 선택 범위를 표시합니다 · V 선택");
+        InvalidateVisual();
+    }
+    private void SetPointerHint(string value) {if(PointerHint==value)return;PointerHint=value;PointerHintChanged?.Invoke(value);}
     private static Cursor HandleCursor(int index)=>index switch {
         0 or 4 or 100 or 104=>Cursors.SizeNWSE,2 or 6 or 102 or 106=>Cursors.SizeNESW,
         1 or 5 or 101 or 105=>Cursors.SizeNS,3 or 7 or 103 or 107=>Cursors.SizeWE,_=>Cursors.SizeAll};
@@ -213,6 +261,7 @@ internal sealed class EditorSurface : FrameworkElement
                 Gesture.Move=>SnapMove(a.Move(current.X-start.X,current.Y-start.Y)),
                 Gesture.Bend=>AnnotationGeometry.BendThrough(a,current),
                 Gesture.Tail=>a with {Tail=current},
+                Gesture.Corner=>a with {Style=a.Appearance with {CornerRadius=Math.Clamp(a.Appearance.CornerRadius+Math.Min(current.X-start.X,current.Y-start.Y),0,Math.Min(48,Math.Min(ImageRenderer.BoundsOf(a).Width,ImageRenderer.BoundsOf(a).Height)/2))}},
                 Gesture.SampleMove=>a with {SampleRegion=AdvancedDrawing.SampleBounds(a) with {X=AdvancedDrawing.SampleBounds(a).X+current.X-start.X,Y=AdvancedDrawing.SampleBounds(a).Y+current.Y-start.Y}},
                 Gesture.SampleResize=>ResizeSample(a,current),
                 Gesture.Resize when handle==-1=>ResizeEndpoint(a,Constrained(a.End,current,a.Kind),true),
