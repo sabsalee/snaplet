@@ -22,9 +22,9 @@ internal static class ExperienceSmokeTest
         check(surface.Cursor==Cursors.SizeAll && surface.PointerHint.Contains("더블클릭"),"hovering a text body advertises dragging and text editing before selection");
         surface.Selected=bubble.Id;surface.UpdateHover(new(160,215));
         check(surface.PointerHint.Contains("말꼬리"),"tail handle explains its role independently of resize handles");
-        surface.UpdateHover(new(116,116));check(surface.PointerHint.Contains("모서리"),"corner radius handle advertises direct rounding adjustment");
-        surface.BeginPointer(new(116,116));surface.EndPointer(new(125,125));
-        check(doc.Annotations.Single().Appearance.CornerRadius==25,"dragging the radius diamond changes radius by pointer displacement");
+        surface.UpdateHover(new(284,86));check(surface.PointerHint.Contains("모서리"),"corner radius handle advertises direct rounding adjustment");
+        surface.BeginPointer(new(284,86));surface.EndPointer(new(275,95));
+        check(doc.Annotations.Single().Appearance.CornerRadius>16 && doc.Annotations.Single().Appearance.CornerRadius<=48,"dragging the exterior radius diamond inward increases rounding without covering text");
         doc.Undo();check(doc.Annotations.Single()==bubble,"corner rounding is one undoable action preserving text and tail");
         surface.BeginPointer(bubble.Tail!.Value);surface.EndPointer(new(355,130));
         var moved=doc.Annotations.Single();check(moved.Tail==new PointD(355,130) && surface.Hit(moved,new(342,130)),"tail can switch sides and remains selectable on its visible tapered body");

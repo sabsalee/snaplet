@@ -36,6 +36,7 @@ internal sealed class EditorSurface : FrameworkElement
     private List<PointD>? points;
     private int handle;
     private ModifierKeys pointerModifiers;
+    private Vector cornerDirection;
     private Guid? selectionBeforeGesture;
     private RectD cropBefore;
     private string digits="";
@@ -111,6 +112,10 @@ internal sealed class EditorSurface : FrameworkElement
     {
         var p=ImageRenderer.P(h.Point);var pen=new Pen(SelectionInk,1.25/Zoom);
         if(hoveredControl==h.Index && gesture==Gesture.None)dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(65,104,165,255)),null,p,9/Zoom,9/Zoom);
+        if(h.Index==-6 && (draft ?? Selection) is Annotation selected) {
+            var b=ImageRenderer.BoundsOf(selected);var anchor=new Point(Math.Clamp(p.X,b.Left,b.Right),Math.Clamp(p.Y,b.Top,b.Bottom));
+            dc.DrawLine(new Pen(SelectionInk,1/Zoom){DashStyle=DashStyles.Dot},anchor,p);
+        }
         if(h.Index is -3 or -6) {
             var radius=5/Zoom;var diamond=new StreamGeometry();
             using(var g=diamond.Open()) {g.BeginFigure(new(p.X,p.Y-radius),true,true);g.LineTo(new(p.X+radius,p.Y),true,false);g.LineTo(new(p.X,p.Y+radius),true,false);g.LineTo(new(p.X-radius,p.Y),true,false);}
@@ -126,7 +131,7 @@ internal sealed class EditorSurface : FrameworkElement
         yield return new(3,new(r.Right,r.Y+r.Height/2));yield return new(4,new(r.Right,r.Bottom));yield return new(5,new(r.X+r.Width/2,r.Bottom));
         yield return new(6,new(r.Left,r.Bottom));yield return new(7,new(r.Left,r.Y+r.Height/2));
     }
-    private static IEnumerable<Handle> Handles(Annotation a)
+    private IEnumerable<Handle> Handles(Annotation a)
     {
         if(a.Kind is AnnotationKind.Arrow or AnnotationKind.Line || a.Kind==AnnotationKind.Highlight && a.Appearance.HighlightShape==MarkerShape.Line) {
             yield return new(-1,a.Start);yield return new(-2,a.End);
@@ -135,8 +140,13 @@ internal sealed class EditorSurface : FrameworkElement
             foreach(var h in BoxHandles(ImageRenderer.BoundsOf(a)))yield return h;
         }
         if(a.Kind==AnnotationKind.Rectangle && !a.Appearance.Sketch || a.Kind==AnnotationKind.Text && a.Appearance.Bubble) {
-            var box=ImageRenderer.BoundsOf(a);var radius=Math.Min(a.Appearance.CornerRadius,Math.Min(box.Width,box.Height)/2);
-            var inset=Math.Max(12,radius);yield return new(-6,new(box.Left+inset,box.Top+inset));
+            var box=ImageRenderer.BoundsOf(a);var inset=Math.Min(Math.Max(12/Zoom,a.Appearance.CornerRadius),Math.Min(box.Width,box.Height)/2);
+            var pad=14/Zoom;var safe=ImageRenderer.RectOf(Document.Crop);safe.Inflate(-6/Zoom,-6/Zoom);
+            if(Math.Min(box.Width,box.Height)*Zoom>=24 && !safe.IsEmpty) {
+                var candidates=new[]{new PointD(box.Right-inset,box.Top-pad),new PointD(box.Right+pad,box.Top+inset),new PointD(box.Left+inset,box.Bottom+pad),new PointD(box.Left-pad,box.Top+inset)};
+                var point=candidates.FirstOrDefault(p=>safe.Contains(ImageRenderer.P(p)),new(double.NaN,double.NaN));
+                if(point.IsFinite)yield return new(-6,point);
+            }
         }
         if(a.Kind==AnnotationKind.Magnifier) {
             var sample=AdvancedDrawing.SampleBounds(a);
@@ -163,11 +173,16 @@ internal sealed class EditorSurface : FrameworkElement
             else {gesture=Gesture.CropNew;PendingCrop=new(start.X,start.Y,1,1);}
             Selected=null;CaptureMouse();InvalidateVisual();return;
         }
+        var hit=ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,start));
+        if(hit?.Kind==AnnotationKind.Text && (Tool==AnnotationKind.Text || clickCount==2) && ImageRenderer.BoundsOf(hit).Contains(ImageRenderer.P(start))) {
+            Selected=hit.Id;SelectionChanged?.Invoke();TextEditRequested?.Invoke(hit,false);return;
+        }
         var selected=Selection;var selectedHandle=selected is null?null:NearHandle(Handles(selected),start);
         if(selectedHandle is Handle sh) {
-            original=selected;handle=sh.Index;gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:handle==-6?Gesture.Corner:Gesture.Resize;CaptureMouse();return;
+            original=selected;handle=sh.Index;
+            if(handle==-6) {var b=ImageRenderer.BoundsOf(selected!);cornerDirection=new(b.X+b.Width/2-start.X,b.Y+b.Height/2-start.Y);if(cornerDirection.LengthSquared>0)cornerDirection.Normalize();}
+            gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:handle==-6?Gesture.Corner:Gesture.Resize;CaptureMouse();return;
         }
-        var hit=ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,start));
         if(hit!=null && (Tool is null || hit.Id==Selected || clickCount==2 || Tool==AnnotationKind.Text && hit.Kind==AnnotationKind.Text)) {
             Selected=hit.Id;SelectionChanged?.Invoke();
             if(hit.Kind==AnnotationKind.Text && (clickCount==2 || Tool==AnnotationKind.Text)){TextEditRequested?.Invoke(hit,false);return;}
@@ -252,7 +267,7 @@ internal sealed class EditorSurface : FrameworkElement
     }
     private void SetPointerHint(string value) {if(PointerHint==value)return;PointerHint=value;PointerHintChanged?.Invoke(value);}
     private static Cursor HandleCursor(int index)=>index switch {
-        -6 or 0 or 4 or 100 or 104=>Cursors.SizeNWSE,2 or 6 or 102 or 106=>Cursors.SizeNESW,
+        -6=>Cursors.Hand,0 or 4 or 100 or 104=>Cursors.SizeNWSE,2 or 6 or 102 or 106=>Cursors.SizeNESW,
         1 or 5 or 101 or 105=>Cursors.SizeNS,3 or 7 or 103 or 107=>Cursors.SizeWE,_=>Cursors.SizeAll};
     internal void UpdatePointer(PointD position,ModifierKeys modifiers=ModifierKeys.None)
     {
@@ -270,7 +285,7 @@ internal sealed class EditorSurface : FrameworkElement
                 Gesture.Move=>SnapMove(a.Move(current.X-start.X,current.Y-start.Y)),
                 Gesture.Bend=>AnnotationGeometry.BendThrough(a,current),
                 Gesture.Tail=>a with {Tail=current},
-                Gesture.Corner=>a with {Style=a.Appearance with {CornerRadius=Math.Clamp(a.Appearance.CornerRadius+Math.Min(current.X-start.X,current.Y-start.Y),0,Math.Min(48,Math.Min(ImageRenderer.BoundsOf(a).Width,ImageRenderer.BoundsOf(a).Height)/2))}},
+                Gesture.Corner=>a with {Style=a.Appearance with {CornerRadius=Math.Clamp(a.Appearance.CornerRadius+(current.X-start.X)*cornerDirection.X+(current.Y-start.Y)*cornerDirection.Y,0,Math.Min(48,Math.Min(ImageRenderer.BoundsOf(a).Width,ImageRenderer.BoundsOf(a).Height)/2))}},
                 Gesture.SampleMove=>a with {SampleRegion=AdvancedDrawing.SampleBounds(a) with {X=AdvancedDrawing.SampleBounds(a).X+current.X-start.X,Y=AdvancedDrawing.SampleBounds(a).Y+current.Y-start.Y}},
                 Gesture.SampleResize=>ResizeSample(a,current),
                 Gesture.Resize when handle==-1=>ResizeEndpoint(a,Constrained(a.End,current,a.Kind),true),
