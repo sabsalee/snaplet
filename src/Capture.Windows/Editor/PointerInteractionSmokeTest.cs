@@ -67,7 +67,7 @@ internal static class PointerInteractionSmokeTest
         var tail=Surface(out var tailDoc);
         var callout=box with {End=new(200,160),Style=new(ShapeTail:true),Tail=new(150,220)};
         tailDoc.Add(callout);tail.Selected=callout.Id;
-        tail.BeginPointer(new(150,220));tail.EndPointer(new(250,100));
+        tail.BeginPointer(ImageRenderer.TailTip(callout));tail.EndPointer(new(250,100));
         check(tailDoc.Annotations.Single().Tail==new PointD(250,100),"shape tail handle can move to another side independently");
         check(tailDoc.Annotations.Single().Bounds==callout.Bounds,"tail edit leaves the shape body fixed");
         tailDoc.Undo();check(tailDoc.Annotations.Single()==callout,"tail adjustment has a single undo step");
