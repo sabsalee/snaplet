@@ -67,6 +67,12 @@ internal static class ExperienceSmokeTest
             check(doc.Annotations.Single().Appearance.TailWidth==48,"numeric property input applies precise values through the production control path");
             doc.Undo();check(doc.Annotations.Single().Appearance.TailWidth==32,"numeric property input is one undoable style change");
             window.UpdateLayout();
+            var liveSurface=Descendants(root).OfType<EditorSurface>().Single();
+            var beforeEdit=liveSurface.TranslatePoint(new Point(100,100),root);var beforeZoom=liveSurface.Zoom;
+            window.BeginTextEdit(doc.Annotations.Single(),false);window.UpdateLayout();
+            check((liveSurface.TranslatePoint(new Point(100,100),root)-beforeEdit).Length<.1 && Math.Abs(liveSurface.Zoom-beforeZoom)<.0001,"entering text editing keeps the canvas and insertion point stationary");
+            window.FinishTextEdit(false);window.UpdateLayout();
+            check((liveSurface.TranslatePoint(new Point(100,100),root)-beforeEdit).Length<.1 && Math.Abs(liveSurface.Zoom-beforeZoom)<.0001,"leaving text editing preserves the same viewport");
             var bitmap=new RenderTargetBitmap((int)root.ActualWidth,(int)root.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(root);
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(directory,"editor-experience.png"));encoder.Save(file);
         } finally {window.CloseForExit();}

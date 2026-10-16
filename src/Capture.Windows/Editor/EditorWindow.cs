@@ -111,7 +111,7 @@ public sealed class EditorWindow : Window
         var workspace=new Grid {Background=CanvasBrush()};root.Children.Add(workspace);
         stage.Children.Add(surface);stage.Children.Add(textLayer);
         scroll=new ScrollViewer {Content=stage,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
-        inspector=new Border {Background=PanelBrush,BorderThickness=new Thickness(0,0,0,1),BorderBrush=Ui.Line,Padding=new Thickness(12,4,12,6),Visibility=Visibility.Collapsed,Child=propertyControls};
+        inspector=new Border {Background=PanelBrush,BorderThickness=new Thickness(0,0,0,1),BorderBrush=Ui.Line,Padding=new Thickness(12,4,12,6),MinHeight=54,Child=propertyControls};
         DockPanel.SetDock(inspector,Dock.Top);root.Children.Insert(root.Children.IndexOf(workspace),inspector);
         Point? panStart=null;double panX=0,panY=0;
         scroll.PreviewMouseDown+=(_,e)=>{
@@ -129,7 +129,8 @@ public sealed class EditorWindow : Window
         };
         surface.MouseMove+=(_,_)=>{if(surface.IsDragging && surface.IsMouseCaptured)edgePan.Start();};
         Deactivated+=(_,_)=>edgePan.Stop();Closed+=(_,_)=>edgePan.Stop();
-        scroll.SizeChanged+=(_,_)=>{if(fitMode)Fit();};
+        // Viewport dimensions are current here; SizeChanged can still expose the previous layout.
+        scroll.ScrollChanged+=(_,e)=>{if(fitMode && (e.ViewportWidthChange!=0 || e.ViewportHeightChange!=0))Fit();};
         PreviewMouseWheel+=(_,e)=>{if(textEditor==null && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){ChangeZoom(e.Delta>0?1.25:.8,e.GetPosition(scroll));e.Handled=true;}};
         document.Changed+=(_,_)=>{revision++;undoButton.IsEnabled=document.CanUndo;redoButton.IsEnabled=document.CanRedo;if(fitMode)Fit();SyncStage();UpdateStatus();SyncInspector();};
         surface.OperationFailed+=message=>NoticeWindow.Alert(this,"편집 작업",message);
@@ -197,15 +198,19 @@ public sealed class EditorWindow : Window
     private void SyncInspector()
     {
         if(syncingControls)return;
-        if(textEditor!=null){inspector.Visibility=Visibility.Collapsed;return;}
+        // Keep the property row in place while typing so the canvas and insertion point do not jump.
+        inspector.IsEnabled=textEditor==null;
+        if(textEditor!=null)return;
         var a=surface.Selection;
         if(a!=null){surface.Ink=a.Color;surface.Thickness=a.Thickness;surface.InkStyle=a.Appearance;}
         foreach(var (kind,button) in toolButtons)button.Background=kind==surface.Tool?new SolidColorBrush(Color.FromRgb(68,75,82)):Brushes.Transparent;
         // Preserve both mouse drags and keyboard adjustment of the active slider.
         if(Mouse.Captured is Thumb || propertyControls.Children.OfType<Slider>().Concat(propertyControls.Children.OfType<StackPanel>().SelectMany(panel=>panel.Children.OfType<Slider>())).Any(control=>control.IsKeyboardFocusWithin))return;
         propertyControls.Children.Clear();
-        inspector.Visibility=a!=null || surface.Tool!=null?Visibility.Visible:Visibility.Collapsed;
-        if(inspector.Visibility!=Visibility.Visible)return;
+        if(a==null && surface.Tool==null) {
+            propertyControls.Children.Add(new TextBlock {Text="도구를 선택해 그리거나, 객체를 클릭해 스타일을 조절하세요.",Foreground=MutedBrush,Margin=new Thickness(4,10,0,0),FontSize=11});
+            return;
+        }
         syncingControls=true;
         try {
             var kind=a?.Kind ?? surface.Tool;
