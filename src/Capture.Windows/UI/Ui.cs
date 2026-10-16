@@ -23,6 +23,13 @@ public static class WindowAppearance
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint hwnd,int attribute,ref int value,int size);
 }
 
+public static class EditorChrome
+{
+    public static readonly DependencyProperty CornerRadiusProperty=DependencyProperty.RegisterAttached("CornerRadius",typeof(CornerRadius),typeof(EditorChrome),new PropertyMetadata(new CornerRadius(8)));
+    public static void SetCornerRadius(DependencyObject target,CornerRadius value)=>target.SetValue(CornerRadiusProperty,value);
+    public static CornerRadius GetCornerRadius(DependencyObject target)=>(CornerRadius)target.GetValue(CornerRadiusProperty);
+}
+
 internal static class Ui
 {
     internal static Brush Brush(string key)=>(Brush)Application.Current.FindResource(key);

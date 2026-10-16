@@ -52,7 +52,7 @@
  <!-- TextBoxView already consumes Padding; the inline editor must not add it again in its chrome. -->
  <Style x:Key="EditorInlineTextBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
-   <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8"><ScrollViewer x:Name="PART_ContentHost"/></Border>
+   <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=(ui:EditorChrome.CornerRadius)}"><ScrollViewer x:Name="PART_ContentHost"/></Border>
   </ControlTemplate></Setter.Value></Setter>
  </Style>
  <Style TargetType="CheckBox">

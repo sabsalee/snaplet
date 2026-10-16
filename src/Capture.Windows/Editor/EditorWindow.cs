@@ -362,7 +362,7 @@ public sealed class EditorWindow : Window
         if(!FinishTextEdit(true))return;if(textEditor!=null)return;surface.CancelGesture();selectionBeforeTextEdit=surface.Selected;editingText=a;newText=create;composingText=false;surface.Selected=create?null:a.Id;
         surface.SetTextEditing(create?null:a.Id);
         textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=a.Text,MaxLength=8192,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
-            Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=Brushes.Transparent,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
+            Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=a.Appearance.Bubble?ImageRenderer.BrushOf(a.Color):Brushes.Transparent,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
         textLayer.Children.Add(textEditor);UpdateTextEditorLayout();
         textEditor.TextChanged+=(_,_)=>UpdateTextEditorLayout();
         TextCompositionManager.AddPreviewTextInputStartHandler(textEditor,(_,_)=>composingText=true);
@@ -376,6 +376,7 @@ public sealed class EditorWindow : Window
         if(textEditor is null || editingText is not Annotation a)return;
         var z=surface.Zoom;var preview=EditedText(a,textEditor.Text);surface.SetTextPreview(preview);
         var b=ImageRenderer.TextBounds(preview);
+        EditorChrome.SetCornerRadius(textEditor,new CornerRadius(a.Appearance.Bubble?Math.Min(a.Appearance.CornerRadius,Math.Min(b.Width,b.Height)/2)*z+2:2));
         textEditor.FontSize=Math.Max(14,a.Thickness*5)*z;
         textEditor.Padding=a.Appearance.Bubble?new Thickness(10*z,8*z,10*z,8*z):new Thickness(0);
         textEditor.Width=b.Width*z+4;textEditor.Height=Math.Min(32768,b.Height)*z+4;

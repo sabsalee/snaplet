@@ -66,7 +66,8 @@ internal static class RefinementSmokeTest
             var typingWidth=(window.ActiveTextEditor.Width-4)/surface.Zoom;
             var typingHeight=(window.ActiveTextEditor.Height-4)/surface.Zoom;
             check(surface.TextPreview is Annotation typing && typing.Text==content && !ImageRenderer.TextBounds(typing).Contains(ImageRenderer.P(ImageRenderer.TailTip(typing))),"typing keeps a live callout background and positions the new default tail outside the growing body");
-            check(window.ActiveTextEditor.Background==Brushes.Transparent,"inline text remains on its actual callout or source image instead of a replacement background");
+            check(window.ActiveTextEditor.Background is SolidColorBrush background && background.Color.R==callout.Color.R,"live callout background continues with its actual color beyond the current image while typing");
+            check(VisualTreeHelper.GetChild(window.ActiveTextEditor,0) is Border chrome && Math.Abs(chrome.CornerRadius.TopLeft-(callout.Appearance.CornerRadius*surface.Zoom+2))<.01,"actual inline chrome keeps the annotation corner radius at the current zoom");
             check(typingHeight>80 && typingWidth==200,"inline callout grows vertically while keeping a predictable wrapping width");
             check(window.ActiveTextEditor.ExtentHeight<=window.ActiveTextEditor.ViewportHeight+2 && window.ActiveTextEditor.VerticalOffset==0,
                 "actual WPF multiline editor fits the text without silently scrolling or clipping its first lines");
