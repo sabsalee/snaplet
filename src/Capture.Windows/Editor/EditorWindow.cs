@@ -55,6 +55,7 @@ public sealed class EditorWindow : Window
         document=existingDocument ?? new(source.PixelWidth,source.PixelHeight);
         if(document.Width!=source.PixelWidth || document.Height!=source.PixelHeight)throw new ArgumentException("문서와 이미지 크기가 다릅니다.");
         surface=new(source,document) {HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
+        WindowAppearance.SetDarkChrome(this,true);
         Title="Snaplet — 이미지 편집";Width=1180;Height=800;MinWidth=700;MinHeight=450;
         Background=Ui.Page;Foreground=Ui.Text;FontFamily=new FontFamily("Segoe UI");
         var root=new DockPanel();Content=root;

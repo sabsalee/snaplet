@@ -28,6 +28,14 @@ Windows CI의 실제 WPF 렌더러에서 합성 데이터로 생성한 화면입
 
 ## 편집
 
+0.8.0의 상단 속성 행과 역할별 조절점입니다.
+
+![편집 조절점](screenshots/editor-experience.png)
+
+도구별 프리셋은 실제 내보내기와 같은 렌더러로 미리 보여 줍니다.
+
+![스타일 프리셋](screenshots/editor-style-presets.png)
+
 ![편집](screenshots/editor.png)
 
 주석의 곡선·끝 마감·도형 스타일 비교판입니다.
