@@ -12,6 +12,12 @@ Windows CI의 실제 WPF 렌더러에서 합성 데이터로 생성한 화면입
 
 ![단축키 설정](screenshots/shortcuts.png)
 
+## 업데이트
+
+업데이트를 받은 상태의 합성 UI 예시입니다. 표시된 다음 버전 번호는 검사 데이터이며 실제 배포 버전은 Releases에서 확인합니다.
+
+![업데이트 설정](screenshots/settings-updates.png)
+
 ## 작은 미리보기와 고정 이미지
 
 ![미리보기](screenshots/preview.png)
