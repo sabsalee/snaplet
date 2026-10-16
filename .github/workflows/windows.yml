@@ -19,6 +19,11 @@ jobs:
       - name: OCR runtime check
         shell: pwsh
         run: ./scripts/test-windows.ps1 -Ocr
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Snaplet-Visual-Review
+          path: artifacts/smoke-results/
       - name: Installed update and restart check
         shell: pwsh
         run: ./scripts/test-installed-update.ps1

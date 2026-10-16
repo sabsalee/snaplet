@@ -142,7 +142,7 @@ public sealed class EditorWindow : Window
         Closing+=(_,e)=>{if(closeOnDismiss){closingForExit=true;return;}if(!closingForExit){e.Cancel=true;if(!FinishTextEdit(true))return;Hide();}};
         Closed+=(_,_)=>closingForExit=true;
         Loaded+=(_,_)=>{Fit();surface.Selected=document.Annotations.FirstOrDefault()?.Id;surface.Focus();SyncInspector();};
-        undoButton.IsEnabled=redoButton.IsEnabled=false;
+        undoButton.IsEnabled=document.CanUndo;redoButton.IsEnabled=document.CanRedo;
         void UpdateZoom()=>zoomButton.Content=$"{surface.Zoom*VisualTreeHelper.GetDpi(surface).DpiScaleX:P0}";
         surface.LayoutUpdated+=(_,_)=>UpdateZoom();
     }
@@ -318,7 +318,11 @@ public sealed class EditorWindow : Window
             System.Windows.Automation.AutomationProperties.SetName(button,preset.Name);
             button.Click+=(_,_)=>{surface.Ink=preset.Color;surface.Thickness=preset.Size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,preset.Size,preset.Style);popup.IsOpen=false;SyncInspector();surface.Focus();};panel.Children.Add(button);
         }
-        popup.Child=new Border {Child=panel,Background=PanelBrush,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(8)};popup.IsOpen=true;
+        popup.Child=new Border {Child=panel,Background=PanelBrush,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(8)};
+        KeyboardNavigation.SetTabNavigation(panel,KeyboardNavigationMode.Cycle);
+        popup.Opened+=(_,_)=>panel.Children.OfType<Button>().FirstOrDefault()?.Focus();
+        panel.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){popup.IsOpen=false;anchor.Focus();e.Handled=true;}};
+        popup.IsOpen=true;
     }
     private void StyleButtons(AnnotationKind kind,(string Label,AnnotationStyle Style)[] choices)
     {
