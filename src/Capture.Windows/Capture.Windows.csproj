@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Snaplet</AssemblyName>
+    <Product>Snaplet</Product>
+    <Title>Snaplet</Title>
+    <Version>0.7.0</Version>
+    <StartupObject>Capture.Windows.Program</StartupObject>
+    <Description>Local screenshots and annotations for Windows 11</Description>
+    <RootNamespace>Capture.Windows</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Capture.Core/Capture.Core.csproj" /></ItemGroup>
+  <ItemGroup><PackageReference Include="Tesseract" Version="5.2.0" /><PackageReference Include="Velopack" Version="1.2.161" /></ItemGroup>
+  <ItemGroup><Content Include="../../assets/tessdata/**/*" Link="tessdata/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Content Include="../../assets/licenses/**/*" Link="licenses/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+</Project>

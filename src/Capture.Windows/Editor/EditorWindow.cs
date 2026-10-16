@@ -1,0 +1,493 @@
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Capture.Core;
+using Microsoft.Win32;
+using Capture.Windows.UI;
+using Capture.Windows.Platform;
+
+namespace Capture.Windows.Editor;
+
+/// <summary>Source pixels and editable objects survive hiding and reopening this window.</summary>
+public sealed class EditorWindow : Window
+{
+    private readonly BitmapSource source;
+    private readonly EditableDocument document;
+    private readonly EditorSurface surface;
+    private readonly ScrollViewer scroll;
+    private readonly Grid stage=new();
+    private readonly Canvas textLayer=new();
+    private readonly WrapPanel propertyControls=new();
+    private readonly Border inspector;
+    private readonly TextBlock status=new(),dimensions=new();
+    private readonly List<(AnnotationKind? Kind,Button Button)> toolButtons=[];
+    private readonly Button undoButton,redoButton;
+    private readonly Dictionary<AnnotationKind,(ColorRgba Color,double Size,AnnotationStyle Style)> toolStyles=[];
+    private readonly CheckBox hideAfterExport=new() {Content="복사·저장 후 숨기기"};
+    private bool fitMode=true,syncingControls,closingForExit;
+    private int revision;
+    private int exporting;
+    internal bool IsExporting=>exporting>0;
+    private TextBox? textEditor;
+    private Annotation? editingText;
+    private bool newText,composingText;
+    private Guid? selectionBeforeTextEdit;
+    private readonly HashSet<Key> nudgeKeys=[];
+    internal TextBox? ActiveTextEditor=>textEditor;
+    private string? savedPath;
+    public long EstimatedImageBytes => (long)source.PixelWidth*source.PixelHeight*4 + document.RetainedImageBytes*2;
+    public event Action<BitmapSource>? OcrRequested;
+    public event Func<Task>? AddCaptureRequested;
+    public event Action<BitmapSource>? RasterizedRequested;
+    public event Action<BitmapSource>? PinRequested;
+    private static readonly Brush PanelBrush=Ui.Card;
+    private static readonly Brush MutedBrush=Ui.Muted;
+
+    public EditorWindow(BitmapSource image,EditableDocument? existingDocument=null)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        source=image.IsFrozen?image:BitmapFrame.Create(image);if(source.CanFreeze && !source.IsFrozen)source.Freeze();
+        document=existingDocument ?? new(source.PixelWidth,source.PixelHeight);
+        if(document.Width!=source.PixelWidth || document.Height!=source.PixelHeight)throw new ArgumentException("문서와 이미지 크기가 다릅니다.");
+        surface=new(source,document) {HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
+        Title="Snaplet — 이미지 편집";Width=1180;Height=800;MinWidth=700;MinHeight=450;
+        Background=Ui.Page;Foreground=Ui.Text;FontFamily=new FontFamily("Segoe UI");
+        var root=new DockPanel();Content=root;
+        var toolbar=new DockPanel {Background=PanelBrush,LastChildFill=true,Height=58};DockPanel.SetDock(toolbar,Dock.Top);root.Children.Add(toolbar);
+        var actions=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,6,0)};DockPanel.SetDock(actions,Dock.Left);toolbar.Children.Add(actions);
+        ToolButton(actions,"⧉","복사 · Ctrl+C",async()=>await CopyAsync());
+        ToolButton(actions,"↧","저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(false));
+        ToolButton(actions,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(ImageRenderer.Render(source,document));});
+        undoButton=ToolButton(actions,"↶","실행 취소 · Ctrl+Z",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Undo();});
+        redoButton=ToolButton(actions,"↷","다시 실행 · Ctrl+Y",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Redo();});
+        var info=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};DockPanel.SetDock(info,Dock.Right);toolbar.Children.Add(info);
+        dimensions.Foreground=MutedBrush;dimensions.Margin=new Thickness(12,0,12,0);dimensions.VerticalAlignment=VerticalAlignment.Center;info.Children.Add(dimensions);
+        var zoomButton=ToolButton(info,"100%","확대율 · 클릭하여 보기 옵션",()=>{});
+        zoomButton.Click+=(_,_)=>{
+            var menu=new ContextMenu();Item(menu,"화면 맞춤 · Ctrl+0",()=>{fitMode=true;Fit();});Item(menu,"100% · Ctrl+1",SetActualSize);
+            Item(menu,"확대 · Ctrl++",()=>ChangeZoom(1.25));Item(menu,"축소 · Ctrl+-",()=>ChangeZoom(.8));
+            zoomButton.ContextMenu=menu;menu.PlacementTarget=zoomButton;menu.IsOpen=true;
+        };
+        zoomButton.MinWidth=64;
+        var toolStrip=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
+        toolbar.Children.Add(new ScrollViewer {Content=toolStrip,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
+        void Tool(string glyph,string tip,AnnotationKind? kind) {var b=ToolButton(toolStrip,glyph,tip,()=>SetTool(kind));toolButtons.Add((kind,b));}
+        Tool("↖","선택 · V",null);Tool("➜","화살표 · A",AnnotationKind.Arrow);Tool("T","텍스트 / 말풍선 · T",AnnotationKind.Text);
+        Tool("①","번호 / 포인터 · N",AnnotationKind.Step);Tool("▢","사각형 · R",AnnotationKind.Rectangle);Tool("○","타원 · O",AnnotationKind.Ellipse);
+        Tool("✎","펜 · P",AnnotationKind.Pen);Tool("▧","모자이크 · M",AnnotationKind.Pixelate);
+        var more=ToolButton(toolStrip,"···","도구 및 이미지 메뉴",()=>{});
+        toolStrip.Children.Remove(more);info.Children.Insert(0,more);
+        toolbar.SizeChanged+=(_,_)=>{
+            var slots=Math.Max(2,(int)((toolbar.ActualWidth-actions.ActualWidth-info.ActualWidth-18)/40));
+            for(int i=0;i<toolButtons.Count;i++)toolButtons[i].Button.Visibility=i<slots?Visibility.Visible:Visibility.Collapsed;
+        };
+        more.Click+=(_,_)=>{
+            var menu=new ContextMenu();
+            foreach(var entry in toolButtons.Where(x=>x.Button.Visibility==Visibility.Collapsed)) {
+                var kind=entry.Kind;Item(menu,entry.Button.ToolTip?.ToString() ?? ToolName(kind),()=>SetTool(kind));
+            }
+            Item(menu,"돋보기 · G",()=>SetTool(AnnotationKind.Magnifier));Item(menu,"Spotlight · S",()=>SetTool(AnnotationKind.Spotlight));
+            Item(menu,"캡처 추가 · Ctrl+Shift+A",()=>_=CaptureIntoDocumentAsync());Item(menu,"이미지 붙여넣기 · Ctrl+V",PasteImage);Item(menu,"이미지 파일 추가 · Ctrl+O",InsertImageFile);
+            Item(menu,"선 · L",()=>SetTool(AnnotationKind.Line));Item(menu,"형광펜 · H",()=>SetTool(AnnotationKind.Highlight));
+            Item(menu,"흐림 · B",()=>SetTool(AnnotationKind.Blur));Item(menu,"Erase · E",()=>SetTool(AnnotationKind.Erase));Item(menu,"불투명 가림",()=>SetTool(AnnotationKind.Solid));
+            menu.Items.Add(new Separator());Item(menu,"자르기 / 선택 · C",StartCrop);Item(menu,"전체 캔버스 보기",()=>{if(!FinishTextEdit(true))return;surface.ClearCrop();document.ResetCrop();});
+            var snapping=new MenuItem {Header="객체 가장자리·중심에 맞추기 · Ctrl 일시 해제",IsCheckable=true,IsChecked=surface.SnapToObjects};
+            snapping.Click+=(_,_)=>surface.SnapToObjects=snapping.IsChecked;menu.Items.Add(snapping);
+            Item(menu,"선택 객체 복제 · Ctrl+D",surface.DuplicateSelected);Item(menu,"선택 객체 삭제 · Delete",surface.DeleteSelected);
+            menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));
+            Item(menu,"텍스트 추출",()=>{if(!FinishTextEdit(true))return;OcrRequested?.Invoke(ImageRenderer.Render(source,document));});
+            Item(menu,"합쳐서 새 편집창",()=>{if(!FinishTextEdit(true))return;RasterizedRequested?.Invoke(ImageRenderer.Render(source,document));});
+            more.ContextMenu=menu;menu.PlacementTarget=more;menu.IsOpen=true;
+        };
+        var footer=new DockPanel {Background=PanelBrush,Height=30};DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
+        hideAfterExport.Content="복사·저장 후 숨기기";hideAfterExport.IsChecked=true;hideAfterExport.FontSize=11;hideAfterExport.Margin=new Thickness(8,3,10,0);DockPanel.SetDock(hideAfterExport,Dock.Right);footer.Children.Add(hideAfterExport);
+        status.Margin=new Thickness(12,5,4,0);status.FontSize=11;status.Foreground=MutedBrush;footer.Children.Add(status);
+        var workspace=new Grid {Background=CanvasBrush()};root.Children.Add(workspace);
+        stage.Children.Add(surface);stage.Children.Add(textLayer);
+        scroll=new ScrollViewer {Content=stage,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
+        inspector=new Border {Background=PanelBrush,CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),BorderBrush=Ui.Line,Padding=new Thickness(10),Margin=new Thickness(14),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Top,MaxWidth=510,Visibility=Visibility.Collapsed,Child=propertyControls};workspace.Children.Add(inspector);
+        Point? panStart=null;double panX=0,panY=0;
+        scroll.PreviewMouseDown+=(_,e)=>{
+            if(textEditor!=null)return;
+            if(e.ChangedButton!=MouseButton.Right && !(e.ChangedButton==MouseButton.Left && Keyboard.IsKeyDown(Key.Space)))return;
+            surface.CancelGesture();panStart=e.GetPosition(scroll);panX=scroll.HorizontalOffset;panY=scroll.VerticalOffset;scroll.CaptureMouse();e.Handled=true;
+        };
+        scroll.PreviewMouseMove+=(_,e)=>{if(panStart is Point p){var at=e.GetPosition(scroll);scroll.ScrollToHorizontalOffset(panX+p.X-at.X);scroll.ScrollToVerticalOffset(panY+p.Y-at.Y);e.Handled=true;}};
+        scroll.PreviewMouseUp+=(_,e)=>{if(panStart!=null){panStart=null;scroll.ReleaseMouseCapture();e.Handled=true;}};
+        scroll.LostMouseCapture+=(_,_)=>panStart=null;
+        var edgePan=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(20)};
+        edgePan.Tick+=(_,_)=>{
+            if(!surface.IsDragging || !surface.IsMouseCaptured || Mouse.LeftButton!=MouseButtonState.Pressed){edgePan.Stop();return;}
+            PanDragAt(Mouse.GetPosition(scroll));
+        };
+        surface.MouseMove+=(_,_)=>{if(surface.IsDragging && surface.IsMouseCaptured)edgePan.Start();};
+        Deactivated+=(_,_)=>edgePan.Stop();Closed+=(_,_)=>edgePan.Stop();
+        scroll.SizeChanged+=(_,_)=>{if(fitMode)Fit();};
+        PreviewMouseWheel+=(_,e)=>{if(textEditor==null && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){ChangeZoom(e.Delta>0?1.25:.8,e.GetPosition(scroll));e.Handled=true;}};
+        document.Changed+=(_,_)=>{revision++;undoButton.IsEnabled=document.CanUndo;redoButton.IsEnabled=document.CanRedo;if(fitMode)Fit();SyncStage();UpdateStatus();SyncInspector();};
+        surface.OperationFailed+=message=>NoticeWindow.Alert(this,"편집 작업",message);
+        surface.SelectionChanged+=SyncInspector;surface.TextEditRequested+=BeginTextEdit;
+        PreviewKeyDown+=OnKey;
+        PreviewKeyUp+=(_,e)=>NudgeKeyUp(e.Key);
+        surface.LostKeyboardFocus+=(_,_)=>FinishNudge();
+        Deactivated+=(_,_)=>FinishNudge();
+        PreviewMouseDown+=(_,e)=>{FinishNudge();if(textEditor!=null && !textEditor.IsMouseOver && !FinishTextEdit(true))e.Handled=true;};
+        Closing+=(_,e)=>{if(!closingForExit){e.Cancel=true;if(!FinishTextEdit(true))return;Hide();}};
+        Closed+=(_,_)=>closingForExit=true;
+        Loaded+=(_,_)=>{Fit();surface.Selected=document.Annotations.FirstOrDefault()?.Id;surface.Focus();SyncInspector();};
+        undoButton.IsEnabled=redoButton.IsEnabled=false;
+        void UpdateZoom()=>zoomButton.Content=$"{surface.Zoom*VisualTreeHelper.GetDpi(surface).DpiScaleX:P0}";
+        surface.LayoutUpdated+=(_,_)=>UpdateZoom();
+    }
+    private static Brush CanvasBrush()
+    {
+        var drawing=new DrawingGroup();
+        using(var dc=drawing.Open()) {
+            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(49,52,55)),null,new Rect(0,0,20,20));
+            var alternate=new SolidColorBrush(Color.FromRgb(55,58,61));
+            dc.DrawRectangle(alternate,null,new Rect(0,0,10,10));dc.DrawRectangle(alternate,null,new Rect(10,10,10,10));
+        }
+        var brush=new DrawingBrush(drawing){TileMode=TileMode.Tile,ViewportUnits=BrushMappingMode.Absolute,Viewport=new Rect(0,0,20,20)};brush.Freeze();return brush;
+    }
+    private static Button ToolButton(Panel parent,string glyph,string tip,Action action)
+    {
+        var button=new Button {Content=Ui.Icon(glyph),ToolTip=tip,MinWidth=36,Height=36,Margin=new Thickness(2),Padding=new Thickness(7,2,7,2),FontSize=21,Background=Brushes.Transparent,Foreground=Brushes.White,BorderThickness=new Thickness(0),Cursor=Cursors.Hand};
+        button.Style=(Style)Application.Current.FindResource("EditorIconButton");
+        Ui.BindIcon((FrameworkElement)button.Content,button);
+        System.Windows.Automation.AutomationProperties.SetName(button,tip.Split('·')[0].Trim());
+        button.Click+=(_,_)=>action();parent.Children.Add(button);return button;
+    }
+    private static void Item(ContextMenu menu,string title,Action action){var item=new MenuItem {Header=title};item.Click+=(_,_)=>action();menu.Items.Add(item);}
+    private void SyncStage(){stage.Width=surface.Width;stage.Height=surface.Height;}
+    internal void PanDragAt(Point cursor)
+    {
+        if(!surface.IsDragging)return;
+        double Edge(double p,double size)=>p<28?-Math.Min(24,(28-p)*.6):p>size-28?Math.Min(24,(p-size+28)*.6):0;
+        var x=scroll.HorizontalOffset;var y=scroll.VerticalOffset;
+        scroll.ScrollToHorizontalOffset(x+Edge(cursor.X,scroll.ActualWidth-SystemParameters.VerticalScrollBarWidth));
+        scroll.ScrollToVerticalOffset(y+Edge(cursor.Y,scroll.ActualHeight-SystemParameters.HorizontalScrollBarHeight));
+        scroll.UpdateLayout();
+        if(scroll.HorizontalOffset!=x || scroll.VerticalOffset!=y)
+            surface.UpdatePointer(surface.PointerPosition(scroll.TranslatePoint(cursor,surface)),Keyboard.Modifiers);
+    }
+    private void SetTool(AnnotationKind? kind)
+    {
+        if(!FinishTextEdit(true))return;document.EndEdit();surface.CancelGesture();surface.ClearCrop();
+        if((surface.Selection?.Kind ?? surface.Tool) is AnnotationKind previous)toolStyles[previous]=(surface.Ink,surface.Thickness,surface.InkStyle);
+        if(kind is AnnotationKind next) {
+            var preset=toolStyles.GetValueOrDefault(next,(new ColorRgba(240,65,70,255),4d,new AnnotationStyle(Elliptical:next==AnnotationKind.Magnifier)));
+            surface.Ink=preset.Item1;surface.Thickness=preset.Item2;surface.InkStyle=preset.Item3;
+        }
+        surface.Tool=kind;surface.Selected=null;surface.Focus();SyncInspector();
+        status.Text=kind is null?"객체 선택·이동 · Alt+드래그 복제 · Delete 삭제":"드래그하여 그리기 · 흰 핸들로 굽힘·꼬리 수정 · Shift 각도/비율 · Esc 선택 모드";
+    }
+    private void StartCrop(){SetTool(null);if(textEditor!=null)return;surface.CropTool=true;SyncInspector();status.Text="범위 선택·재조정 → Enter 적용 · Esc 취소 · Shift 정사각형";}
+    private void SyncInspector()
+    {
+        if(syncingControls)return;
+        if(textEditor!=null){inspector.Visibility=Visibility.Collapsed;return;}
+        var a=surface.Selection;
+        if(a!=null){surface.Ink=a.Color;surface.Thickness=a.Thickness;surface.InkStyle=a.Appearance;}
+        foreach(var (kind,button) in toolButtons)button.Background=kind==surface.Tool?new SolidColorBrush(Color.FromRgb(68,75,82)):Brushes.Transparent;
+        // Preserve both mouse drags and keyboard adjustment of the active slider.
+        if(Mouse.Captured is Thumb || propertyControls.Children.OfType<Slider>().Any(control=>control.IsKeyboardFocusWithin))return;
+        propertyControls.Children.Clear();
+        inspector.Visibility=a!=null || surface.Tool!=null?Visibility.Visible:Visibility.Collapsed;
+        if(inspector.Visibility!=Visibility.Visible)return;
+        syncingControls=true;
+        try {
+            var kind=a?.Kind ?? surface.Tool;
+            var title=new TextBlock {Text=ToolName(kind),Margin=new Thickness(2,8,10,0),Foreground=MutedBrush,FontSize=11};propertyControls.Children.Add(title);
+            if(kind is not (AnnotationKind.Image or AnnotationKind.Spotlight or AnnotationKind.Erase or AnnotationKind.Blur or AnnotationKind.Pixelate)) {
+            var color=ToolButton(propertyControls,"●","색상 / 직접 HEX 입력",()=>{});color.Foreground=ImageRenderer.BrushOf(surface.Ink);
+            color.Click+=(_,_)=>ShowColors(color);
+            }
+            if(kind is not (AnnotationKind.Image or AnnotationKind.Spotlight or AnnotationKind.Erase)) {
+            var slider=new Slider {Minimum=1,Maximum=20,Value=surface.Thickness,Width=115,Margin=new Thickness(7,5,9,5),VerticalAlignment=VerticalAlignment.Center,ToolTip="크기 / 굵기 / 효과 강도"};propertyControls.Children.Add(slider);
+            slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
+            slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
+            slider.ValueChanged+=(_,_)=>{if(syncingControls)return;surface.Thickness=slider.Value;surface.ApplyStyle();};
+            }
+            if(kind==AnnotationKind.Magnifier) {
+                Choice(new[]{"사각 렌즈","원형 렌즈"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
+                ValueSlider("확대 배율",1,8,surface.InkStyle.Magnification,value=>{
+                    surface.InkStyle=surface.InkStyle with {Magnification=value};
+                    if(surface.Selection is Annotation lens) {var sample=AdvancedDrawing.SampleBounds(lens);surface.ChangeSelected(x=>x with {End=new(x.Start.X+sample.Width*value,x.Start.Y+sample.Height*value),Style=surface.InkStyle});}
+                });
+            }
+            if(kind==AnnotationKind.Spotlight) {
+                Choice(new[]{"사각 Spotlight","타원 Spotlight"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
+                ValueSlider("주변 어둡기 · 숫자 1–9",.1,.9,surface.InkStyle.Dim,value=>surface.SetSpotlightDim(value));
+            }
+            if(kind==AnnotationKind.Image)ValueSlider("이미지 불투명도",.05,1,surface.InkStyle.Opacity,value=>surface.InkStyle=surface.InkStyle with {Opacity=value});
+            if(kind==AnnotationKind.Highlight) {
+                Choice(new[]{"마커 선","자유 그리기","사각 영역"},(int)surface.InkStyle.HighlightShape,index=>surface.InkStyle=surface.InkStyle with {HighlightShape=(MarkerShape)index});
+                Choice(new[]{"평평한 마감","둥근 마감","손그림 마감"},(int)surface.InkStyle.MarkerCap,index=>surface.InkStyle=surface.InkStyle with {MarkerCap=(MarkerCap)index});
+            }
+            if(a!=null && kind is AnnotationKind.Erase or AnnotationKind.Blur or AnnotationKind.Pixelate) {
+                var textOnly=new Button {Content="텍스트만 처리",ToolTip="OCR로 찾은 글자 영역만 처리합니다",Margin=new Thickness(5),Padding=new Thickness(8,4,8,4)};
+                textOnly.Click+=async(_,_)=>{textOnly.IsEnabled=false;try{await ProcessTextOnlyAsync(a);}finally{textOnly.IsEnabled=true;}};propertyControls.Children.Add(textOnly);
+            }
+            if(kind==AnnotationKind.Arrow) {
+                StyleButtons(AnnotationKind.Arrow,new[]{("채운 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Filled}),("열린 곡선 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Open}),("가는 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Simple}),("양방향",surface.InkStyle with {ArrowHead=ArrowHead.Double})});
+                if(a!=null)ToolButton(propertyControls,"⇄","시작점과 끝점 반전",()=>surface.ChangeSelected(x=>x with {Start=x.End,End=x.Start}));
+            }
+            if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse)Choice(new[]{"테두리","반투명 채움","단색 채움","사선 채움"},(int)surface.InkStyle.Fill,index=>surface.InkStyle=surface.InkStyle with {Fill=(ShapeFill)index});
+            if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse) {
+                var sketch=new CheckBox {Content="손그림",IsChecked=surface.InkStyle.Sketch,Margin=new Thickness(8,8,4,0),ToolTip="살짝 휘어진 선과 부드러운 모서리"};propertyControls.Children.Add(sketch);
+                sketch.Click+=(_,_)=>{surface.InkStyle=surface.InkStyle with {Sketch=sketch.IsChecked==true};surface.ApplyStyle();};
+            }
+            if(kind==AnnotationKind.Text) {
+                Choice(new[]{"말풍선","일반 글자"},surface.InkStyle.Bubble?0:1,index=>surface.InkStyle=surface.InkStyle with {Bubble=index==0});
+                if(a!=null)ToolButton(propertyControls,"✎","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));
+            }
+            if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Step || kind==AnnotationKind.Text && surface.InkStyle.Bubble) {
+                var shapeTail=kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse;
+                var tail=new CheckBox {Content="말꼬리",IsChecked=shapeTail?surface.InkStyle.ShapeTail:surface.InkStyle.ShowTail,Margin=new Thickness(8,8,4,0),ToolTip="끝의 흰 핸들로 말꼬리를 움직이세요"};propertyControls.Children.Add(tail);
+                tail.Click+=(_,_)=>{surface.InkStyle=shapeTail?surface.InkStyle with {ShapeTail=tail.IsChecked==true}:surface.InkStyle with {ShowTail=tail.IsChecked==true};surface.ApplyStyle();SyncInspector();};
+            }
+            if(a?.Kind==AnnotationKind.Step) {
+                var value=new TextBox {Text=a.Text,Width=48,Padding=new Thickness(6,4,6,4),Margin=new Thickness(7,5,0,5),ToolTip="번호 0–99 · Enter 적용"};propertyControls.Children.Add(value);
+                value.KeyDown+=(_,e)=>{if(e.Key==Key.Enter && int.TryParse(value.Text,out int n) && n is >=0 and <=99){surface.ChangeSelected(x=>x with {Text=n.ToString()});surface.Focus();e.Handled=true;}};
+            }
+        } finally {syncingControls=false;}
+        void ValueSlider(string label,double minimum,double maximum,double value,Action<double> update) {
+            var caption=new TextBlock {Text=label.Split('·')[0].Trim(),FontSize=11,Foreground=MutedBrush,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5)};propertyControls.Children.Add(caption);
+            var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=110,Margin=new Thickness(6),ToolTip=label,VerticalAlignment=VerticalAlignment.Center};
+            System.Windows.Automation.AutomationProperties.SetName(control,label);propertyControls.Children.Add(control);
+            control.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
+            control.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
+            control.ValueChanged+=(_,_)=>{if(syncingControls)return;try{update(control.Value);surface.ApplyStyle();}catch(Exception error) when(error is InvalidOperationException or ArgumentException){document.CancelEdit();status.Text=error.Message;SyncInspector();}};
+        }
+        void Choice(string[] labels,int selected,Action<int> update) {
+            var combo=new ComboBox {ItemsSource=labels,SelectedIndex=selected,MinWidth=90,Margin=new Thickness(4),VerticalAlignment=VerticalAlignment.Center};propertyControls.Children.Add(combo);
+            combo.SelectionChanged+=(_,_)=>{if(syncingControls || combo.SelectedIndex<0)return;update(combo.SelectedIndex);surface.ApplyStyle();};
+        }
+    }
+    private void StyleButtons(AnnotationKind kind,(string Label,AnnotationStyle Style)[] choices)
+    {
+        foreach(var (label,style) in choices) {
+            var group=new DrawingGroup();
+            using(var dc=group.Open()) {
+                var sample=new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),kind,new(3,14),new(35,14),new(240,242,246),1.6,Style:style);
+                ImageRenderer.PaintAnnotation(dc,source,sample);
+            }
+            var button=new Button {Content=new Image {Source=new DrawingImage(group),Width=32,Height=22,Stretch=Stretch.Uniform},ToolTip=label,Width=40,Height=34,Padding=new Thickness(4),Margin=new Thickness(1,3,1,3),Background=style.ArrowHead==surface.InkStyle.ArrowHead?(Brush)Application.Current.FindResource("AccentFillBrush"):Brushes.Transparent};
+            System.Windows.Automation.AutomationProperties.SetName(button,label);
+            button.Click+=(_,_)=>{surface.InkStyle=style;surface.ApplyStyle();SyncInspector();};propertyControls.Children.Add(button);
+        }
+    }
+    private static string ToolName(AnnotationKind? kind)=>kind switch {AnnotationKind.Magnifier=>"돋보기",AnnotationKind.Spotlight=>"Spotlight",AnnotationKind.Image=>"추가 이미지",AnnotationKind.Erase=>"Erase",AnnotationKind.Arrow=>"화살표",AnnotationKind.Text=>"텍스트",AnnotationKind.Step=>"번호",AnnotationKind.Rectangle=>"사각형",AnnotationKind.Ellipse=>"타원",AnnotationKind.Pen=>"펜",AnnotationKind.Line=>"선",AnnotationKind.Pixelate=>"모자이크",AnnotationKind.Blur=>"흐림",AnnotationKind.Highlight=>"형광펜",_=>"가림"};
+    private void ShowColors(Button anchor)
+    {
+        var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true};
+        var panel=new StackPanel();popup.Child=new Border {Background=PanelBrush,Padding=new Thickness(10),CornerRadius=new CornerRadius(6),Child=panel};
+        var palette=new WrapPanel {Width=220};panel.Children.Add(palette);
+        foreach(var c in new[]{Colors.Crimson,Colors.Red,Colors.Orange,Colors.Gold,Colors.LimeGreen,Colors.Teal,Colors.DodgerBlue,Colors.MediumPurple,Colors.Black,Colors.DimGray,Colors.White,Colors.LightGray}) {
+            var button=new Button {Style=(Style)Application.Current.FindResource("SwatchButton"),Background=new SolidColorBrush(c),Width=30,Height=28,Margin=new Thickness(3),BorderThickness=new Thickness(1),ToolTip=c.ToString()};palette.Children.Add(button);
+            button.Click+=(_,_)=>{surface.Ink=new(c.R,c.G,c.B,c.A);surface.ApplyStyle();popup.IsOpen=false;SyncInspector();};
+        }
+        var hex=new TextBox {Text=$"#{surface.Ink.R:X2}{surface.Ink.G:X2}{surface.Ink.B:X2}",Margin=new Thickness(3,8,3,3),ToolTip="#RRGGBB 또는 #AARRGGBB · Enter 적용"};panel.Children.Add(hex);
+        hex.KeyDown+=(_,e)=>{if(e.Key!=Key.Enter)return;try {var c=(Color)ColorConverter.ConvertFromString(hex.Text);surface.Ink=new(c.R,c.G,c.B,c.A);surface.ApplyStyle();popup.IsOpen=false;SyncInspector();}catch(FormatException){hex.ToolTip="색상 형식을 확인하세요: #FF6633";}e.Handled=true;};
+        popup.IsOpen=true;
+    }
+    internal void BeginTextEdit(Annotation a,bool create)
+    {
+        if(!FinishTextEdit(true))return;if(textEditor!=null)return;surface.CancelGesture();selectionBeforeTextEdit=surface.Selected;editingText=a;newText=create;composingText=false;surface.Selected=create?null:a.Id;
+        surface.SetTextEditing(create?null:a.Id);
+        textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=a.Text,MaxLength=8192,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
+            Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=a.Appearance.Bubble?ImageRenderer.BrushOf(a.Color):Brushes.White,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
+        textLayer.Children.Add(textEditor);UpdateTextEditorLayout();
+        textEditor.TextChanged+=(_,_)=>UpdateTextEditorLayout();
+        TextCompositionManager.AddPreviewTextInputStartHandler(textEditor,(_,_)=>composingText=true);
+        TextCompositionManager.AddPreviewTextInputHandler(textEditor,(_,_)=>composingText=false);
+        textEditor.PreviewKeyDown+=(_,e)=>{if(composingText)return;if(e.Key==Key.Escape){FinishTextEdit(false);e.Handled=true;}else if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){FinishTextEdit(true);e.Handled=true;}};
+        textEditor.Focus();textEditor.CaretIndex=textEditor.Text.Length;SyncInspector();
+        status.Text="이미지 위에 입력하세요 · Enter 줄바꿈 · Ctrl+Enter 완료 · Esc 취소";
+    }
+    private void UpdateTextEditorLayout()
+    {
+        if(textEditor is null || editingText is not Annotation a)return;
+        var z=surface.Zoom;var preview=a with {Text=textEditor.Text};
+        var b=ImageRenderer.TextBounds(preview);
+        textEditor.FontSize=Math.Max(14,a.Thickness*5)*z;
+        textEditor.Padding=a.Appearance.Bubble?new Thickness(10*z,8*z,10*z,8*z):new Thickness(0);
+        textEditor.Width=b.Width*z+4;textEditor.Height=Math.Min(32768,b.Height)*z+4;
+        textEditor.VerticalScrollBarVisibility=b.Height>32768?ScrollBarVisibility.Auto:ScrollBarVisibility.Hidden;
+        Canvas.SetLeft(textEditor,(b.X-document.Crop.X)*z-2);Canvas.SetTop(textEditor,(b.Y-document.Crop.Y)*z-2);
+        // The editable layer may grow while typing; the image and document are unchanged until commit.
+        textLayer.Width=Math.Max(surface.Width,(b.Right-document.Crop.X)*z+4);
+        textLayer.Height=Math.Max(surface.Height,(b.Y-document.Crop.Y)*z+textEditor.Height+4);
+        stage.Width=Math.Max(surface.Width,textLayer.Width);stage.Height=Math.Max(surface.Height,textLayer.Height);
+    }
+    internal bool FinishTextEdit(bool commit)
+    {
+        FinishNudge();
+        if(textEditor==null || editingText is not Annotation a)return true;
+        if(commit && composingText){status.Text="한글 조합을 끝낸 뒤 다시 완료하세요.";textEditor.Focus();return false;}
+        var value=textEditor.Text;
+        try {
+            if(commit) {
+                if(!string.IsNullOrWhiteSpace(value)) {
+                    // Keep the width used during typing, including an existing manually resized body.
+                    var updated=a with {Text=value};
+                    if(newText) {
+                        var bounds=ImageRenderer.TextBounds(updated);var crop=document.Crop;
+                        var tipY=bounds.Bottom+18<=crop.Bottom?bounds.Bottom+18:Math.Max(crop.Y,bounds.Top-18);
+                        updated=updated with {Tail=new(bounds.X+bounds.Width*.35,tipY)};
+                    }
+                    surface.CommitText(updated,newText);surface.Selected=a.Id;
+                } else if(!newText)document.Delete(a.Id);
+            }
+        } catch(Exception error) when(error is ArgumentException or InvalidOperationException or OverflowException) {status.Text=error.Message;UpdateTextEditorLayout();textEditor.Focus();return false;}
+        textLayer.Children.Clear();textLayer.ClearValue(WidthProperty);textLayer.ClearValue(HeightProperty);textEditor=null;editingText=null;composingText=false;surface.SetTextEditing(null);
+        if(!commit)surface.Selected=selectionBeforeTextEdit;
+        SyncStage();if(fitMode)Fit();surface.Focus();SyncInspector();return true;
+    }
+    private void Fit()
+    {
+        if(textEditor!=null || scroll.ViewportWidth<=1 || scroll.ViewportHeight<=1)return;
+        surface.SetZoom(Math.Min(1,Math.Min(Math.Max(1,scroll.ViewportWidth-60)/document.Crop.Width,Math.Max(1,scroll.ViewportHeight-60)/document.Crop.Height)));SyncStage();UpdateStatus();
+    }
+    private void SetActualSize()=>ZoomAt(1/VisualTreeHelper.GetDpi(surface).DpiScaleX,new(scroll.ActualWidth/2,scroll.ActualHeight/2));
+    private void ChangeZoom(double factor,Point? anchor=null)=>ZoomAt(surface.Zoom*factor,anchor ?? new Point(scroll.ActualWidth/2,scroll.ActualHeight/2));
+    internal void ZoomAt(double zoom,Point anchor)
+    {
+        if(!FinishTextEdit(true))return;surface.CancelGesture();scroll.UpdateLayout();
+        var before=scroll.TranslatePoint(anchor,surface);var oldZoom=surface.Zoom;
+        fitMode=false;surface.SetZoom(zoom);SyncStage();scroll.UpdateLayout();
+        var after=surface.TranslatePoint(new Point(before.X/oldZoom*surface.Zoom,before.Y/oldZoom*surface.Zoom),scroll);
+        scroll.ScrollToHorizontalOffset(scroll.HorizontalOffset+after.X-anchor.X);
+        scroll.ScrollToVerticalOffset(scroll.VerticalOffset+after.Y-anchor.Y);
+        scroll.UpdateLayout();UpdateStatus();
+    }
+    internal void NudgeKeyDown(Key key,bool shift)
+    {
+        if(surface.Selection is null)return;
+        if(nudgeKeys.Count==0){surface.CancelGesture();document.BeginEdit();}
+        nudgeKeys.Add(key);var step=shift?10:1;
+        surface.Nudge(key==Key.Left?-step:key==Key.Right?step:0,key==Key.Up?-step:key==Key.Down?step:0);
+    }
+    internal void NudgeKeyUp(Key key){if(nudgeKeys.Count==1 && nudgeKeys.Contains(key))FinishNudge();else nudgeKeys.Remove(key);}
+    private void FinishNudge(){if(nudgeKeys.Count==0)return;nudgeKeys.Clear();document.EndEdit();}
+    private void UpdateStatus(){dimensions.Text=$"{document.Crop.Width:0}×{document.Crop.Height:0}";status.Text=$"{document.Annotations.Count}개 주석 · Ctrl+휠 확대 · Space / 오른쪽 드래그 이동 · C 자르기 · V 선택";}
+    private void OnKey(object sender,KeyEventArgs e)
+    {
+        if(e.OriginalSource is TextBox || textEditor!=null || IsPropertyInput(e.OriginalSource as DependencyObject))return;
+        if(e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down))FinishNudge();
+        var ctrl=Keyboard.Modifiers.HasFlag(ModifierKeys.Control);var shift=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        if(ctrl) {
+            switch(e.Key) {
+                case Key.Z:surface.CancelGesture();if(shift)document.Redo();else document.Undo();break;
+                case Key.Y:surface.CancelGesture();document.Redo();break;
+                case Key.V:PasteImage();break;case Key.O:InsertImageFile();break;
+                case Key.A:if(shift)_=CaptureIntoDocumentAsync();else return;break;
+                case Key.Enter:if(surface.Selection is {Kind:AnnotationKind.Highlight})surface.ChangeSelected(a=>a with {Style=a.Appearance with {MarkerCap=(MarkerCap)(((int)a.Appearance.MarkerCap+1)%3)}});else return;break;
+                case Key.C:_=CopyAsync();break;case Key.S:Save(shift);break;
+                case Key.D:surface.DuplicateSelected();break;
+                case Key.D0:fitMode=true;Fit();break;case Key.D1:SetActualSize();break;
+                case Key.OemPlus:case Key.Add:ChangeZoom(1.25);break;case Key.OemMinus:case Key.Subtract:ChangeZoom(.8);break;
+                default:return;
+            }
+            e.Handled=true;return;
+        }
+        switch(e.Key) {
+            case Key.Delete:surface.DeleteSelected();break;
+            case Key.Escape:SetTool(null);break;case Key.Enter:surface.ApplyCrop();break;
+            case Key.V:SetTool(null);break;case Key.A:SetTool(AnnotationKind.Arrow);break;case Key.L:SetTool(AnnotationKind.Line);break;
+            case Key.R:SetTool(AnnotationKind.Rectangle);break;case Key.O:SetTool(AnnotationKind.Ellipse);break;case Key.P:SetTool(AnnotationKind.Pen);break;
+            case Key.T:SetTool(AnnotationKind.Text);break;case Key.N:SetTool(AnnotationKind.Step);break;case Key.H:SetTool(AnnotationKind.Highlight);break;
+            case Key.G:SetTool(AnnotationKind.Magnifier);break;case Key.S:SetTool(AnnotationKind.Spotlight);break;case Key.E:SetTool(AnnotationKind.Erase);break;
+            case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;
+            case Key.Left:case Key.Right:case Key.Up:case Key.Down:NudgeKeyDown(e.Key,shift);break;
+            default:return;
+        }
+        e.Handled=true;
+    }
+    private static bool IsPropertyInput(DependencyObject? target)
+    {
+        while(target!=null) {
+            if(target is ComboBox or ComboBoxItem or Slider)return true;
+            target=target is Visual?VisualTreeHelper.GetParent(target):LogicalTreeHelper.GetParent(target);
+        }
+        return false;
+    }
+    private async Task ProcessTextOnlyAsync(Annotation selected)
+    {
+        try {
+            if(!FinishTextEdit(true))return;document.EndEdit();
+            var capturedRevision=revision;
+            var region=selected.Bounds.Intersect(document.Canvas);
+            if(region.IsEmpty)return;
+            var snapshot=new EditableDocument(source.PixelWidth,source.PixelHeight);snapshot.ExpandToInclude(document.Canvas);
+            foreach(var a in document.Annotations.Where(a=>a.Id!=selected.Id && a.Kind!=AnnotationKind.Spotlight))snapshot.Add(a);
+            snapshot.CropTo(region);var image=ImageRenderer.Render(source,snapshot);
+            status.Text="처리할 글자 영역을 찾는 중…";
+            var boxes=await TesseractOcr.FindTextRegionsAsync(image);
+            if(revision!=capturedRevision || surface.Selected!=selected.Id || document.Annotations.FirstOrDefault(a=>a.Id==selected.Id)!=selected){status.Text="선택 영역이 바뀌어 텍스트 처리를 취소했습니다.";return;}
+            ApplyTextRegions(selected,region,boxes);
+        } catch(Exception error){ShowError("텍스트 영역 처리",error);}
+    }
+    internal void ApplyTextRegions(Annotation selected,RectD region,IReadOnlyList<Rect> boxes)
+    {
+        if(document.Annotations.FirstOrDefault(a=>a.Id==selected.Id)!=selected)return;
+        var rectangles=boxes.Select(box=>new RectD(Math.Floor(region.X)+box.X-2,Math.Floor(region.Y)+box.Y-2,box.Width+4,box.Height+4).Intersect(region)).Where(r=>!r.IsEmpty).ToArray();
+        if(rectangles.Length>200)throw new InvalidOperationException("문자 영역이 너무 많습니다. 더 작은 영역에서 처리해 주세요.");
+        if(rectangles.Length==0){status.Text="인식된 글자가 없어 기존 효과를 유지했습니다.";return;}
+        document.BeginEdit();
+        try {
+            document.Delete(selected.Id);Guid? first=null;
+            foreach(var r in rectangles) {var id=Guid.NewGuid();first??=id;document.Add(selected with {Id=id,Start=new(r.X,r.Y),End=new(r.Right,r.Bottom)});}
+            document.EndEdit();surface.Selected=first;surface.Focus();SyncInspector();status.Text=$"{rectangles.Length}개 글자 영역만 처리했습니다 · Ctrl+Z 취소";
+        } catch {document.CancelEdit();throw;}
+    }
+    public void AddCapturedImage(BitmapSource image)
+    {
+        if(!FinishTextEdit(true))return;surface.CancelGesture();surface.InsertImage(image);status.Text="이미지를 추가했습니다 · 핸들로 크기 조절 · Ctrl+Z 취소";
+    }
+    private void PasteImage()
+    {
+        try {if(Clipboard.GetImage() is BitmapSource image)AddCapturedImage(image);else if(Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList().Cast<string>().FirstOrDefault(path=>new[]{".png",".jpg",".jpeg",".bmp",".tif",".tiff",".gif"}.Contains(Path.GetExtension(path).ToLowerInvariant())) is string path)AddCapturedImage(ImageActions.Load(path));else status.Text="클립보드에 이미지가 없습니다.";}
+        catch(Exception error){ShowError("이미지 붙여넣기",error);}
+    }
+    private void InsertImageFile()
+    {
+        var dialog=new OpenFileDialog {Filter="이미지|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif"};
+        if(dialog.ShowDialog(this)!=true)return;
+        try {AddCapturedImage(ImageActions.Load(dialog.FileName));}catch(Exception error){ShowError("이미지 추가",error);}
+    }
+    private async Task CaptureIntoDocumentAsync()
+    {
+        if(!FinishTextEdit(true))return;surface.CancelGesture();
+        if(AddCaptureRequested is null){status.Text="캡처 추가는 실행 중인 Snaplet에서 사용할 수 있습니다.";return;}
+        try {await AddCaptureRequested.Invoke();}catch(Exception error){ShowError("캡처 추가",error);}
+    }
+    private async Task CopyAsync()
+    {
+        if(!FinishTextEdit(true))return;document.EndEdit();exporting++;
+        try {
+            var copied=revision;var bitmap=ImageRenderer.Render(source,document);
+            if(!await ImageActions.CopyAsync(bitmap)){status.Text="더 최근 복사 요청이 있어 취소했습니다.";return;}
+            status.Text="편집 이미지를 복사했습니다.";if(revision==copied && hideAfterExport.IsChecked==true)Hide();
+        }catch(Exception ex){ShowError("이미지 복사 실패",ex);}
+        finally {exporting--;}
+    }
+    private void Save(bool saveAs)
+    {
+        if(!FinishTextEdit(true))return;document.EndEdit();var path=savedPath;
+        if(saveAs || path==null) {
+            var dialog=new SaveFileDialog {Filter="PNG 이미지 (*.png)|*.png|JPEG 이미지 (*.jpg)|*.jpg",FileName=path ?? $"Snaplet_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png",AddExtension=true,OverwritePrompt=true};
+            if(dialog.ShowDialog(this)!=true)return;path=dialog.FileName;
+        }
+        try {ImageActions.Save(ImageRenderer.Render(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport.IsChecked==true)Hide();}
+        catch(Exception ex){ShowError("이미지 저장 실패",ex);}
+    }
+    public void ShowDocument(){Show();Activate();if(textEditor!=null)textEditor.Focus();else surface.Focus();}
+    public void CloseForExit(){closingForExit=true;Close();}
+    private void ShowError(string title,Exception ex)=>NoticeWindow.Alert(this,title,ex.Message);
+}

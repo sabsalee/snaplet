@@ -1,0 +1,12 @@
+.build/
+dist/
+.DS_Store
+.tools/
+**/bin/
+**/obj/
+artifacts/
+smoke-results/
+*.user
+.env
+.env.*
+!.env.example

@@ -1,0 +1,49 @@
+name: Windows build and renderer checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Build, test and package
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - name: OCR runtime check
+        shell: pwsh
+        run: ./scripts/test-windows.ps1 -Ocr
+      - name: Installed update and restart check
+        shell: pwsh
+        run: ./scripts/test-installed-update.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Snaplet-Windows-x64-and-results
+          path: |
+            artifacts/Snaplet-Windows-x64.zip
+            artifacts/smoke-results/
+            artifacts/updates/
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'sabsalee/snaplet'
+    needs: windows
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: Snaplet-Windows-x64-and-results
+          path: artifacts
+      - name: Publish verified release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-release.ps1 -Tag '${{ github.ref_name }}'
