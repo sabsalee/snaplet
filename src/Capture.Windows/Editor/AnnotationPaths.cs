@@ -208,14 +208,26 @@ internal static class AnnotationPaths
             var y = dy < 0 ? body.Top : body.Bottom;
             anchor = new(Math.Clamp(center.X + dx * (y - center.Y) / dy, body.Left + half, body.Right - half), y);
         }
-        Point Root(Point point) {
+        // Keep both shoulders on a straight edge when there is room. Rounded ends
+        // use their actual contour tangent, so a tail never kinks at a corner.
+        var lowEdge=normal.X!=0?body.Top:body.Left;
+        var highEdge=normal.X!=0?body.Bottom:body.Right;
+        var straight=highEdge-lowEdge-2*corner;
+        if(straight>1) {
+            half=Math.Min(half,straight*.45);
+            if(normal.X!=0)anchor.Y=Math.Clamp(tip.Y,lowEdge+corner+half,highEdge-corner-half);
+            else anchor.X=Math.Clamp(tip.X,lowEdge+corner+half,highEdge-corner-half);
+        }
+        (Point Point,Vector Tangent) Root(Point point) {
             var along=normal.X!=0?point.Y:point.X;
             var low=normal.X!=0?body.Top:body.Left;var high=normal.X!=0?body.Bottom:body.Right;
-            var offset=Math.Max(0,Math.Max(low+corner-along,along-(high-corner)));
-            var inset=corner-Math.Sqrt(Math.Max(0,corner*corner-offset*offset));
-            return point-normal*(inset+.15);
+            var signedOffset=along<low+corner?along-(low+corner):along>high-corner?along-(high-corner):0;
+            var outward=Math.Sqrt(Math.Max(0,corner*corner-signedOffset*signedOffset));
+            var inset=corner-outward;
+            var direction=corner>0?Unit(tangent*outward-normal*signedOffset):tangent;
+            return (point-normal*(inset+.15),direction);
         }
-        var a = Root(anchor - tangent * half); var b = Root(anchor + tangent * half);
+        var (a,ta) = Root(anchor - tangent * half); var (b,tb) = Root(anchor + tangent * half);
         double reach = Math.Max(1, Vector.Multiply(tip - anchor, normal));
         var tipRounding = Math.Min(.8, reach * .12);
         var tipLeft = tip - normal * tipRounding - tangent * tipRounding;
@@ -226,9 +238,9 @@ internal static class AnnotationPaths
             g.BeginFigure(a, true, true);
             // Tangent shoulders flow into tapered sides with a softly rounded tip.
             var sweep=Math.Min(half*.35,reach*.45);
-            g.BezierTo(a+tangent*sweep, tipLeft-normal*Math.Min(reach*.45,half*1.5)-tangent*half*.25,tipLeft,true,true);
+            g.BezierTo(a+ta*sweep, tipLeft-normal*Math.Min(reach*.45,half*1.5)-tangent*half*.25,tipLeft,true,true);
             g.QuadraticBezierTo(tip+normal*tipRounding*.2,tipRight,true,true);
-            g.BezierTo(tipRight-normal*Math.Min(reach*.45,half*1.5)+tangent*half*.25,b-tangent*sweep,b,true,true);
+            g.BezierTo(tipRight-normal*Math.Min(reach*.45,half*1.5)+tangent*half*.25,b-tb*sweep,b,true,true);
         }
         geo.Freeze(); return geo;
     }

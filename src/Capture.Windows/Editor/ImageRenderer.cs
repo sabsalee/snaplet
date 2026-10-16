@@ -140,7 +140,9 @@ internal static class ImageRenderer
     {
         if(a.Kind==AnnotationKind.Step)return AnnotationGeometry.CounterTip(a);
         var body=BoundsOf(a);
-        return a.Tail ?? new(body.X+body.Width*.35,body.Bottom+28);
+        var target=a.Tail ?? new(body.X+body.Width*.35,body.Bottom+28);
+        return a.Kind is AnnotationKind.Text or AnnotationKind.Rectangle
+            ?AnnotationGeometry.CalloutTip(new(body.X,body.Y,body.Width,body.Height),target):target;
     }
     internal static Geometry PenGeometry(Annotation a) => AnnotationPaths.Pen(a.Points ?? new[] { a.Start, a.End });
 
@@ -209,7 +211,7 @@ internal static class ImageRenderer
         if (a.Kind == AnnotationKind.Text && a.Appearance.Bubble)
         {
             var b = TextBounds(a);
-            return AnnotationPaths.CalloutTail(b, a.Tail ?? new(b.X + b.Width * .35, b.Bottom + 28),a.Appearance.TailWidth,a.Appearance.CornerRadius);
+            return AnnotationPaths.CalloutTail(b, TailTip(a),a.Appearance.TailWidth,a.Appearance.CornerRadius);
         }
         if(a.Kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse) {
             var body=RectOf(a.Bounds);

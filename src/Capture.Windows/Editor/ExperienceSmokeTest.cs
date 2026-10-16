@@ -20,7 +20,7 @@ internal static class ExperienceSmokeTest
         var bubble=new Annotation(Guid.NewGuid(),AnnotationKind.Text,new(100,100),new(300,160),new(239,68,83),3,"Editable callout",Tail:new(160,215),Style:new(CornerRadius:16,TailWidth:32));
         doc.Add(bubble);surface.UpdateHover(new(180,125));
         check(surface.Cursor==Cursors.SizeAll && surface.PointerHint.Contains("더블클릭"),"hovering a text body advertises dragging and text editing before selection");
-        surface.Selected=bubble.Id;surface.UpdateHover(new(160,215));
+        surface.Selected=bubble.Id;surface.UpdateHover(ImageRenderer.TailTip(bubble));
         check(surface.PointerHint.Contains("말꼬리"),"tail handle explains its role independently of resize handles");
         surface.UpdateHover(new(284,86));check(surface.PointerHint.Contains("모서리"),"corner radius handle advertises direct rounding adjustment");
         surface.BeginPointer(new(284,86));surface.EndPointer(new(284,86));doc.Undo();
@@ -29,8 +29,8 @@ internal static class ExperienceSmokeTest
         surface.BeginPointer(new(284,86));surface.EndPointer(new(275,95));
         check(doc.Annotations.Single().Appearance.CornerRadius>16 && doc.Annotations.Single().Appearance.CornerRadius<=48,"dragging the exterior radius diamond inward increases rounding without covering text");
         doc.Undo();check(doc.Annotations.Single()==bubble,"corner rounding is one undoable action preserving text and tail");
-        surface.BeginPointer(bubble.Tail!.Value);surface.EndPointer(new(355,130));
-        var moved=doc.Annotations.Single();check(moved.Tail==new PointD(355,130) && surface.Hit(moved,new(342,130)),"tail can switch sides and remains selectable on its visible tapered body");
+        surface.BeginPointer(ImageRenderer.TailTip(bubble));surface.EndPointer(new(355,130));
+        var moved=doc.Annotations.Single();check(moved.Tail==new PointD(355,130) && surface.Hit(moved,new(325,130)) && ImageRenderer.TailTip(moved).X<=336,"tail can switch sides while its visible body and handle share the bounded reach");
         doc.Undo();surface.Tool=AnnotationKind.Rectangle;bool edited=false;surface.TextEditRequested+=(_,_)=>edited=true;
         surface.BeginPointer(new(180,125),clickCount:2);check(edited && doc.Annotations.Count==1,"double clicking text enters editing even while another drawing tool is active");
         surface.Tool=AnnotationKind.Text;surface.Selected=null;surface.UpdateHover(new(700,700));check(surface.Cursor==Cursors.IBeam,"text tool uses an insertion cursor on empty canvas");
@@ -41,6 +41,20 @@ internal static class ExperienceSmokeTest
             var path=ImageRenderer.TailGeometry(narrow with {Tail=target});
             check(!path.Bounds.IsEmpty && double.IsFinite(path.Bounds.Width),"maximal rounding on a small callout keeps every tail direction finite");
         }
+        var corners=new DrawingVisual();using(var dc=corners.RenderOpen()) {
+            dc.DrawRectangle(Brushes.White,null,new Rect(0,0,880,320));
+            for(int row=0;row<2;row++)for(int column=0;column<4;column++) {
+                double x=column*220+50,y=row*160+55;
+                var targets=new[]{new PointD(x-400,y-400),new PointD(x+520,y-400),new PointD(x+520,y+450),new PointD(x-400,y+450)};
+                var shape=new Annotation(Guid.NewGuid(),AnnotationKind.Rectangle,new(x,y),new(x+120,y+50),new(239,68,83),2,Tail:targets[column],Style:new(Fill:ShapeFill.Solid,ShapeTail:true,CornerRadius:row==0?12:25,TailWidth:32));
+                var tail=ImageRenderer.TailGeometry(shape);var body=AnnotationPaths.Shape(shape);
+                check(new CombinedGeometry(GeometryCombineMode.Intersect,body,tail).GetArea()>0,"corner callout tail overlaps its rounded body without a detached seam");
+                check(tail.Bounds.Width<220 && tail.Bounds.Height<150,"distant corner targets cannot stretch callout silhouettes into long spikes");
+                ImageRenderer.PaintAnnotation(dc,source,shape);
+            }
+        }
+        var cornerImage=new RenderTargetBitmap(880,320,96,96,PixelFormats.Pbgra32);cornerImage.Render(corners);
+        var cornerPng=new PngBitmapEncoder();cornerPng.Frames.Add(BitmapFrame.Create(cornerImage));using(var file=File.Create(Path.Combine(directory,"editor-callout-corners.png")))cornerPng.Save(file);
         // Export an actual renderer gallery: the preset previews and final export share these paths.
         var visual=new DrawingVisual();using(var dc=visual.RenderOpen()) {
             dc.DrawRectangle(Brushes.White,null,new Rect(0,0,width,height));

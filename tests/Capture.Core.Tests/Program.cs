@@ -238,6 +238,14 @@ numbering.Add(number with {Id=Guid.NewGuid(),Text="8"});Check(numbering.NextCoun
 numbering.Undo();Check(numbering.NextCounter==8,"Undo counter creation restores next number.");
 var tip=AnnotationGeometry.CounterTip(number with {Start=new(100,100),Tail=new(1000,1000)});
 Check(Math.Abs(AnnotationGeometry.Distance(new(100,100),tip)-AnnotationGeometry.CounterRadius(number)*1.55)<1e-8,"Counter pointer length is bounded.");
+foreach(var body in new[]{new RectD(100,100,200,60),new RectD(100,100,20,20),new RectD(100,100,400,200)}) {
+    foreach(var target in new[]{new PointD(-1000,-1000),new PointD(2000,2000),new PointD(2000,130),new PointD(120,-1000)}) {
+        var boundedTip=AnnotationGeometry.CalloutTip(body,target);
+        var edge=new PointD(Math.Clamp(boundedTip.X,body.X,body.Right),Math.Clamp(boundedTip.Y,body.Y,body.Bottom));
+        Check(Math.Abs(AnnotationGeometry.Distance(edge,boundedTip)-Math.Clamp(Math.Min(body.Width,body.Height)*.6,24,48))<1e-8,"Callout reach stays bounded in axial and corner directions.");
+        Check(AnnotationGeometry.CalloutTip(body,boundedTip)==boundedTip,"Bounded callout handle remains stable on repeated evaluation.");
+    }
+}
 Throws(()=>grouped.Add(Item() with {Control=new(double.NaN,0)}),"Nonfinite curve rejected.");
 Throws(()=>grouped.Add(Item() with {Tail=new(1,double.PositiveInfinity)}),"Nonfinite callout tail rejected.");
 Throws(()=>grouped.Add(Item() with {Style=new(Opacity:double.NaN)}),"Nonfinite opacity rejected.");

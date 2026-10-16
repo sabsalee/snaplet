@@ -49,6 +49,15 @@ public static class AnnotationGeometry
         _ => false
     };
     public static double CounterRadius(Annotation a) => Math.Max(12,a.Thickness*4);
+    /// <summary>Bound a callout's reach beyond its body, independently of the drag distance.</summary>
+    public static PointD CalloutTip(RectD body,PointD target)
+    {
+        var edge=new PointD(Math.Clamp(target.X,body.X,body.Right),Math.Clamp(target.Y,body.Y,body.Bottom));
+        var distance=Distance(edge,target);
+        var maximum=Math.Clamp(Math.Min(body.Width,body.Height)*.6,24,48);
+        if(distance<=maximum)return target;
+        return new(edge.X+(target.X-edge.X)*maximum/distance,edge.Y+(target.Y-edge.Y)*maximum/distance);
+    }
     public static PointD CounterTip(Annotation a)
     {
         var r=CounterRadius(a);var t=a.Tail ?? new(a.Start.X,a.Start.Y-r*1.5);
