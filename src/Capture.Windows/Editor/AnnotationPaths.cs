@@ -225,10 +225,10 @@ internal static class AnnotationPaths
         {
             g.BeginFigure(a, true, true);
             // Tangent shoulders flow into tapered sides with a softly rounded tip.
-            var sweep=Math.Min(half*.85,reach*.45);
-            g.BezierTo(a+tangent*sweep, tipLeft-normal*Math.Min(reach*.45,half*1.5)-tangent*half*.15,tipLeft,true,true);
+            var sweep=Math.Min(half*.35,reach*.45);
+            g.BezierTo(a+tangent*sweep, tipLeft-normal*Math.Min(reach*.45,half*1.5)-tangent*half*.25,tipLeft,true,true);
             g.QuadraticBezierTo(tip+normal*tipRounding*.2,tipRight,true,true);
-            g.BezierTo(tipRight-normal*Math.Min(reach*.45,half*1.5)+tangent*half*.15,b-tangent*sweep,b,true,true);
+            g.BezierTo(tipRight-normal*Math.Min(reach*.45,half*1.5)+tangent*half*.25,b-tangent*sweep,b,true,true);
         }
         geo.Freeze(); return geo;
     }
