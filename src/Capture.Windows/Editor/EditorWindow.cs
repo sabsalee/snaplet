@@ -189,7 +189,7 @@ public sealed class EditorWindow : Window
             var preset=toolStyles.GetValueOrDefault(next,defaults);
             surface.Ink=preset.Item1;surface.Thickness=preset.Item2;surface.InkStyle=preset.Item3;
         }
-        surface.Tool=kind;surface.Selected=null;surface.Focus();SyncInspector();
+        surface.Tool=kind;surface.Selected=null;surface.UpdateHover(new(-100,-100));surface.Focus();SyncInspector();
         status.Text=kind is null?"객체 선택·이동 · Alt+드래그 복제 · Delete 삭제":"드래그하여 그리기 · 파란 원은 꼬리 · 마름모는 곡률/모서리 · Shift 각도/비율 · Esc 선택 모드";
     }
     private void StartCrop(){SetTool(null);if(textEditor!=null)return;surface.CropTool=true;SyncInspector();status.Text="범위 선택·재조정 → Enter 적용 · Esc 취소 · Shift 정사각형";}

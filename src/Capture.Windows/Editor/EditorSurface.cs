@@ -16,6 +16,7 @@ internal sealed class EditorSurface : FrameworkElement
     internal bool SnapToObjects=true;
     private double? guideX,guideY;
     private Guid? hovered;
+    private int? hoveredControl;
     internal string PointerHint { get; private set; }="";
     internal event Action<string>? PointerHintChanged;
     private readonly DispatcherTimer digitCommit=new() {Interval=TimeSpan.FromMilliseconds(800)};
@@ -103,6 +104,7 @@ internal sealed class EditorSurface : FrameworkElement
     private void DrawControl(DrawingContext dc,Handle h)
     {
         var p=ImageRenderer.P(h.Point);var pen=new Pen(SelectionInk,1.25/Zoom);
+        if(hoveredControl==h.Index && gesture==Gesture.None)dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(65,104,165,255)),null,p,9/Zoom,9/Zoom);
         if(h.Index is -3 or -6) {
             var radius=5/Zoom;var diamond=new StreamGeometry();
             using(var g=diamond.Open()) {g.BeginFigure(new(p.X,p.Y-radius),true,true);g.LineTo(new(p.X+radius,p.Y),true,false);g.LineTo(new(p.X,p.Y+radius),true,false);g.LineTo(new(p.X-radius,p.Y),true,false);}
@@ -225,25 +227,25 @@ internal sealed class EditorSurface : FrameworkElement
     }
     protected override void OnMouseLeave(MouseEventArgs e)
     {
-        base.OnMouseLeave(e);hovered=null;SetPointerHint("");if(!IsDragging)InvalidateVisual();
+        base.OnMouseLeave(e);hovered=null;hoveredControl=null;SetPointerHint("");if(!IsDragging)InvalidateVisual();
     }
     internal void UpdateHover(PointD position)
     {
-        current=position;
+        current=position;var previousHover=hovered;var previousControl=hoveredControl;
         var near=CropTool && PendingCrop is RectD crop?NearHandle(BoxHandles(ImageRenderer.RectOf(crop)),position):Selection is Annotation selected?NearHandle(Handles(selected),position):null;
         var hit=CropTool?null:ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,position));
-        hovered=Tool is null?hit?.Id:null;
+        hovered=Tool is null?hit?.Id:null;hoveredControl=near?.Index;
         var editable=hit!=null && (Tool is null || hit.Id==Selected);
         Cursor=near is Handle h?HandleCursor(h.Index):editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
         SetPointerHint(near is Handle control?control.Index switch {
             -3=>"곡률 · 드래그해 화살표를 휘세요",-4=>"말꼬리 · 파란 원을 드래그해 방향과 길이를 바꾸세요",
             -6=>"모서리 · 민트색 마름모를 드래그해 둥글기를 바꾸세요",-5=>"원본 영역 이동",_=>"크기 조절 · Shift 비율 유지"
         }:editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":"객체를 가리키면 선택 범위를 표시합니다 · V 선택");
-        InvalidateVisual();
+        if(previousHover!=hovered || previousControl!=hoveredControl)InvalidateVisual();
     }
     private void SetPointerHint(string value) {if(PointerHint==value)return;PointerHint=value;PointerHintChanged?.Invoke(value);}
     private static Cursor HandleCursor(int index)=>index switch {
-        0 or 4 or 100 or 104=>Cursors.SizeNWSE,2 or 6 or 102 or 106=>Cursors.SizeNESW,
+        -6 or 0 or 4 or 100 or 104=>Cursors.SizeNWSE,2 or 6 or 102 or 106=>Cursors.SizeNESW,
         1 or 5 or 101 or 105=>Cursors.SizeNS,3 or 7 or 103 or 107=>Cursors.SizeWE,_=>Cursors.SizeAll};
     internal void UpdatePointer(PointD position,ModifierKeys modifiers=ModifierKeys.None)
     {
@@ -392,7 +394,7 @@ internal sealed class EditorSurface : FrameworkElement
             } catch(Exception error) when(error is InvalidOperationException or ArgumentException or OverflowException) {OperationFailed?.Invoke(error.Message);}
         }
         if(!CropTool && Selection is null)Selected=selectionBeforeGesture;
-        gesture=Gesture.None;guideX=guideY=null;draft=original=null;points=null;ReleaseMouseCapture();SelectionChanged?.Invoke();InvalidateVisual();
+        gesture=Gesture.None;guideX=guideY=null;draft=original=null;points=null;ReleaseMouseCapture();SelectionChanged?.Invoke();UpdateHover(position);InvalidateVisual();
     }
     protected override void OnLostMouseCapture(MouseEventArgs e) {base.OnLostMouseCapture(e);if(gesture!=Gesture.None)CancelGesture();}
     internal void CancelGesture()
