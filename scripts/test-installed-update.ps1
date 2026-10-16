@@ -4,9 +4,14 @@ $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('snaplet-update-' + [guid]::NewGuid().ToString('N'))
 $previousTestFlag = $env:SNAPLET_UPDATE_TESTS
+$settingsFile = Join-Path $env:LOCALAPPDATA 'Snaplet/settings.json'
+$hadSettings = Test-Path $settingsFile
+$originalSettings = if ($hadSettings) { [IO.File]::ReadAllBytes($settingsFile) } else { $null }
 try {
     $env:SNAPLET_UPDATE_TESTS = '1'
     New-Item $testRoot -ItemType Directory | Out-Null
+    New-Item ([IO.Path]::GetDirectoryName($settingsFile)) -ItemType Directory -Force | Out-Null
+    @{ AutoUpdate = $false; ShowPreview = $true; SaveFolder = (Join-Path $testRoot 'saved-captures') } | ConvertTo-Json | Set-Content $settingsFile -Encoding utf8NoBOM
     $payload = Join-Path $root 'artifacts/snaplet-win-x64'
     $feed = Join-Path $root 'artifacts/updates'
     [xml]$project = Get-Content src/Capture.Windows/Capture.Windows.csproj
@@ -49,6 +54,7 @@ try {
     Write-Host "PASS: installed $baseline -> $version; checksum rejection, directory replacement, restart and settings preservation."
 } finally {
     $env:SNAPLET_UPDATE_TESTS = $previousTestFlag
+    if ($hadSettings) { [IO.File]::WriteAllBytes($settingsFile, $originalSettings) } else { Remove-Item $settingsFile -ErrorAction SilentlyContinue }
     if ($result.Marker -and [IO.Path]::GetFileName($result.Marker).StartsWith('update-check-')) { Remove-Item $result.Marker -ErrorAction SilentlyContinue }
     if (Test-Path $testRoot) { Remove-Item $testRoot -Recurse -Force -ErrorAction SilentlyContinue }
     Pop-Location
