@@ -49,6 +49,10 @@ public partial class App : Application
         // Rendering smoke tests run without global shortcuts, tray or screen capture permission.
         if(e.Args.FirstOrDefault() is "--update-integration" or "--verify-update"){_=UpdateIntegration.RunAsync(e.Args,Shutdown);return;}
         if(e.Args.Contains("--self-test")) {RunSelfTests(e.Args);return;}
+        if(e.Args.Contains("--editor-demo")) {
+            var editor=new EditorWindow(ImageActions.Demo(),closeOnDismiss:true);
+            editor.Closed+=(_,_)=>Shutdown();editor.Show();return;
+        }
         singleton=new Mutex(true,@"Local\Snaplet.Windows11.User",out var created);
         if(!created){try{using var handle=EventWaitHandle.OpenExisting(@"Local\Snaplet.Windows11.Show");handle.Set();}catch(WaitHandleCannotBeOpenedException){}Shutdown();return;}
         wake=new EventWaitHandle(false,EventResetMode.AutoReset,@"Local\Snaplet.Windows11.Show");

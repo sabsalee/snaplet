@@ -92,11 +92,11 @@ public static class EditorSmokeTest
         var arrow=AnnotationGeometry.BendThrough(new(Guid.NewGuid(),AnnotationKind.Arrow,new(40,300),new(240,300),red,4),new(140,360));rich.Add(arrow);
         var richImage=ImageRenderer.Render(sheet,rich);
         Check(Pixel(richImage,45,70).R==255 && Pixel(richImage,45,70).G==0,"callout has opaque colored body");
-        var tailPixels=0;var targetPixels=0;
+        var tailPixels=0;var targetPixels=0;PointD? paintedTail=null;
         for(int y=100;y<202;y++)for(int x=240;x<352;x++) {
-            var pixel=Pixel(richImage,x,y);if(pixel.R>240 && pixel.G<30){tailPixels++;if(x>=344 && y>=194)targetPixels++;}
+            var pixel=Pixel(richImage,x,y);if(pixel.R>240 && pixel.G<30){tailPixels++;if(x>255 && y>120)paintedTail=new(x+.5,y+.5);if(x>=344 && y>=194)targetPixels++;}
         }
-        Check(tailPixels>100 && targetPixels>0,"callout tail extends continuously outside its body to the independent target");
+        Check(tailPixels>100 && targetPixels>0,"callout tail paints outside its body and reaches the independent target");
         Check(Pixel(richImage,140,360).G<30 && Pixel(richImage,140,300).G==255,"curved arrow uses its control point rather than the straight chord");
         var pointer=new Annotation(Guid.NewGuid(),AnnotationKind.Step,new(450,260),new(450,260),red,4,"7",Tail:new(550,260));rich.Add(pointer);
         Check(Pixel(ImageRenderer.Render(sheet,rich),472,260).G<30,"counter pointer renders outside the numbered circle");
@@ -110,7 +110,7 @@ public static class EditorSmokeTest
         Check(surface.Hit(arrow,new(140,360)) && !surface.Hit(arrow,new(140,300)),"editor curve hit test follows rendered curve");
         Check(!surface.Hit(shape with {Style=new(Fill:ShapeFill.Outline)},new(460,65)),"outline hit test does not capture empty center");
         Check(surface.Hit(callout,new(50,50)),"callout body uses shared render and hit bounds");
-        Check(surface.Hit(callout,new(268,145)),"callout can be selected by its painted tail");
+        Check(paintedTail is PointD witness && surface.Hit(callout,witness),"callout can be selected by its painted tail");
         Check(surface.Hit(pointer,new(472,260)),"counter can be selected by its painted pointer");
         var openArrow=new Annotation(Guid.NewGuid(),AnnotationKind.Arrow,new(20,200),new(300,200),red,10,Style:new(ArrowHead:ArrowHead.Open));
         Check(surface.Hit(openArrow,new(250,226)),"open arrow can be selected by its curved head wing away from its shaft");

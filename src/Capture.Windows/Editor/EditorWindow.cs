@@ -48,7 +48,7 @@ public sealed class EditorWindow : Window
     private static readonly Brush PanelBrush=Ui.Card;
     private static readonly Brush MutedBrush=Ui.Muted;
 
-    public EditorWindow(BitmapSource image,EditableDocument? existingDocument=null)
+    public EditorWindow(BitmapSource image,EditableDocument? existingDocument=null,bool closeOnDismiss=false)
     {
         ArgumentNullException.ThrowIfNull(image);
         source=image.IsFrozen?image:BitmapFrame.Create(image);if(source.CanFreeze && !source.IsFrozen)source.Freeze();
@@ -139,7 +139,7 @@ public sealed class EditorWindow : Window
         surface.LostKeyboardFocus+=(_,_)=>FinishNudge();
         Deactivated+=(_,_)=>FinishNudge();
         PreviewMouseDown+=(_,e)=>{FinishNudge();if(textEditor!=null && !textEditor.IsMouseOver && !FinishTextEdit(true))e.Handled=true;};
-        Closing+=(_,e)=>{if(!closingForExit){e.Cancel=true;if(!FinishTextEdit(true))return;Hide();}};
+        Closing+=(_,e)=>{if(closeOnDismiss){closingForExit=true;return;}if(!closingForExit){e.Cancel=true;if(!FinishTextEdit(true))return;Hide();}};
         Closed+=(_,_)=>closingForExit=true;
         Loaded+=(_,_)=>{Fit();surface.Selected=document.Annotations.FirstOrDefault()?.Id;surface.Focus();SyncInspector();};
         undoButton.IsEnabled=redoButton.IsEnabled=false;
@@ -220,11 +220,11 @@ public sealed class EditorWindow : Window
             }
             if(kind is not (AnnotationKind.Image or AnnotationKind.Spotlight or AnnotationKind.Erase)) {
             var slider=new Slider {Minimum=1,Maximum=20,Value=surface.Thickness,Width=85,Margin=new Thickness(7,5,9,5),VerticalAlignment=VerticalAlignment.Center,ToolTip="크기 / 굵기 / 효과 강도"};propertyControls.Children.Add(slider);
-            var sizeReadout=new TextBlock {Text=$"{surface.Thickness:0.#} px",MinWidth=38,FontSize=11,VerticalAlignment=VerticalAlignment.Center,Foreground=Ui.Text};propertyControls.Children.Add(sizeReadout);
+            var sizeReadout=NumericField(slider,"크기 / 굵기");propertyControls.Children.Add(sizeReadout);
             System.Windows.Automation.AutomationProperties.SetName(slider,"크기 / 굵기 / 효과 강도");
             slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
             slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
-            slider.ValueChanged+=(_,_)=>{if(syncingControls)return;surface.Thickness=slider.Value;sizeReadout.Text=$"{slider.Value:0.#} px";surface.ApplyStyle();};
+            slider.ValueChanged+=(_,_)=>{if(syncingControls)return;surface.Thickness=slider.Value;sizeReadout.Text=$"{slider.Value:0.#}";surface.ApplyStyle();};
             }
             if(kind==AnnotationKind.Magnifier) {
                 Choice(new[]{"사각 렌즈","원형 렌즈"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
@@ -277,7 +277,7 @@ public sealed class EditorWindow : Window
             var caption=new TextBlock {Text=label.Split('·')[0].Trim(),FontSize=11,Foreground=MutedBrush,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5)};propertyControls.Children.Add(caption);
             var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=110,Margin=new Thickness(6),ToolTip=label,VerticalAlignment=VerticalAlignment.Center};
             System.Windows.Automation.AutomationProperties.SetName(control,label);propertyControls.Children.Add(control);
-            var readout=new TextBlock {Text=$"{value:0.#}",MinWidth=28,FontSize=11,VerticalAlignment=VerticalAlignment.Center};propertyControls.Children.Add(readout);
+            var readout=NumericField(control,label);propertyControls.Children.Add(readout);
             control.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
             control.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
             control.ValueChanged+=(_,_)=>{if(syncingControls)return;try{readout.Text=$"{control.Value:0.#}";update(control.Value);surface.ApplyStyle();}catch(Exception error) when(error is InvalidOperationException or ArgumentException){document.CancelEdit();status.Text=error.Message;SyncInspector();}};
@@ -286,6 +286,20 @@ public sealed class EditorWindow : Window
             var combo=new ComboBox {ItemsSource=labels,SelectedIndex=selected,MinWidth=90,Margin=new Thickness(4),VerticalAlignment=VerticalAlignment.Center};propertyControls.Children.Add(combo);
             combo.SelectionChanged+=(_,_)=>{if(syncingControls || combo.SelectedIndex<0)return;update(combo.SelectedIndex);surface.ApplyStyle();};
         }
+    }
+    private TextBox NumericField(Slider slider,string label)
+    {
+        var input=new TextBox {Text=$"{slider.Value:0.#}",Width=44,FontSize=11,Padding=new Thickness(5,4,5,4),Margin=new Thickness(2),VerticalContentAlignment=VerticalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,ToolTip=$"{label} · {slider.Minimum:0.#}–{slider.Maximum:0.#} · 숫자 입력 후 Enter 적용 / Esc 취소"};
+        System.Windows.Automation.AutomationProperties.SetName(input,label+" 숫자 입력");
+        input.PreviewKeyDown+=(_,e)=>{
+            if(e.Key==Key.Escape){input.Text=$"{slider.Value:0.#}";surface.Focus();e.Handled=true;}
+            else if(e.Key==Key.Enter) {
+                e.Handled=true;
+                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {slider.Value=number;surface.Focus();}
+                else {input.BorderBrush=Brushes.IndianRed;input.SelectAll();}
+            }
+        };
+        return input;
     }
     private void ShowPresets(Button anchor,AnnotationKind kind)
     {
