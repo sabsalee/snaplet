@@ -162,9 +162,9 @@ internal sealed class EditorSurface : FrameworkElement
             original=selected;handle=sh.Index;gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:handle==-6?Gesture.Corner:Gesture.Resize;CaptureMouse();return;
         }
         var hit=ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,start));
-        if(hit!=null && (Tool is null || hit.Id==Selected || clickCount==2)) {
+        if(hit!=null && (Tool is null || hit.Id==Selected || clickCount==2 || Tool==AnnotationKind.Text && hit.Kind==AnnotationKind.Text)) {
             Selected=hit.Id;SelectionChanged?.Invoke();
-            if(hit.Kind==AnnotationKind.Text && clickCount==2){TextEditRequested?.Invoke(hit,false);return;}
+            if(hit.Kind==AnnotationKind.Text && (clickCount==2 || Tool==AnnotationKind.Text)){TextEditRequested?.Invoke(hit,false);return;}
             original=hit;
             if(pointerModifiers.HasFlag(ModifierKeys.Alt))original=hit with {Id=Guid.NewGuid()};
             gesture=hit.Kind==AnnotationKind.Magnifier && AdvancedDrawing.SampleBounds(hit).Contains(start) && !hit.Bounds.Contains(start)?Gesture.SampleMove:Gesture.Move;CaptureMouse();InvalidateVisual();return;
@@ -235,12 +235,13 @@ internal sealed class EditorSurface : FrameworkElement
         var near=CropTool && PendingCrop is RectD crop?NearHandle(BoxHandles(ImageRenderer.RectOf(crop)),position):Selection is Annotation selected?NearHandle(Handles(selected),position):null;
         var hit=CropTool?null:ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,position));
         hovered=Tool is null?hit?.Id:null;hoveredControl=near?.Index;
-        var editable=hit!=null && (Tool is null || hit.Id==Selected);
-        Cursor=near is Handle h?HandleCursor(h.Index):editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
+        var textInsertion=Tool==AnnotationKind.Text && hit?.Kind==AnnotationKind.Text;
+        var editable=hit!=null && (Tool is null || hit.Id==Selected || textInsertion);
+        Cursor=near is Handle h?HandleCursor(h.Index):textInsertion?Cursors.IBeam:editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
         SetPointerHint(near is Handle control?control.Index switch {
             -3=>"곡률 · 드래그해 화살표를 휘세요",-4=>"말꼬리 · 파란 원을 드래그해 방향과 길이를 바꾸세요",
             -6=>"모서리 · 민트색 마름모를 드래그해 둥글기를 바꾸세요",-5=>"원본 영역 이동",_=>"크기 조절 · Shift 비율 유지"
-        }:editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":"객체를 가리키면 선택 범위를 표시합니다 · V 선택");
+        }:textInsertion?"클릭 글자 편집 · V 선택·이동":editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":"객체를 가리키면 선택 범위를 표시합니다 · V 선택");
         if(previousHover!=hovered || previousControl!=hoveredControl)InvalidateVisual();
     }
     private void SetPointerHint(string value) {if(PointerHint==value)return;PointerHint=value;PointerHintChanged?.Invoke(value);}

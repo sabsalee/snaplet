@@ -29,6 +29,8 @@ internal static class ExperienceSmokeTest
         doc.Undo();surface.Tool=AnnotationKind.Rectangle;bool edited=false;surface.TextEditRequested+=(_,_)=>edited=true;
         surface.BeginPointer(new(180,125),clickCount:2);check(edited && doc.Annotations.Count==1,"double clicking text enters editing even while another drawing tool is active");
         surface.Tool=AnnotationKind.Text;surface.Selected=null;surface.UpdateHover(new(700,700));check(surface.Cursor==Cursors.IBeam,"text tool uses an insertion cursor on empty canvas");
+        edited=false;surface.UpdateHover(new(180,125));surface.BeginPointer(new(180,125));
+        check(edited && surface.Cursor==Cursors.IBeam && doc.Annotations.Count==1,"text tool clicks edit existing text instead of creating an overlapping object");
         var narrow=bubble with {End=new(124,125),Text="",Style=bubble.Appearance with {CornerRadius=48}};
         foreach(var target in new[]{new PointD(90,120),new PointD(150,110),new PointD(112,80),new PointD(112,190)}) {
             var path=ImageRenderer.TailGeometry(narrow with {Tail=target});

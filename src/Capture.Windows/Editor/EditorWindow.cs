@@ -295,7 +295,7 @@ public sealed class EditorWindow : Window
             if(e.Key==Key.Escape){input.Text=$"{slider.Value:0.#}";surface.Focus();e.Handled=true;}
             else if(e.Key==Key.Enter) {
                 e.Handled=true;
-                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {slider.Value=number;surface.Focus();}
+                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {input.ClearValue(Control.BorderBrushProperty);slider.Value=number;surface.Focus();}
                 else {input.BorderBrush=Brushes.IndianRed;input.SelectAll();}
             }
         };
