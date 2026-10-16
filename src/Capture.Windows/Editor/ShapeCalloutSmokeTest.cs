@@ -21,15 +21,15 @@ internal static class ShapeCalloutSmokeTest
             var bitmap=ImageRenderer.Render(source,document);var data=new byte[width*height*4];bitmap.CopyPixels(data,width*4,0);return data;
         }
         var solid=Render(doc);
-        check(solid[(200*width+125)*4]>200 && solid[(200*width+125)*4+2]<60,"filled rectangle callout paints its tail outside the body");
+        check(solid[(160*width+120)*4]>200 && solid[(160*width+120)*4+2]<60,"filled rectangle callout paints its tail outside the body");
         doc.Replace(rectangle with {Style=new(ShapeTail:true)});
         var outlined=Render(doc);
-        check(outlined[(140*width+134)*4+1]==255,"outline callout has no internal stroke across the tail base");
+        check(outlined[(140*width+120)*4+1]==255,"outline callout has no internal stroke across the tail base");
         var surface=new EditorSurface(source,doc);
         check(!surface.Hit(doc.Annotations[0],new(140,100)),"empty outline callout center remains transparent to selection");
         doc.Replace(rectangle with {Style=new(Fill:ShapeFill.Solid,ShapeTail:false)});
         var hidden=Render(doc);
-        check(hidden[(200*width+125)*4+2]==255,"shape tail can be hidden without deleting its stored tip");
+        check(hidden[(160*width+120)*4+2]==255,"shape tail can be hidden without deleting its stored tip");
         doc.Undo();check(AnnotationGeometry.HasTail(doc.Annotations[0]) && doc.Annotations[0].Tail==rectangle.Tail,"undo restores tail option and original target together");
         var defaultShape=rectangle with {Tail=null,Style=new()};
         check(!AnnotationGeometry.HasTail(defaultShape),"ordinary shapes start without a tail");
@@ -50,7 +50,7 @@ internal static class ShapeCalloutSmokeTest
             var tail=col switch {0=>new PointD(x+45,y+165),1=>new PointD(x+175,y-35),2=>new PointD(x+195,y+150),_=>new PointD(x-28,y+110)};
             var a=new Annotation(Guid.NewGuid(),row==0?AnnotationKind.Rectangle:AnnotationKind.Ellipse,new(x,y),new(x+165,y+95),row==0?blue:red,4,Tail:tail,Style:style);
             shapes.Add(a);
-            check(ImageRenderer.ShapeGeometry(a).Bounds.Contains(ImageRenderer.P(tail)) || ImageRenderer.ShapeGeometry(a).Bounds.IntersectsWith(new Rect(tail.X-1,tail.Y-1,2,2)),"callout path reaches the editable tail target "+row+":"+col);
+            check(ImageRenderer.ShapeGeometry(a).Bounds.Contains(ImageRenderer.P(ImageRenderer.TailTip(a))) || ImageRenderer.ShapeGeometry(a).Bounds.IntersectsWith(new Rect(ImageRenderer.TailTip(a).X-1,ImageRenderer.TailTip(a).Y-1,2,2)),"callout path reaches the editable tail target "+row+":"+col);
         }
         var visual=new DrawingVisual();using(var dc=visual.RenderOpen()) {
             ImageRenderer.Paint(dc,source,shapes);

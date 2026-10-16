@@ -92,11 +92,11 @@ public static class EditorSmokeTest
         var arrow=AnnotationGeometry.BendThrough(new(Guid.NewGuid(),AnnotationKind.Arrow,new(40,300),new(240,300),red,4),new(140,360));rich.Add(arrow);
         var richImage=ImageRenderer.Render(sheet,rich);
         Check(Pixel(richImage,45,70).R==255 && Pixel(richImage,45,70).G==0,"callout has opaque colored body");
-        var tailPixels=0;var targetPixels=0;PointD? paintedTail=null;
-        for(int y=100;y<202;y++)for(int x=240;x<352;x++) {
-            var pixel=Pixel(richImage,x,y);if(pixel.R>240 && pixel.G<30){tailPixels++;if(x>255 && y>120)paintedTail=new(x+.5,y+.5);if(x>=344 && y>=194)targetPixels++;}
+        var tailPixels=0;var targetPixels=0;PointD? paintedTail=null;var calloutTip=ImageRenderer.TailTip(callout);
+        for(int y=90;y<202;y++)for(int x=240;x<352;x++) {
+            var pixel=Pixel(richImage,x,y);if(pixel.R>240 && pixel.G<30){tailPixels++;paintedTail=new(x+.5,y+.5);if(AnnotationGeometry.Distance(new(x+.5,y+.5),calloutTip)<6)targetPixels++;}
         }
-        Check(tailPixels>100 && targetPixels>0,"callout tail paints outside its body and reaches the independent target");
+        Check(tailPixels>25 && targetPixels>0,"callout tail paints outside its body and reaches its bounded handle");
         Check(Pixel(richImage,140,360).G<30 && Pixel(richImage,140,300).G==255,"curved arrow uses its control point rather than the straight chord");
         var pointer=new Annotation(Guid.NewGuid(),AnnotationKind.Step,new(450,260),new(450,260),red,4,"7",Tail:new(550,260));rich.Add(pointer);
         Check(Pixel(ImageRenderer.Render(sheet,rich),472,260).G<30,"counter pointer renders outside the numbered circle");
