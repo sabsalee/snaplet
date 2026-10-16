@@ -199,7 +199,7 @@ public sealed class EditorWindow : Window
     {
         if(syncingControls)return;
         // Keep the property row in place while typing so the canvas and insertion point do not jump.
-        inspector.IsEnabled=textEditor==null;
+        propertyControls.Visibility=textEditor==null?Visibility.Visible:Visibility.Hidden;
         if(textEditor!=null)return;
         var a=surface.Selection;
         if(a!=null){surface.Ink=a.Color;surface.Thickness=a.Thickness;surface.InkStyle=a.Appearance;}
