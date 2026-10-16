@@ -201,7 +201,7 @@ public sealed class EditorWindow : Window
         if(a!=null){surface.Ink=a.Color;surface.Thickness=a.Thickness;surface.InkStyle=a.Appearance;}
         foreach(var (kind,button) in toolButtons)button.Background=kind==surface.Tool?new SolidColorBrush(Color.FromRgb(68,75,82)):Brushes.Transparent;
         // Preserve both mouse drags and keyboard adjustment of the active slider.
-        if(Mouse.Captured is Thumb || propertyControls.Children.OfType<Slider>().Any(control=>control.IsKeyboardFocusWithin))return;
+        if(Mouse.Captured is Thumb || propertyControls.Children.OfType<Slider>().Concat(propertyControls.Children.OfType<StackPanel>().SelectMany(panel=>panel.Children.OfType<Slider>())).Any(control=>control.IsKeyboardFocusWithin))return;
         propertyControls.Children.Clear();
         inspector.Visibility=a!=null || surface.Tool!=null?Visibility.Visible:Visibility.Collapsed;
         if(inspector.Visibility!=Visibility.Visible)return;
@@ -225,6 +225,7 @@ public sealed class EditorWindow : Window
             slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
             slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
             slider.ValueChanged+=(_,_)=>{if(syncingControls)return;surface.Thickness=slider.Value;sizeReadout.Text=$"{slider.Value:0.#}";surface.ApplyStyle();};
+            Group(slider,sizeReadout);
             }
             if(kind==AnnotationKind.Magnifier) {
                 Choice(new[]{"사각 렌즈","원형 렌즈"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
@@ -247,7 +248,7 @@ public sealed class EditorWindow : Window
                 textOnly.Click+=async(_,_)=>{textOnly.IsEnabled=false;try{await ProcessTextOnlyAsync(a);}finally{textOnly.IsEnabled=true;}};propertyControls.Children.Add(textOnly);
             }
             if(kind==AnnotationKind.Arrow) {
-                StyleButtons(AnnotationKind.Arrow,new[]{("채운 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Filled}),("열린 곡선 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Open}),("가는 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Simple}),("양방향",surface.InkStyle with {ArrowHead=ArrowHead.Double})});
+                StyleButtons(AnnotationKind.Arrow,new[]{("리본 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Filled}),("열린 곡선 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Open}),("가는 화살표",surface.InkStyle with {ArrowHead=ArrowHead.Simple}),("양방향",surface.InkStyle with {ArrowHead=ArrowHead.Double})});
                 if(a!=null)ToolButton(propertyControls,"⇄","시작점과 끝점 반전",()=>surface.ChangeSelected(x=>x with {Start=x.End,End=x.Start}));
             }
             if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse)Choice(new[]{"테두리","반투명 채움","단색 채움","사선 채움"},(int)surface.InkStyle.Fill,index=>surface.InkStyle=surface.InkStyle with {Fill=(ShapeFill)index});
@@ -275,12 +276,17 @@ public sealed class EditorWindow : Window
         } finally {syncingControls=false;}
         void ValueSlider(string label,double minimum,double maximum,double value,Action<double> update) {
             var caption=new TextBlock {Text=label.Split('·')[0].Trim(),FontSize=11,Foreground=MutedBrush,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5)};propertyControls.Children.Add(caption);
-            var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=110,Margin=new Thickness(6),ToolTip=label,VerticalAlignment=VerticalAlignment.Center};
+            var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=85,Margin=new Thickness(6),ToolTip=label,VerticalAlignment=VerticalAlignment.Center};
             System.Windows.Automation.AutomationProperties.SetName(control,label);propertyControls.Children.Add(control);
             var readout=NumericField(control,label);propertyControls.Children.Add(readout);
             control.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
             control.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
             control.ValueChanged+=(_,_)=>{if(syncingControls)return;try{readout.Text=$"{control.Value:0.#}";update(control.Value);surface.ApplyStyle();}catch(Exception error) when(error is InvalidOperationException or ArgumentException){document.CancelEdit();status.Text=error.Message;SyncInspector();}};
+            Group(caption,control,readout);
+        }
+        void Group(params UIElement[] controls) {
+            var row=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
+            foreach(var control in controls){propertyControls.Children.Remove(control);row.Children.Add(control);}propertyControls.Children.Add(row);
         }
         void Choice(string[] labels,int selected,Action<int> update) {
             var combo=new ComboBox {ItemsSource=labels,SelectedIndex=selected,MinWidth=90,Margin=new Thickness(4),VerticalAlignment=VerticalAlignment.Center};propertyControls.Children.Add(combo);

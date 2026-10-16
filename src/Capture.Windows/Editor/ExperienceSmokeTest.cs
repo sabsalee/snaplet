@@ -1,6 +1,8 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls;
+using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Capture.Core;
@@ -54,8 +56,19 @@ internal static class ExperienceSmokeTest
         var window=new EditorWindow(source,doc);try {
             window.Show();window.UpdateLayout();
             var root=(FrameworkElement)window.Content;
+            var number=Descendants(root).OfType<TextBox>().Single(c=>AutomationProperties.GetName(c)=="말꼬리 너비 숫자 입력");
+            check(number.Parent is StackPanel row && row.Children.OfType<Slider>().Count()==1 && row.Children.OfType<TextBlock>().Count()==1,"label, slider and number form one wrapping unit without orphaned values");
+            number.Focus();number.Text="48";
+            number.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(number),0,Key.Enter){RoutedEvent=Keyboard.PreviewKeyDownEvent});
+            check(doc.Annotations.Single().Appearance.TailWidth==48,"numeric property input applies precise values through the production control path");
+            doc.Undo();check(doc.Annotations.Single().Appearance.TailWidth==32,"numeric property input is one undoable style change");
+            window.UpdateLayout();
             var bitmap=new RenderTargetBitmap((int)root.ActualWidth,(int)root.ActualHeight,96,96,PixelFormats.Pbgra32);bitmap.Render(root);
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(directory,"editor-experience.png"));encoder.Save(file);
         } finally {window.CloseForExit();}
+    }
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+    {
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++) {var child=VisualTreeHelper.GetChild(parent,i);yield return child;foreach(var nested in Descendants(child))yield return nested;}
     }
 }
