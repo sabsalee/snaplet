@@ -310,6 +310,7 @@ public partial class App : Application
             EditorSmokeTest.Run(path);
             UI.UiSmokeTest.Run(path);
             UI.SelectionSmokeTest.Run(path);
+            BackdropSmokeTest.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();
             File.WriteAllText(Path.Combine(path,"gdi-smoke.txt"),"PASS: synthetic 2x2 DIB→BitBlt pixel order, opaque alpha, native resource lifetime and pre-cancellation. No desktop capture.");

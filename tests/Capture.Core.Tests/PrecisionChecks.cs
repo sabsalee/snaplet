@@ -85,3 +85,37 @@ internal static class PrecisionChecks
         Rejects(() => PixelProbe.TrimUniformBorder(new byte[8], 4, 4, new PixelRect(0, 0, 4, 4), 0), "Trim rejects a buffer smaller than its dimensions.");
     }
 }
+
+/// <summary>Backdrop is document state: undoable, validated and independent of crop and annotations.</summary>
+internal static class BackdropChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        void Rejects(Action action, string message)
+        {
+            bool rejected = false;
+            try { action(); } catch (ArgumentException) { rejected = true; }
+            check(rejected, message);
+        }
+        var doc = new EditableDocument(100, 60);
+        check(!doc.Backdrop.Enabled && doc.Backdrop.PaddingPixels == 0, "New documents export without a backdrop.");
+        doc.SetBackdrop(new Backdrop(Enabled: true, Padding: 40.4));
+        check(doc.Backdrop.PaddingPixels == 40 && doc.CanUndo, "Enabling the backdrop is an undoable step with whole-pixel padding.");
+        doc.CropTo(new RectD(10, 10, 50, 30));
+        check(doc.Backdrop.Enabled, "Crop keeps the backdrop.");
+        doc.Undo(); check(doc.Backdrop.Enabled && doc.Crop.Width == 100, "Undo of crop leaves the backdrop.");
+        doc.Undo(); check(!doc.Backdrop.Enabled, "Undo removes the backdrop.");
+        doc.Redo(); check(doc.Backdrop.Padding == 40.4, "Redo restores the exact backdrop.");
+        int before = doc.CanUndo ? 1 : 0;
+        doc.SetBackdrop(doc.Backdrop); check(doc.CanRedo, "Setting an identical backdrop is a no-op that keeps redo.");
+        doc.BeginEdit();
+        for (int i = 0; i <= 10; i++) doc.SetBackdrop(doc.Backdrop with { Shadow = i / 10.0 });
+        doc.EndEdit(); doc.Undo(); check(doc.Backdrop.Shadow == .5, "A slider drag inside one edit undoes in a single step.");
+        Rejects(() => doc.SetBackdrop(new Backdrop(Padding: -1)), "Negative padding rejected.");
+        Rejects(() => doc.SetBackdrop(new Backdrop(Padding: double.NaN)), "Nonfinite padding rejected.");
+        Rejects(() => doc.SetBackdrop(new Backdrop(Preset: Backdrop.PresetCount)), "Unknown gradient preset rejected.");
+        Rejects(() => doc.SetBackdrop(new Backdrop(Shadow: 1.5)), "Shadow above one rejected.");
+        Rejects(() => doc.SetBackdrop(new Backdrop(Fill: (BackdropFill)9)), "Unknown fill rejected.");
+        check(before >= 0, "Backdrop checks completed.");
+    }
+}

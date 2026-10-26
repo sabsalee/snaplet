@@ -22,6 +22,8 @@ public sealed class EditorWindow : Window
     private readonly ScrollViewer scroll;
     private readonly Grid stage=new();
     private readonly Canvas textLayer=new();
+    private readonly Border backdropFrame=new();
+    private readonly Border backdropShadow=new() {Background=Brushes.Black};
     private readonly WrapPanel propertyControls=new();
     private readonly Border inspector;
     private readonly TextBlock status=new(),dimensions=new();
@@ -66,7 +68,8 @@ public sealed class EditorWindow : Window
         var actions=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,6,0)};DockPanel.SetDock(actions,Dock.Left);toolbar.Children.Add(actions);
         ToolButton(actions,"⧉","복사 · Ctrl+C",async()=>await CopyAsync());
         ToolButton(actions,"↧","저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(false));
-        ToolButton(actions,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(ImageRenderer.Render(source,document));});
+        ToolButton(actions,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
+        var backdropButton=ToolButton(actions,"▣","배경 꾸미기 · 그라데이션·여백·그림자·둥근 모서리",()=>{});backdropButton.Click+=(_,_)=>ShowBackdrop(backdropButton);
         undoButton=ToolButton(actions,"↶","실행 취소 · Ctrl+Z",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Undo();});
         redoButton=ToolButton(actions,"↷","다시 실행 · Ctrl+Y",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Redo();});
         var info=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};DockPanel.SetDock(info,Dock.Right);toolbar.Children.Add(info);
@@ -113,7 +116,10 @@ public sealed class EditorWindow : Window
         status.Margin=new Thickness(12,5,4,0);status.FontSize=11;status.Foreground=MutedBrush;footer.Children.Add(status);
         var workspace=new Grid {Background=CanvasBrush()};root.Children.Add(workspace);
         stage.Children.Add(surface);stage.Children.Add(textLayer);
-        scroll=new ScrollViewer {Content=stage,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
+        stage.HorizontalAlignment=HorizontalAlignment.Left;stage.VerticalAlignment=VerticalAlignment.Top;
+        backdropShadow.HorizontalAlignment=HorizontalAlignment.Left;backdropShadow.VerticalAlignment=VerticalAlignment.Top;backdropShadow.IsHitTestVisible=false;
+        var frameGrid=new Grid();frameGrid.Children.Add(backdropShadow);frameGrid.Children.Add(stage);backdropFrame.Child=frameGrid;
+        scroll=new ScrollViewer {Content=backdropFrame,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
         inspector=new Border {Background=PanelBrush,BorderThickness=new Thickness(0,0,0,1),BorderBrush=Ui.Line,Padding=new Thickness(12,4,12,6),MinHeight=54,Child=propertyControls};
         DockPanel.SetDock(inspector,Dock.Top);root.Children.Insert(root.Children.IndexOf(workspace),inspector);
         Point? panStart=null;double panX=0,panY=0;
@@ -171,7 +177,75 @@ public sealed class EditorWindow : Window
         button.Click+=(_,_)=>action();parent.Children.Add(button);return button;
     }
     private static void Item(ContextMenu menu,string title,Action action){var item=new MenuItem {Header=title};item.Click+=(_,_)=>action();menu.Items.Add(item);}
-    private void SyncStage(){stage.Width=surface.Width;stage.Height=surface.Height;}
+    private void SyncStage(){stage.Width=surface.Width;stage.Height=surface.Height;SyncBackdrop();}
+    /// <summary>Live backdrop preview around the canvas, scaled with zoom. Export uses <see cref="BackdropRenderer"/> with the same values.</summary>
+    private void SyncBackdrop()
+    {
+        var b=document.Backdrop;var z=surface.Zoom;
+        if(!b.Enabled){backdropFrame.Padding=new Thickness(0);backdropFrame.Background=null;backdropShadow.Visibility=Visibility.Collapsed;surface.Clip=null;return;}
+        backdropFrame.Padding=new Thickness(b.PaddingPixels*z);
+        backdropFrame.Background=b.Fill==BackdropFill.Transparent?CheckerBrush():BackdropRenderer.Fill(b);
+        var radius=BackdropRenderer.Radius(b,document.Crop.Width,document.Crop.Height)*z;
+        surface.Clip=radius>0?new RectangleGeometry(new Rect(0,0,surface.Width,surface.Height),radius,radius):null;
+        backdropShadow.Visibility=b.Shadow>0?Visibility.Visible:Visibility.Collapsed;
+        backdropShadow.Width=surface.Width;backdropShadow.Height=surface.Height;backdropShadow.CornerRadius=new CornerRadius(radius);
+        backdropShadow.Margin=new Thickness(0,BackdropRenderer.ShadowOffset(b)*z,0,0);backdropShadow.Opacity=BackdropRenderer.ShadowOpacity(b);
+        backdropShadow.Effect=new System.Windows.Media.Effects.BlurEffect{Radius=BackdropRenderer.ShadowBlur(b)*z};
+    }
+    private static Brush? checker;
+    private static Brush CheckerBrush()
+    {
+        if(checker!=null)return checker;
+        var group=new DrawingGroup();using(var dc=group.Open()){dc.DrawRectangle(Brushes.White,null,new Rect(0,0,16,16));dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(220,224,230)),null,new Rect(0,0,8,8));dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(220,224,230)),null,new Rect(8,8,8,8));}
+        checker=new DrawingBrush(group){TileMode=TileMode.Tile,Viewport=new Rect(0,0,16,16),ViewportUnits=BrushMappingMode.Absolute};checker.Freeze();return checker;
+    }
+    /// <summary>Backdrop panel: on/off, gradient swatches, transparent/solid, padding, corner radius and shadow sliders. Each change is undoable.</summary>
+    private void ShowBackdrop(Button anchor)
+    {
+        if(!FinishTextEdit(true))return;document.EndEdit();
+        var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true};
+        var panel=new StackPanel {Width=320};
+        var header=new DockPanel {Margin=new Thickness(4,2,4,10)};
+        var enabled=new CheckBox {Content="사용",IsChecked=document.Backdrop.Enabled,VerticalAlignment=VerticalAlignment.Center};System.Windows.Automation.AutomationProperties.SetName(enabled,"배경 사용");
+        DockPanel.SetDock(enabled,Dock.Right);header.Children.Add(enabled);
+        header.Children.Add(new TextBlock {Text="배경 꾸미기",FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center});panel.Children.Add(header);
+        void Apply(Func<Backdrop,Backdrop> change){try{document.SetBackdrop(change(document.Backdrop));enabled.IsChecked=document.Backdrop.Enabled;}catch(Exception error) when(error is ArgumentException or InvalidOperationException){status.Text=error.Message;}}
+        enabled.Click+=(_,_)=>Apply(b=>b with {Enabled=enabled.IsChecked==true});
+        var swatches=new WrapPanel {Margin=new Thickness(2,0,2,8)};panel.Children.Add(swatches);
+        Button Swatch(Brush fill,string name,Func<Backdrop,Backdrop> change)
+        {
+            var button=new Button {Width=32,Height=32,Margin=new Thickness(3),Padding=new Thickness(0),ToolTip=name,Content=new Border {Background=fill,CornerRadius=new CornerRadius(6),Width=26,Height=26}};
+            System.Windows.Automation.AutomationProperties.SetName(button,"배경 "+name);
+            button.Click+=(_,_)=>Apply(b=>change(b) with {Enabled=true});swatches.Children.Add(button);return button;
+        }
+        for(int i=0;i<Backdrop.PresetCount;i++) {
+            var index=i;var preset=BackdropRenderer.Presets[i];
+            var brush=new LinearGradientBrush(preset.From,preset.To,new Point(0,0),new Point(1,1));brush.Freeze();
+            Swatch(brush,preset.Name,b=>b with {Fill=BackdropFill.Gradient,Preset=index});
+        }
+        Swatch(CheckerBrush(),"투명",b=>b with {Fill=BackdropFill.Transparent});
+        Swatch(new SolidColorBrush(Color.FromRgb(surface.Ink.R,surface.Ink.G,surface.Ink.B)),"현재 색 단색",b=>b with {Fill=BackdropFill.Solid,Color=surface.Ink with {A=255}});
+        void SliderRow(string label,double min,double max,Func<Backdrop,double> read,Func<Backdrop,double,Backdrop> write,string format)
+        {
+            var row=new DockPanel {Margin=new Thickness(4,4,4,4)};
+            var value=new TextBlock {Width=44,TextAlignment=TextAlignment.Right,VerticalAlignment=VerticalAlignment.Center,Foreground=MutedBrush};DockPanel.SetDock(value,Dock.Right);row.Children.Add(value);
+            var name=new TextBlock {Text=label,Width=60,VerticalAlignment=VerticalAlignment.Center};DockPanel.SetDock(name,Dock.Left);row.Children.Add(name);
+            var slider=new Slider {Minimum=min,Maximum=max,Value=read(document.Backdrop),VerticalAlignment=VerticalAlignment.Center};System.Windows.Automation.AutomationProperties.SetName(slider,"배경 "+label);
+            row.Children.Add(slider);value.Text=read(document.Backdrop).ToString(format);
+            slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
+            slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>document.EndEdit()));
+            slider.ValueChanged+=(_,_)=>{value.Text=slider.Value.ToString(format);Apply(b=>write(b,slider.Value) with {Enabled=true});};
+            panel.Children.Add(row);
+        }
+        SliderRow("여백",0,200,b=>b.Padding,(b,v)=>b with {Padding=Math.Round(v)},"0");
+        SliderRow("둥글기",0,60,b=>b.CornerRadius,(b,v)=>b with {CornerRadius=Math.Round(v)},"0");
+        SliderRow("그림자",0,1,b=>b.Shadow,(b,v)=>b with {Shadow=Math.Round(v,2)},"0.00");
+        panel.Children.Add(new TextBlock {Text="복사·저장·고정에 그대로 포함됩니다 · Ctrl+Z로 되돌리기",FontSize=11,Foreground=MutedBrush,Margin=new Thickness(4,8,4,2),TextWrapping=TextWrapping.Wrap});
+        popup.Child=new Border {Child=panel,Background=PanelBrush,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(8)};
+        panel.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){popup.IsOpen=false;anchor.Focus();e.Handled=true;}};
+        popup.Closed+=(_,_)=>{document.EndEdit();surface.Focus();};
+        popup.IsOpen=true;
+    }
     internal void PanDragAt(Point cursor)
     {
         if(!surface.IsDragging)return;
@@ -433,7 +507,8 @@ public sealed class EditorWindow : Window
     private void Fit()
     {
         if(textEditor!=null || scroll.ViewportWidth<=1 || scroll.ViewportHeight<=1)return;
-        surface.SetZoom(Math.Min(1,Math.Min(Math.Max(1,scroll.ViewportWidth-60)/document.Crop.Width,Math.Max(1,scroll.ViewportHeight-60)/document.Crop.Height)));SyncStage();UpdateStatus();
+        var pad=2*document.Backdrop.PaddingPixels;
+        surface.SetZoom(Math.Min(1,Math.Min(Math.Max(1,scroll.ViewportWidth-60)/(document.Crop.Width+pad),Math.Max(1,scroll.ViewportHeight-60)/(document.Crop.Height+pad))));SyncStage();UpdateStatus();
     }
     private bool FitCrop(){if(!surface.FitCropToContent())status.Text="가장자리에 단색 여백이 없습니다.";return true;}
     private void UpdateCropStatus(){if(surface.PendingCrop is RectD c)status.Text=$"자르기 {c.Width:0}×{c.Height:0} · 방향키 이동 · Alt+방향키 크기 · [ ] 확장/축소 · A 내용에 맞춤 · Enter 적용";}
@@ -470,7 +545,7 @@ public sealed class EditorWindow : Window
     }
     internal void NudgeKeyUp(Key key){if(nudgeKeys.Count==1 && nudgeKeys.Contains(key))FinishNudge();else nudgeKeys.Remove(key);}
     private void FinishNudge(){if(nudgeKeys.Count==0)return;nudgeKeys.Clear();document.EndEdit();}
-    private void UpdateStatus(){dimensions.Text=$"{document.Crop.Width:0}×{document.Crop.Height:0}";status.Text=$"{document.Annotations.Count}개 주석 · Ctrl+휠 확대 · Space / 오른쪽 드래그 이동 · C 자르기 · V 선택";}
+    private void UpdateStatus(){var pad=2*document.Backdrop.PaddingPixels;dimensions.Text=pad>0?$"{document.Crop.Width+pad:0}×{document.Crop.Height+pad:0} (배경 포함)":$"{document.Crop.Width:0}×{document.Crop.Height:0}";status.Text=$"{document.Annotations.Count}개 주석 · Ctrl+휠 확대 · Space / 오른쪽 드래그 이동 · C 자르기 · V 선택";}
     private void OnKey(object sender,KeyEventArgs e)
     {
         if(e.OriginalSource is TextBox || textEditor!=null || IsPropertyInput(e.OriginalSource as DependencyObject))return;
@@ -577,7 +652,7 @@ public sealed class EditorWindow : Window
     {
         if(!FinishTextEdit(true))return;document.EndEdit();exporting++;
         try {
-            var copied=revision;var bitmap=ImageRenderer.Render(source,document);
+            var copied=revision;var bitmap=BackdropRenderer.Export(source,document);
             if(!await ImageActions.CopyAsync(bitmap)){status.Text="더 최근 복사 요청이 있어 취소했습니다.";return;}
             status.Text="편집 이미지를 복사했습니다.";if(revision==copied && hideAfterExport.IsChecked==true)Hide();
         }catch(Exception ex){ShowError("이미지 복사 실패",ex);}
@@ -590,7 +665,7 @@ public sealed class EditorWindow : Window
             var dialog=new SaveFileDialog {Filter="PNG 이미지 (*.png)|*.png|JPEG 이미지 (*.jpg)|*.jpg",FileName=path ?? $"Snaplet_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png",AddExtension=true,OverwritePrompt=true};
             if(dialog.ShowDialog(this)!=true)return;path=dialog.FileName;
         }
-        try {ImageActions.Save(ImageRenderer.Render(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport.IsChecked==true)Hide();}
+        try {ImageActions.Save(BackdropRenderer.Export(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport.IsChecked==true)Hide();}
         catch(Exception ex){ShowError("이미지 저장 실패",ex);}
     }
     /// <summary>Esc on an idle editor closes it like the original, optionally copying or saving first. The document stays reopenable.</summary>
@@ -599,10 +674,10 @@ public sealed class EditorWindow : Window
         if(!FinishTextEdit(true))return;document.EndEdit();
         try {
             if(EscapeAction==EscapeAction.Copy) {
-                exporting++;try{await ImageActions.CopyAsync(ImageRenderer.Render(source,document));}finally{exporting--;}
+                exporting++;try{await ImageActions.CopyAsync(BackdropRenderer.Export(source,document));}finally{exporting--;}
             } else if(EscapeAction==EscapeAction.Save && EscapeSaveFolder is string folder) {
                 Directory.CreateDirectory(folder);var path=Path.Combine(folder,ImageActions.DefaultName());
-                ImageActions.Save(ImageRenderer.Render(source,document),path);savedPath=path;
+                ImageActions.Save(BackdropRenderer.Export(source,document),path);savedPath=path;
             }
         } catch(Exception ex){ShowError("Esc로 닫기 전 내보내기 실패",ex);return;}
         Close();

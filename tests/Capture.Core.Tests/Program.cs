@@ -271,4 +271,5 @@ Check(AnnotationGeometry.HasTail(shapeCallout with {Kind=AnnotationKind.Ellipse}
 Check(!AnnotationGeometry.HasTail(shapeCallout with {Kind=AnnotationKind.Arrow}),"Shape tail option does not affect unrelated tools.");
 AdvancedModelChecks.Run(Check);
 PrecisionChecks.Run(Check);
+BackdropChecks.Run(Check);
 Console.WriteLine($"PASS: {passed} assertions (geometry, history, pixel effects, scroll matching).");
