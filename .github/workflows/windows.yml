@@ -22,6 +22,10 @@ jobs:
       - name: OCR runtime check
         shell: pwsh
         run: ./scripts/test-windows.ps1 -Ocr
+      - name: Report test summary
+        if: success()
+        shell: pwsh
+        run: ./scripts/report-failure.ps1 -Summary
       - name: Report failure details as annotations
         if: failure()
         shell: pwsh
