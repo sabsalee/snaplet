@@ -81,6 +81,7 @@ public partial class App : Application
         if(command=="scroll-add"){if(scrollWindow is not null)await scrollWindow.AddFrameAsync();return;}
         if(command=="scroll-finish"){scrollWindow?.Finish();return;}
         if(command=="last"){if(history.FirstOrDefault() is BitmapSource last)Edit(last);else ShowHome();return;}
+        if(command=="home"){ShowHome();return;}
         if(scrollWindow is not null){scrollWindow.Message("스크롤 캡처가 진행 중입니다. F9 또는 완료 버튼으로 마쳐 주세요.");return;}
         if(capturing)return;
         var foreground=Native.GetForegroundWindow();Native.GetWindowThreadProcessId(foreground,out var pid);
@@ -101,19 +102,23 @@ public partial class App : Application
             if(command=="window") {
                 if(foreground==0 || !Native.IsWindow(foreground))throw new InvalidOperationException("캡처할 창을 찾지 못했습니다. 대상 창을 활성화하고 단축키를 눌러 주세요.");
                 result=await engine.CaptureWindowAsync(foreground,token);
-            } else if(command is "region" or "pick-window" or "scroll") {
+            } else if(command is "region" or "pick-window" or "scroll" or "ocr") {
                 var displays=Native.Displays();
                 var targets=command=="pick-window"?Native.Windows():null;
                 var shots=await Task.WhenAll(displays.Select(d=>engine.CaptureMonitorAsync(d.Handle,token)));
                 diagnostics.Frames(shots);
-                var selection=await SelectAsync(displays,shots,targets,token,diagnostics);
+                var purpose=command switch {"ocr"=>"텍스트·QR 인식","scroll"=>"스크롤 캡처 영역",_=>destination!=null?"편집 중인 이미지에 추가":null};
+                var options=new SelectionOptions(settings.ShowLoupe,settings.AdjustSelectionBeforeCapture || command=="scroll",purpose);
+                var selection=await SelectAsync(displays,shots,targets,token,diagnostics,options);
                 if(selection is null)return;
                 if(selection.Window!=0)result=await engine.CaptureWindowAsync(selection.Window,token);
                 else {
                     var rect=selection.Region!.Value;
                     var index=Array.FindIndex(shots,f=>Contains(f,rect));
                     if(index<0)throw new InvalidOperationException("선택 영역의 화면 구성이 바뀌었습니다. 다시 캡처해 주세요.");
-                    result=Crop(shots[index],rect);repeatRegion=rect;repeatMonitor=displays[index].Name;repeatMonitorBounds=displays[index].Bounds;
+                    result=Crop(shots[index],rect);
+                    if(command=="ocr"){_=InstantRecognizeAsync(result.Image);return;}
+                    repeatRegion=rect;repeatMonitor=displays[index].Name;repeatMonitorBounds=displays[index].Bounds;
                     if(command=="scroll") {
                         var monitorName=displays[index].Name;
                         var monitorBounds=displays[index].Bounds;
@@ -136,7 +141,7 @@ public partial class App : Application
                 result=Crop(await engine.CaptureMonitorAsync(display.Handle,token),rect);
             } else if(command=="desktop")result=await engine.CaptureDesktopAsync(token);
             else result=await engine.CaptureMonitorAsync(Native.PointerDisplay().Handle,token);
-            if(command is not ("region" or "pick-window" or "scroll")) {diagnostics.Frames([result]);diagnostics.Complete("snapshot-ready");}
+            if(command is not ("region" or "pick-window" or "scroll" or "ocr")) {diagnostics.Frames([result]);diagnostics.Complete("snapshot-ready");}
             if(destination!=null)destination.AddCapturedImage(result.Image);
             else Received(result.Image,$"{result.Engine} · {result.Image.PixelWidth} × {result.Image.PixelHeight} px · 처리 {clock.ElapsedMilliseconds}ms (선택 시간 포함)");
         } catch(OperationCanceledException) {diagnostics.Complete("cancelled");status.Text="캡처를 취소했습니다.";}
@@ -151,7 +156,7 @@ public partial class App : Application
             if(destination!=null && !quitting && Windows.Cast<Window>().Contains(destination))destination.ShowDocument();
         }
     }
-    private Task<SelectionResult?> SelectAsync(IReadOnlyList<DisplayInfo> displays,CapturedFrame[] shots,IReadOnlyList<PickableWindow>? targets,CancellationToken token,CaptureDiagnostics diagnostics) {
+    private Task<SelectionResult?> SelectAsync(IReadOnlyList<DisplayInfo> displays,CapturedFrame[] shots,IReadOnlyList<PickableWindow>? targets,CancellationToken token,CaptureDiagnostics diagnostics,SelectionOptions options) {
         var completion=new TaskCompletionSource<SelectionResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var overlays=new List<SelectionWindow>();
         bool completed=false;int rendered=0;
@@ -161,7 +166,8 @@ public partial class App : Application
             foreach(var overlay in overlays)overlay.Close();completion.TrySetResult(result);
         }
         for(var i=0;i<displays.Count;i++) {
-            var overlay=new SelectionWindow(displays[i],shots[i].Image,targets);overlays.Add(overlay);overlay.Completed+=Finish;
+            var overlay=new SelectionWindow(displays[i],shots[i].Image,targets,options);overlays.Add(overlay);overlay.Completed+=Finish;
+            overlay.SelectionStarted+=()=>{foreach(var other in overlays)if(other!=overlay)other.ClearSelection();};
             overlay.Closed+=(_,_)=>{if(!completed)Finish(null);};
             overlay.ContentRendered+=(_,_)=>{if(++rendered==displays.Count){diagnostics.Mark("overlayContentRenderedMs");diagnostics.Complete("overlay-rendered");}};
         }
@@ -212,7 +218,7 @@ public partial class App : Application
             if(editors.Count<12 && editors.Values.Sum(window=>window.EstimatedImageBytes)<256_000_000)break;
             pair.Value.CloseForExit();editors.Remove(pair.Key);
         }
-        var window=new EditorWindow(image);editors[image]=window;
+        var window=new EditorWindow(image){EscapeAction=settings.EscapeAction,EscapeSaveFolder=settings.SaveFolder};editors[image]=window;
         window.OcrRequested+=source=>_=RecognizeAsync(source);window.RasterizedRequested+=Edit;
         window.AddCaptureRequested+=()=>RunCommandAsync("region",null,window);
         window.PinRequested+=bitmap=>{
@@ -221,13 +227,33 @@ public partial class App : Application
         };
         window.Closed+=(_,_)=>editors.Remove(image);Exclude(window);window.ShowDocument();
     }
+    /// <summary>OCR button in preview/editor: decoded QR codes first, then recognised text.</summary>
     private async Task RecognizeAsync(BitmapSource image) {
         try {
-            status.Text="텍스트를 읽는 중…";
-            var text=await TesseractOcr.RecognizeAsync(image,CancellationToken.None);
-            var window=new OcrWindow(text);Exclude(window);window.Show();window.Activate();status.Text="텍스트 추출을 완료했습니다.";
+            status.Text="텍스트와 QR 코드를 읽는 중…";
+            var codes=await Task.Run(()=>QrReader.Decode(image));
+            var text=JoinIfWanted(await TesseractOcr.RecognizeAsync(image,CancellationToken.None));
+            var combined=string.Join("\n\n",codes.Concat(string.IsNullOrWhiteSpace(text)?Array.Empty<string>():new[]{text}));
+            var window=new OcrWindow(combined,codes.Count>0?$"QR 코드 {codes.Count}개를 읽었습니다.":null);Exclude(window);window.Show();window.Activate();status.Text="텍스트 추출을 완료했습니다.";
         } catch(Exception error){Error(error);}
     }
+    /// <summary>
+    /// Instant recognition hotkey: a QR/2D code wins (its exact payload is copied); otherwise OCR text is copied.
+    /// The result window opens for review, already copied, like the original's "Instant Text/QR Recognition".
+    /// </summary>
+    private async Task InstantRecognizeAsync(BitmapSource image) {
+        try {
+            status.Text="텍스트와 QR 코드를 읽는 중…";
+            var codes=await Task.Run(()=>QrReader.Decode(image));
+            string text;string notice;
+            if(codes.Count>0){text=string.Join("\n",codes);notice=codes.Count==1?"QR 코드 내용을 클립보드에 복사했습니다.":$"QR 코드 {codes.Count}개를 클립보드에 복사했습니다.";}
+            else {text=JoinIfWanted(await TesseractOcr.RecognizeAsync(image,CancellationToken.None)).Trim();notice=text.Length>0?"인식한 텍스트를 클립보드에 복사했습니다.":"인식된 텍스트가 없습니다.";}
+            if(text.Length>0){try{Clipboard.SetText(text);}catch(ExternalException){notice="다른 앱이 클립보드를 사용 중이라 복사하지 못했습니다. 아래에서 복사하세요.";}}
+            status.Text=notice;
+            var window=new OcrWindow(text,notice);Exclude(window);window.Show();window.Activate();
+        } catch(Exception error){Error(error);}
+    }
+    private string JoinIfWanted(string text)=>settings.OcrJoinLines?System.Text.RegularExpressions.Regex.Replace(text.Trim(),@"\s*\r?\n\s*"," "):text;
     private void OpenImage() {
         var dialog=new OpenFileDialog {Filter="이미지|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif"};
         if(dialog.ShowDialog()!=true)return;
@@ -241,6 +267,7 @@ public partial class App : Application
             var previous=settings;
             hotkeys?.Apply(next.Hotkeys);
             try{SettingsStore.Save(next);settings=next;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
+            foreach(var editor in editors.Values){editor.EscapeAction=settings.EscapeAction;editor.EscapeSaveFolder=settings.SaveFolder;}
             home?.UpdateSettings(settings);status.Text="설정을 저장했습니다.";
         },updates,RestartForUpdate);preferences.SelectPage(page);preferences.Closed+=(_,_)=>preferences=null;Exclude(preferences);preferences.Show();
     }
@@ -260,7 +287,7 @@ public partial class App : Application
     private void ShowTrayMenu() {
         var menu=new ContextMenu {Placement=PlacementMode.MousePoint};
         void Add(string text,Action action){var item=new MenuItem {Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
-        foreach(var (text,command) in new[]{("영역 캡처","region"),("활성 창 캡처","window"),("창 선택 캡처","pick-window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
+        foreach(var (text,command) in new[]{("영역 캡처","region"),("활성 창 캡처","window"),("창 선택 캡처","pick-window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
         var recent=new MenuItem {Header="최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
         menu.Items.Add(new Separator());Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("시작 화면",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
@@ -282,6 +309,7 @@ public partial class App : Application
             System.Windows.Media.RenderOptions.ProcessRenderMode=RenderMode.SoftwareOnly;
             EditorSmokeTest.Run(path);
             UI.UiSmokeTest.Run(path);
+            UI.SelectionSmokeTest.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();
             File.WriteAllText(Path.Combine(path,"gdi-smoke.txt"),"PASS: synthetic 2x2 DIB→BitBlt pixel order, opaque alpha, native resource lifetime and pre-cancellation. No desktop capture.");

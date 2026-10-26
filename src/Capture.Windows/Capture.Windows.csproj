@@ -14,7 +14,7 @@
     <RootNamespace>Capture.Windows</RootNamespace>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Capture.Core/Capture.Core.csproj" /></ItemGroup>
-  <ItemGroup><PackageReference Include="Tesseract" Version="5.2.0" /><PackageReference Include="Velopack" Version="1.2.161" /></ItemGroup>
+  <ItemGroup><PackageReference Include="Tesseract" Version="5.2.0" /><PackageReference Include="Velopack" Version="1.2.161" /><PackageReference Include="ZXing.Net" Version="0.16.9" /></ItemGroup>
   <ItemGroup><Content Include="../../assets/tessdata/**/*" Link="tessdata/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><Content Include="../../assets/licenses/**/*" Link="licenses/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
 </Project>

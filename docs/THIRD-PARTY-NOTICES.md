@@ -7,6 +7,8 @@
 
 - **Velopack 1.2.161** — Velopack Ltd., Caelan Sayler and contributors; MIT. https://github.com/velopack/velopack . See `licenses/Velopack-1.2.161-LICENSE.txt`.
 
+- **ZXing.Net 0.16.9** — Michael Jahn and contributors (port of ZXing); Apache-2.0. Used locally to decode QR and other 2D codes. https://github.com/micjahn/ZXing.Net . See `licenses/ZXing.Net-0.16.9-LICENSE.txt`.
+
 ## Fluent UI System Icons
 
 The toolbar uses a curated subset of Microsoft's Fluent UI System Icons (24 px regular), licensed under MIT. Original vector outlines are preserved on their 24 × 24 design grid.

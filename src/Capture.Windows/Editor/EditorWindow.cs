@@ -45,6 +45,9 @@ public sealed class EditorWindow : Window
     public event Func<Task>? AddCaptureRequested;
     public event Action<BitmapSource>? RasterizedRequested;
     public event Action<BitmapSource>? PinRequested;
+    /// <summary>Optional copy/save when Esc closes an idle editor (set from app settings).</summary>
+    public EscapeAction EscapeAction {get;set;}
+    public string? EscapeSaveFolder {get;set;}
     private static readonly Brush PanelBrush=Ui.Card;
     private static readonly Brush MutedBrush=Ui.Muted;
 
@@ -476,7 +479,8 @@ public sealed class EditorWindow : Window
         }
         switch(e.Key) {
             case Key.Delete:surface.DeleteSelected();break;
-            case Key.Escape:SetTool(null);break;case Key.Enter:surface.ApplyCrop();break;
+            case Key.Escape:if(surface.Tool is null && !surface.CropTool && surface.Selected is null)_=DismissWithEscapeAsync();else SetTool(null);break;
+            case Key.Enter:surface.ApplyCrop();break;
             case Key.V:SetTool(null);break;case Key.A:SetTool(AnnotationKind.Arrow);break;case Key.L:SetTool(AnnotationKind.Line);break;
             case Key.R:SetTool(AnnotationKind.Rectangle);break;case Key.O:SetTool(AnnotationKind.Ellipse);break;case Key.P:SetTool(AnnotationKind.Pen);break;
             case Key.T:SetTool(AnnotationKind.Text);break;case Key.N:SetTool(AnnotationKind.Step);break;case Key.H:SetTool(AnnotationKind.Highlight);break;
@@ -564,6 +568,20 @@ public sealed class EditorWindow : Window
         }
         try {ImageActions.Save(ImageRenderer.Render(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport.IsChecked==true)Hide();}
         catch(Exception ex){ShowError("이미지 저장 실패",ex);}
+    }
+    /// <summary>Esc on an idle editor closes it like the original, optionally copying or saving first. The document stays reopenable.</summary>
+    private async Task DismissWithEscapeAsync()
+    {
+        if(!FinishTextEdit(true))return;document.EndEdit();
+        try {
+            if(EscapeAction==EscapeAction.Copy) {
+                exporting++;try{await ImageActions.CopyAsync(ImageRenderer.Render(source,document));}finally{exporting--;}
+            } else if(EscapeAction==EscapeAction.Save && EscapeSaveFolder is string folder) {
+                Directory.CreateDirectory(folder);var path=Path.Combine(folder,ImageActions.DefaultName());
+                ImageActions.Save(ImageRenderer.Render(source,document),path);savedPath=path;
+            }
+        } catch(Exception ex){ShowError("Esc로 닫기 전 내보내기 실패",ex);return;}
+        Close();
     }
     public void ShowDocument(){Show();Activate();if(textEditor!=null)textEditor.Focus();else surface.Focus();}
     public void CloseForExit(){closingForExit=true;Close();}

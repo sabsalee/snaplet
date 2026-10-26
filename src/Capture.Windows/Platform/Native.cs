@@ -19,6 +19,7 @@ internal static class Native
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool GetMonitorInfo(nint monitor,ref MONITORINFOEX info);
     [DllImport("user32.dll")] public static extern nint MonitorFromPoint(POINT p,uint flags);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] public static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool GetWindowRect(nint hwnd,out RECT bounds);
     [DllImport("user32.dll")] public static extern bool IsWindow(nint hwnd);

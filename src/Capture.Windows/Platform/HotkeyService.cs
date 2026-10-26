@@ -9,7 +9,8 @@ namespace Capture.Windows.Platform;
 public sealed record HotkeyBinding(string Command,Key Key,ModifierKeys Modifiers)
 {
     private string KeyLabel=>Key is >=Key.D0 and <=Key.D9?((int)Key-(int)Key.D0).ToString():Key.ToString();
-    public override string ToString()=>$"{(Modifiers.HasFlag(ModifierKeys.Control)?"Ctrl+":"")}{(Modifiers.HasFlag(ModifierKeys.Alt)?"Alt+":"")}{(Modifiers.HasFlag(ModifierKeys.Shift)?"Shift+":"")}{KeyLabel}";
+    public bool Assigned=>Key!=Key.None;
+    public override string ToString()=>!Assigned?"미지정":$"{(Modifiers.HasFlag(ModifierKeys.Control)?"Ctrl+":"")}{(Modifiers.HasFlag(ModifierKeys.Alt)?"Alt+":"")}{(Modifiers.HasFlag(ModifierKeys.Shift)?"Shift+":"")}{KeyLabel}";
 }
 internal sealed class HotkeyService : IDisposable
 {
@@ -24,7 +25,7 @@ internal sealed class HotkeyService : IDisposable
         source.AddHook(Hook);
     }
     public void Apply(IReadOnlyList<HotkeyBinding> bindings) {
-        if(bindings.GroupBy(b=>(b.Key,b.Modifiers)).Any(g=>g.Count()>1)) throw new InvalidOperationException("같은 단축키를 두 작업에 지정할 수 없습니다.");
+        if(bindings.Where(b=>b.Assigned).GroupBy(b=>(b.Key,b.Modifiers)).Any(g=>g.Count()>1)) throw new InvalidOperationException("같은 단축키를 두 작업에 지정할 수 없습니다.");
         var previous=registered.Values.ToArray(); Clear();
         try { Register(bindings); }
         catch { Clear(); Register(previous); throw; }
@@ -32,7 +33,8 @@ internal sealed class HotkeyService : IDisposable
     private void Register(IReadOnlyList<HotkeyBinding> bindings) {
         for(var i=0;i<bindings.Count;i++) {
             var b=bindings[i];
-            if(b.Key==Key.F12 || b.Key==Key.None || b.Modifiers.HasFlag(ModifierKeys.Windows)) throw new InvalidOperationException("F12와 Windows 키 조합은 예약되어 사용할 수 없습니다.");
+            if(!b.Assigned)continue;
+            if(b.Key==Key.F12 || b.Modifiers.HasFlag(ModifierKeys.Windows)) throw new InvalidOperationException("F12와 Windows 키 조합은 예약되어 사용할 수 없습니다.");
             uint m=0x4000;
             if(b.Modifiers.HasFlag(ModifierKeys.Alt))m|=1;
             if(b.Modifiers.HasFlag(ModifierKeys.Control))m|=2;

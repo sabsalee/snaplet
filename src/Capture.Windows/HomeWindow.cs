@@ -38,7 +38,8 @@ internal sealed class HomeWindow : Window
         Link("이미지 열기","folder",open);Link("클립보드에서 가져오기","clipboard",clipboard);Link("편집 도구 체험","spark",demo);
         var extra=new WrapPanel{Margin=new Thickness(0,14,0,0)};other.Children.Add(extra);
         var timer=Ui.Button("3초 타이머",()=>command("delayed"),"clock","QuietButton");timer.Margin=new Thickness(0,0,6,0);extra.Children.Add(timer);
-        extra.Children.Add(Ui.Button("긴 화면",()=>command("scroll"),"scroll","QuietButton"));
+        var scroll=Ui.Button("긴 화면",()=>command("scroll"),"scroll","QuietButton");scroll.Margin=new Thickness(0,0,6,0);extra.Children.Add(scroll);
+        extra.Children.Add(Ui.Button("텍스트·QR",()=>command("ocr"),"ocr","QuietButton"));
         var recentHeader=new DockPanel{Margin=new Thickness(0,23,0,10)};content.Children.Add(recentHeader);
         var last=Ui.Button("최근 편집 열기",()=>command("last"),style:"QuietButton");last.FontSize=11;last.Padding=new Thickness(8,2,8,2);last.MinHeight=24;DockPanel.SetDock(last,Dock.Right);recentHeader.Children.Add(last);recentHeader.Children.Add(Ui.Label("최근 캡처",13,weight:FontWeights.SemiBold));
         content.Children.Add(recent);status.Foreground=Ui.Muted;status.FontSize=11;status.Margin=new Thickness(0,12,0,0);content.Children.Add(status);
