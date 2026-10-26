@@ -436,6 +436,34 @@ internal sealed class EditorSurface : FrameworkElement
         PendingCrop=null;CropTool=false;InvalidateVisual();return true;
     }
     internal void ClearCrop() {PendingCrop=null;CropTool=false;InvalidateVisual();}
+    private static PixelRect ToPixels(RectD r)=>new((int)Math.Floor(r.X),(int)Math.Floor(r.Y),(int)Math.Ceiling(r.Right)-(int)Math.Floor(r.X),(int)Math.Ceiling(r.Bottom)-(int)Math.Floor(r.Y));
+    private static RectD FromPixels(PixelRect r)=>new(r.X,r.Y,r.Width,r.Height);
+    /// <summary>Keyboard precision for the pending crop: move, or resize the right/bottom edges, by whole image pixels.</summary>
+    internal bool NudgeCrop(int dx,int dy,bool resize)
+    {
+        if(PendingCrop is not RectD c)return false;
+        var bounds=ToPixels(Document.Crop);var r=ToPixels(c);
+        PendingCrop=FromPixels(resize?SelectionMath.ResizeBy(r,dx,dy,bounds):SelectionMath.Move(r,dx,dy,bounds));InvalidateVisual();return true;
+    }
+    /// <summary>[ and ] grow or shrink every side of the pending crop.</summary>
+    internal bool GrowCrop(int amount)
+    {
+        if(PendingCrop is not RectD c)return false;
+        PendingCrop=FromPixels(SelectionMath.Grow(ToPixels(c),amount,ToPixels(Document.Crop)));InvalidateVisual();return true;
+    }
+    /// <summary>Fits the pending crop to content by trimming uniform margins of the original screenshot. Returns false when nothing changed.</summary>
+    internal bool FitCropToContent()
+    {
+        if(PendingCrop is not RectD c)return false;
+        var area=ToPixels(c).Intersect(new PixelRect(0,0,source.PixelWidth,source.PixelHeight));
+        if(area.IsEmpty || (long)area.Width*area.Height>40_000_000)return false;
+        BitmapSource pixels=source.Format==PixelFormats.Bgra32 || source.Format==PixelFormats.Pbgra32?source:new FormatConvertedBitmap(source,PixelFormats.Bgra32,null,0);
+        var buffer=new byte[area.Width*area.Height*4];pixels.CopyPixels(new Int32Rect(area.X,area.Y,area.Width,area.Height),buffer,area.Width*4,0);
+        var local=PixelProbe.TrimUniformBorder(buffer,area.Width,area.Height,new PixelRect(0,0,area.Width,area.Height),10);
+        var fitted=new PixelRect(area.X+local.X,area.Y+local.Y,local.Width,local.Height);
+        if(fitted==ToPixels(c))return false;
+        PendingCrop=FromPixels(fitted);InvalidateVisual();return true;
+    }
     internal void DeleteSelected() {CancelGesture();if(Selected is Guid id)Document.Delete(id);Selected=null;SelectionChanged?.Invoke();InvalidateVisual();}
     internal void ChangeSelected(Func<Annotation,Annotation> update) {FinishNumberEdit();if(Selection is Annotation a){var changed=update(a);if(changed.Kind is AnnotationKind.Image or AnnotationKind.Magnifier or AnnotationKind.Text)CommitAnnotation(changed,false);else Document.Replace(changed);SelectionChanged?.Invoke();InvalidateVisual();}}
     internal void ApplyStyle()=>ChangeSelected(a=>WithReachableShapeTail(a with {Color=Ink,Thickness=Thickness,Style=InkStyle}));

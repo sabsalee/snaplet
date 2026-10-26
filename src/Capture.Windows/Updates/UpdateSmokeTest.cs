@@ -58,7 +58,7 @@ internal static class UpdateSmokeTest
                 Shot(window,Path.Combine(directory,"ui-settings-updates-ready.png"));
                 var automatic=Find<CheckBox>(window).Single(c=>AutomationProperties.GetName(c)=="업데이트 자동 확인 및 다운로드");automatic.IsChecked=false;
                 Find<Button>(window).Single(b=>AutomationProperties.GetAutomationId(b)=="settings-save").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                Check(saved is {AutoUpdate:false} && saved.Hotkeys.Count==6,"automatic update preference persists alongside existing settings");
+                Check(saved is {AutoUpdate:false} && saved.Hotkeys.Count==AppSettings.Commands.Count,"automatic update preference persists alongside existing settings");
             }finally{if(window.IsVisible)window.Close();}
         }
         File.WriteAllText(Path.Combine(directory,"update-smoke.json"),JsonSerializer.Serialize(new{passed=checks.Count,checks,scope="state/operation and WPF controls; installed-update.json records the separate real installer/restart test"},new JsonSerializerOptions{WriteIndented=true}));

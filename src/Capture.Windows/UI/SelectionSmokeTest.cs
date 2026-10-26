@@ -81,6 +81,14 @@ internal static class SelectionSmokeTest
         try {whole.Show();whole.UpdateLayout();whole.SimulateKey(Key.Enter);Check(completed && result?.Region is Int32Rect {Width:1200,Height:760},"Enter without a selection captures the whole monitor");}
         finally {whole.Close();}
 
+        // --- editor crop precision reuses the same arithmetic --------------------------------
+        var surface=new Capture.Windows.Editor.EditorSurface(image,new EditableDocument(image.PixelWidth,image.PixelHeight)) {CropTool=true,PendingCrop=new RectD(100,320,340,280)};
+        Check(surface.FitCropToContent() && surface.PendingCrop is RectD c && Math.Abs(c.X-120)<=1 && Math.Abs(c.Width-290)<=2,"editor A fits the pending crop to content");
+        var fitted=surface.PendingCrop!.Value;
+        surface.NudgeCrop(1,0,false);Check(surface.PendingCrop!.Value.X==fitted.X+1,"editor arrow moves the pending crop by one pixel");
+        surface.NudgeCrop(10,0,true);Check(surface.PendingCrop!.Value.Width==fitted.Width+10,"editor Alt+arrow resizes the pending crop");
+        surface.GrowCrop(1);Check(surface.PendingCrop!.Value.X==fitted.X,"editor ] grows the pending crop");
+
         File.WriteAllText(Path.Combine(directory,"selection-smoke.json"),JsonSerializer.Serialize(new{component="selection overlay, settings migration, QR",passed=checks.Count,checks,
             limitations=new[]{"Overlay keys and pointer are driven through the overlay's handlers, not physical input","Single synthetic monitor; mixed-DPI multi-monitor selection is not covered"}},new JsonSerializerOptions{WriteIndented=true}));
     }

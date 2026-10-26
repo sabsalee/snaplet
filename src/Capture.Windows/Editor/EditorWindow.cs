@@ -73,7 +73,7 @@ public sealed class EditorWindow : Window
         dimensions.Foreground=MutedBrush;dimensions.Margin=new Thickness(12,0,12,0);dimensions.VerticalAlignment=VerticalAlignment.Center;info.Children.Add(dimensions);
         var zoomButton=ToolButton(info,"100%","확대율 · 클릭하여 보기 옵션",()=>{});
         zoomButton.Click+=(_,_)=>{
-            var menu=new ContextMenu();Item(menu,"화면 맞춤 · Ctrl+0",()=>{fitMode=true;Fit();});Item(menu,"100% · Ctrl+1",SetActualSize);
+            var menu=new ContextMenu();Item(menu,"화면 맞춤 · Ctrl+0",()=>{fitMode=true;Fit();});Item(menu,"100% · Ctrl+1",SetActualSize);Item(menu,"선택 영역 확대 · Ctrl+2",ZoomToSelection);
             Item(menu,"확대 · Ctrl++",()=>ChangeZoom(1.25));Item(menu,"축소 · Ctrl+-",()=>ChangeZoom(.8));
             zoomButton.ContextMenu=menu;menu.PlacementTarget=zoomButton;menu.IsOpen=true;
         };
@@ -435,6 +435,20 @@ public sealed class EditorWindow : Window
         if(textEditor!=null || scroll.ViewportWidth<=1 || scroll.ViewportHeight<=1)return;
         surface.SetZoom(Math.Min(1,Math.Min(Math.Max(1,scroll.ViewportWidth-60)/document.Crop.Width,Math.Max(1,scroll.ViewportHeight-60)/document.Crop.Height)));SyncStage();UpdateStatus();
     }
+    private bool FitCrop(){if(!surface.FitCropToContent())status.Text="가장자리에 단색 여백이 없습니다.";return true;}
+    private void UpdateCropStatus(){if(surface.PendingCrop is RectD c)status.Text=$"자르기 {c.Width:0}×{c.Height:0} · 방향키 이동 · Alt+방향키 크기 · [ ] 확장/축소 · A 내용에 맞춤 · Enter 적용";}
+    /// <summary>Ctrl+2: zoom so the pending crop or the selected object fills the view.</summary>
+    private void ZoomToSelection()
+    {
+        RectD? target=surface.PendingCrop ?? surface.Selection?.Bounds;
+        if(target is not RectD r || r.Width<1 || r.Height<1 || scroll.ViewportWidth<=1){status.Text="확대할 선택 영역이 없습니다. 자르기 범위나 객체를 먼저 선택하세요.";return;}
+        fitMode=false;
+        surface.SetZoom(Math.Min((scroll.ViewportWidth-60)/r.Width,(scroll.ViewportHeight-60)/r.Height));SyncStage();scroll.UpdateLayout();
+        var center=surface.TranslatePoint(new Point((r.X+r.Width/2-document.Crop.X)*surface.Zoom,(r.Y+r.Height/2-document.Crop.Y)*surface.Zoom),scroll);
+        scroll.ScrollToHorizontalOffset(scroll.HorizontalOffset+center.X-scroll.ViewportWidth/2);
+        scroll.ScrollToVerticalOffset(scroll.VerticalOffset+center.Y-scroll.ViewportHeight/2);
+        scroll.UpdateLayout();UpdateStatus();
+    }
     private void SetActualSize()=>ZoomAt(1/VisualTreeHelper.GetDpi(surface).DpiScaleX,new(scroll.ActualWidth/2,scroll.ActualHeight/2));
     private void ChangeZoom(double factor,Point? anchor=null)=>ZoomAt(surface.Zoom*factor,anchor ?? new Point(scroll.ActualWidth/2,scroll.ActualHeight/2));
     internal void ZoomAt(double zoom,Point anchor)
@@ -462,6 +476,16 @@ public sealed class EditorWindow : Window
         if(e.OriginalSource is TextBox || textEditor!=null || IsPropertyInput(e.OriginalSource as DependencyObject))return;
         if(e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down))FinishNudge();
         var ctrl=Keyboard.Modifiers.HasFlag(ModifierKeys.Control);var shift=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        if(surface.CropTool && surface.PendingCrop!=null && !ctrl) {
+            // Crop precision like the capture overlay: arrows move, Alt+arrows resize, [ ] grow/shrink, A fits to content.
+            var key=e.Key==Key.System?e.SystemKey:e.Key;var step=shift?10:1;var alt=Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+            int dx=key==Key.Left?-step:key==Key.Right?step:0,dy=key==Key.Up?-step:key==Key.Down?step:0;
+            bool handled=key switch {
+                Key.Left or Key.Right or Key.Up or Key.Down=>surface.NudgeCrop(dx,dy,alt),
+                Key.OemOpenBrackets=>surface.GrowCrop(-step),Key.OemCloseBrackets=>surface.GrowCrop(step),
+                Key.A=>FitCrop(),_=>false};
+            if(handled){UpdateCropStatus();e.Handled=true;return;}
+        }
         if(ctrl) {
             switch(e.Key) {
                 case Key.Z:surface.CancelGesture();if(shift)document.Redo();else document.Undo();break;
@@ -471,7 +495,7 @@ public sealed class EditorWindow : Window
                 case Key.Enter:if(surface.Selection is {Kind:AnnotationKind.Highlight})surface.ChangeSelected(a=>a with {Style=a.Appearance with {MarkerCap=(MarkerCap)(((int)a.Appearance.MarkerCap+1)%3)}});else return;break;
                 case Key.C:_=CopyAsync();break;case Key.S:Save(shift);break;
                 case Key.D:surface.DuplicateSelected();break;
-                case Key.D0:fitMode=true;Fit();break;case Key.D1:SetActualSize();break;
+                case Key.D0:fitMode=true;Fit();break;case Key.D1:SetActualSize();break;case Key.D2:ZoomToSelection();break;
                 case Key.OemPlus:case Key.Add:ChangeZoom(1.25);break;case Key.OemMinus:case Key.Subtract:ChangeZoom(.8);break;
                 default:return;
             }
