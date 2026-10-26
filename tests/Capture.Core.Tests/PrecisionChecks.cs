@@ -139,3 +139,41 @@ internal static class ColorChecks
         check(ColorMath.ApcaLc(new ColorRgba(120, 120, 120), new ColorRgba(121, 121, 121)) == 0, "Near-identical colours have no APCA contrast.");
     }
 }
+
+/// <summary>Sticky headers/footers and end-of-page detection for automatic scrolling.</summary>
+internal static class ScrollBandChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        const int width = 40, frameHeight = 100, header = 8, footer = 10;
+        var random = new Random(4242);
+        var page = new byte[width * 400 * 4]; random.NextBytes(page);
+        for (int i = 3; i < page.Length; i += 4) page[i] = 255;
+        var headerRows = new byte[width * header * 4]; random.NextBytes(headerRows);
+        var footerRows = new byte[width * footer * 4]; random.NextBytes(footerRows);
+        for (int i = 3; i < headerRows.Length; i += 4) headerRows[i] = 255;
+        for (int i = 3; i < footerRows.Length; i += 4) footerRows[i] = 255;
+        int row = width * 4;
+        byte[] Frame(int scroll)
+        {
+            var f = new byte[width * frameHeight * 4];
+            headerRows.CopyTo(f, 0);
+            page.AsSpan((scroll + header) * row, (frameHeight - header - footer) * row).CopyTo(f.AsSpan(header * row));
+            footerRows.CopyTo(f, (frameHeight - footer) * row);
+            return f;
+        }
+        var bands = ScrollStitchSession.StaticBands(Frame(0), Frame(30), width, frameHeight);
+        check(bands == (header, footer), $"Static band detection finds the sticky header and footer (got {bands}).");
+        check(ScrollStitchSession.StaticBands(Frame(5), Frame(5), width, frameHeight) == (frameHeight, 0), "Identical frames are fully static.");
+        var session = new ScrollStitchSession(width, frameHeight, Frame(0), minimumOverlap: 16);
+        check(session.Append(Frame(30)) && session.Append(Frame(60)), "Frames with sticky bars still match on the moving middle.");
+        check(session.OutputHeight == frameHeight + 60 && session.LastStaticBands == (header, footer), "Height grows by the content scroll only.");
+        var expected = new byte[width * (frameHeight + 60) * 4];
+        headerRows.CopyTo(expected, 0);
+        page.AsSpan(header * row, (frameHeight + 60 - header - footer) * row).CopyTo(expected.AsSpan(header * row));
+        footerRows.CopyTo(expected, (frameHeight + 60 - footer) * row);
+        check(session.ToArray().SequenceEqual(expected), "Output has the header once, continuous content, and the footer once at the end.");
+        check(!session.Append(Frame(60)) && session.ReachedEnd && session.OutputHeight == frameHeight + 60, "An unchanged frame signals the end without appending.");
+        check(session.Append(Frame(75)) && !session.ReachedEnd, "Scrolling again after an unchanged frame continues the stitch.");
+    }
+}

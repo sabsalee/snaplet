@@ -130,7 +130,10 @@ public partial class App : Application
                             var current=Native.Displays().FirstOrDefault(d=>d.Name==monitorName)??throw new InvalidOperationException("캡처 중 모니터가 변경됐습니다.");
                             if(current.Bounds.Left!=monitorBounds.Left || current.Bounds.Top!=monitorBounds.Top || current.Bounds.Right!=monitorBounds.Right || current.Bounds.Bottom!=monitorBounds.Bottom)throw new InvalidOperationException("모니터 위치나 해상도가 바뀌었습니다. 스크롤 캡처를 다시 시작해 주세요.");
                             return Crop(await engine.CaptureMonitorAsync(current.Handle,cancel),rect).Image;
-                        });
+                        },notches=>Native.WheelAt(rect.X+rect.Width/2,rect.Y+rect.Height/2,notches));
+                        Native.GetCursorPos(out var pointerBefore);
+                        scrollWindow.Closed+=(_,_)=>Native.SetCursorPos(pointerBefore.X,pointerBefore.Y);
+                        scrollWindow.Loaded+=(_,_)=>PlaceBeside(scrollWindow,rect,displays[index]);
                         scrollWindow.Finished+=image=>{Received(image,"수동 스크롤 캡처 · 겹침 검증 완료");Edit(image);};
                         scrollWindow.Closed+=(_,_)=>{hotkeys?.UnregisterScrollKeys();scrollWindow=null;};
                         scrollWindow.Show();
@@ -193,6 +196,15 @@ public partial class App : Application
     internal static Capture.Core.Backdrop WindowBackdrop(WindowCaptureStyle style)=>style==WindowCaptureStyle.Shadow
         ?new(Enabled:true,Fill:Capture.Core.BackdropFill.Transparent,Padding:36,CornerRadius:8,Shadow:.7)
         :new(Enabled:true,Fill:Capture.Core.BackdropFill.Gradient,Preset:4,Padding:56,CornerRadius:8,Shadow:.6);
+    /// <summary>Keeps the scroll panel off the captured area so automatic wheel input never lands on Snaplet itself.</summary>
+    private static void PlaceBeside(Window window,Int32Rect region,DisplayInfo display)
+    {
+        var hwnd=new WindowInteropHelper(window).Handle;if(hwnd==0 || !Native.GetWindowRect(hwnd,out var r))return;
+        var work=display.Work;int w=r.Width,h=r.Height;
+        int x=region.X+region.Width+16<=work.Right-w?region.X+region.Width+16:region.X-16-w>=work.Left?region.X-16-w:work.Right-w-16;
+        int y=Math.Clamp(region.Y,work.Top,Math.Max(work.Top,work.Bottom-h));
+        Native.SetWindowPos(hwnd,(nint)(-1),x,y,0,0,0x1|0x10);
+    }
     private static bool Contains(CapturedFrame f,Int32Rect r)=>r.X>=f.X && r.Y>=f.Y && r.X+r.Width<=f.X+f.Image.PixelWidth && r.Y+r.Height<=f.Y+f.Image.PixelHeight;
     private static CapturedFrame Crop(CapturedFrame source,Int32Rect r) {
         if(!Contains(source,r))throw new InvalidOperationException("선택 영역이 캡처 화면을 벗어났습니다.");
@@ -326,6 +338,7 @@ public partial class App : Application
             UI.UiSmokeTest.Run(path);
             UI.SelectionSmokeTest.Run(path);
             BackdropSmokeTest.Run(path);
+            await UI.ScrollSmokeTest.RunAsync(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();
             File.WriteAllText(Path.Combine(path,"gdi-smoke.txt"),"PASS: synthetic 2x2 DIB→BitBlt pixel order, opaque alpha, native resource lifetime and pre-cancellation. No desktop capture.");
