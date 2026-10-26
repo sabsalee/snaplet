@@ -90,6 +90,9 @@ public partial class App : Application
         var hidden=new List<Window>();
         var clock=Stopwatch.StartNew();
         var diagnostics=new CaptureDiagnostics(command,hotkeyTimestamp);
+        // The pointer is read before our windows hide or the overlay appears, so it matches what the user saw.
+        var cursor=settings.IncludeCursor && command is not ("ocr" or "scroll")?CursorSnapshot.Capture():null;
+        bool windowCapture=command=="window";
         try {
             foreach(Window window in Windows)if(window.IsVisible && window is not SelectionWindow){hidden.Add(window);window.Hide();}
             await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.Render);
@@ -111,7 +114,7 @@ public partial class App : Application
                 var options=new SelectionOptions(settings.ShowLoupe,settings.AdjustSelectionBeforeCapture || command=="scroll",purpose);
                 var selection=await SelectAsync(displays,shots,targets,token,diagnostics,options);
                 if(selection is null)return;
-                if(selection.Window!=0)result=await engine.CaptureWindowAsync(selection.Window,token);
+                if(selection.Window!=0){result=await engine.CaptureWindowAsync(selection.Window,token);windowCapture=true;}
                 else {
                     var rect=selection.Region!.Value;
                     var index=Array.FindIndex(shots,f=>Contains(f,rect));
@@ -142,6 +145,9 @@ public partial class App : Application
             } else if(command=="desktop")result=await engine.CaptureDesktopAsync(token);
             else result=await engine.CaptureMonitorAsync(Native.PointerDisplay().Handle,token);
             if(command is not ("region" or "pick-window" or "scroll" or "ocr")) {diagnostics.Frames([result]);diagnostics.Complete("snapshot-ready");}
+            if(command=="delayed")cursor=settings.IncludeCursor?CursorSnapshot.Capture():null;
+            if(cursor!=null)result=cursor.DrawOnto(result);
+            if(windowCapture && settings.WindowStyle!=WindowCaptureStyle.Plain)result=result with{Image=BackdropRenderer.Compose(result.Image,WindowBackdrop(settings.WindowStyle))};
             if(destination!=null)destination.AddCapturedImage(result.Image);
             else Received(result.Image,$"{result.Engine} · {result.Image.PixelWidth} × {result.Image.PixelHeight} px · 처리 {clock.ElapsedMilliseconds}ms (선택 시간 포함)");
         } catch(OperationCanceledException) {diagnostics.Complete("cancelled");status.Text="캡처를 취소했습니다.";}
@@ -182,6 +188,10 @@ public partial class App : Application
         _=completion.Task.ContinueWith(_=>registration.Dispose(),TaskScheduler.Default);
         return completion.Task;
     }
+    /// <summary>Window framing presets; the editor's backdrop panel can refine them afterwards on a new capture.</summary>
+    internal static Capture.Core.Backdrop WindowBackdrop(WindowCaptureStyle style)=>style==WindowCaptureStyle.Shadow
+        ?new(Enabled:true,Fill:Capture.Core.BackdropFill.Transparent,Padding:36,CornerRadius:8,Shadow:.7)
+        :new(Enabled:true,Fill:Capture.Core.BackdropFill.Gradient,Preset:4,Padding:56,CornerRadius:8,Shadow:.6);
     private static bool Contains(CapturedFrame f,Int32Rect r)=>r.X>=f.X && r.Y>=f.Y && r.X+r.Width<=f.X+f.Image.PixelWidth && r.Y+r.Height<=f.Y+f.Image.PixelHeight;
     private static CapturedFrame Crop(CapturedFrame source,Int32Rect r) {
         if(!Contains(source,r))throw new InvalidOperationException("선택 영역이 캡처 화면을 벗어났습니다.");

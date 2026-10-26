@@ -9,6 +9,9 @@ namespace Capture.Windows;
 /// <summary>What Esc does when it closes an editor, matching the original's "action when hiding with Esc".</summary>
 public enum EscapeAction { None, Copy, Save }
 
+/// <summary>How window captures are framed: as captured, with a transparent margin and soft shadow, or on a gradient backdrop.</summary>
+public enum WindowCaptureStyle { Plain, Shadow, Backdrop }
+
 public sealed record AppSettings
 {
     /// <summary>Bumped whenever stored fields change meaning. Older files are migrated in <see cref="SettingsStore.Normalize"/>.</summary>
@@ -26,6 +29,9 @@ public sealed record AppSettings
     /// <summary>Join recognised lines with spaces before copying text.</summary>
     public bool OcrJoinLines {get;init;}
     public EscapeAction EscapeAction {get;init;}=EscapeAction.None;
+    /// <summary>Composite the mouse pointer (as it was when the capture started) into the image.</summary>
+    public bool IncludeCursor {get;init;}
+    public WindowCaptureStyle WindowStyle {get;init;}=WindowCaptureStyle.Plain;
     public string SaveFolder {get;init;}=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Snaplet");
     public List<HotkeyBinding> Hotkeys {get;init;}=DefaultHotkeys();
 
@@ -96,7 +102,8 @@ internal static class SettingsStore
         if(dropped)warning="일부 단축키 설정이 중복되거나 알 수 없어 해제했습니다. 설정 → 단축키에서 확인해 주세요.";
         var folder=string.IsNullOrWhiteSpace(stored.SaveFolder) || !Path.IsPathFullyQualified(stored.SaveFolder)?new AppSettings().SaveFolder:stored.SaveFolder;
         var escape=Enum.IsDefined(stored.EscapeAction)?stored.EscapeAction:EscapeAction.None;
-        return stored with{SchemaVersion=AppSettings.CurrentSchema,Hotkeys=hotkeys,SaveFolder=folder,EscapeAction=escape};
+        var windowStyle=Enum.IsDefined(stored.WindowStyle)?stored.WindowStyle:WindowCaptureStyle.Plain;
+        return stored with{SchemaVersion=AppSettings.CurrentSchema,Hotkeys=hotkeys,SaveFolder=folder,EscapeAction=escape,WindowStyle=windowStyle};
     }
 
     public static void Save(AppSettings settings) {

@@ -81,6 +81,19 @@ internal static class SelectionSmokeTest
         try {whole.Show();whole.UpdateLayout();whole.SimulateKey(Key.Enter);Check(completed && result?.Region is Int32Rect {Width:1200,Height:760},"Enter without a selection captures the whole monitor");}
         finally {whole.Close();}
 
+        // --- pointer compositing and window framing -----------------------------------------
+        var white=BitmapSource.Create(20,20,96,96,PixelFormats.Bgra32,null,Enumerable.Repeat((byte)255,20*20*4).ToArray(),80);
+        var redPx=new byte[4*4*4];for(int i=0;i<redPx.Length;i+=4){redPx[i+2]=255;redPx[i+3]=255;}
+        var pointer=new CursorSnapshot(BitmapSource.Create(4,4,96,96,PixelFormats.Bgra32,null,redPx,16),10,10);
+        var framed=pointer.DrawOnto(new CapturedFrame(white,5,5,"test"));
+        var at=new byte[4];framed.Image.CopyPixels(new Int32Rect(5,5,1,1),at,4,0);
+        Check(at[2]==255 && at[1]==0 && framed.X==5,"pointer is drawn at its desktop position relative to the frame");
+        var away=new CapturedFrame(white,100,100,"test");Check(ReferenceEquals(pointer.DrawOnto(away),away),"pointer outside the frame leaves it untouched");
+        foreach(var style in new[]{WindowCaptureStyle.Shadow,WindowCaptureStyle.Backdrop}) {
+            var b=App.WindowBackdrop(style);Check(b.IsValid && b.Enabled,"window style "+style+" maps to a valid backdrop");
+            Check(Capture.Windows.Editor.BackdropRenderer.Compose(white,b).PixelWidth==20+2*b.PaddingPixels,"window style "+style+" frames the window");
+        }
+
         // --- editor crop precision reuses the same arithmetic --------------------------------
         var surface=new Capture.Windows.Editor.EditorSurface(image,new EditableDocument(image.PixelWidth,image.PixelHeight)) {CropTool=true,PendingCrop=new RectD(100,320,340,280)};
         Check(surface.FitCropToContent() && surface.PendingCrop is RectD c && Math.Abs(c.X-120)<=1 && Math.Abs(c.Width-290)<=2,"editor A fits the pending crop to content");
