@@ -94,6 +94,11 @@ internal static class SelectionSmokeTest
             Check(Capture.Windows.Editor.BackdropRenderer.Compose(white,b).PixelWidth==20+2*b.PaddingPixels,"window style "+style+" frames the window");
         }
 
+        // --- command line / deep links ------------------------------------------------------
+        Check(CommandChannel.Parse(["--command","region"])=="region" && CommandChannel.Parse(["/command","OCR"])=="ocr","command-line switch selects a known command");
+        Check(CommandChannel.Parse(["snaplet://region"])=="region" && CommandChannel.Parse(["snaplet://capture/pick-window"])=="pick-window","snaplet:// links map to commands");
+        Check(CommandChannel.Parse(["snaplet://delete-everything"]) is null && CommandChannel.Parse(["--command","C:\\x.png"]) is null && CommandChannel.Parse(["photo.png"]) is null,"unknown commands and paths are ignored");
+
         // --- optional on-disk history -----------------------------------------------------
         var historyFolder=Path.Combine(directory,"history-check");HistoryStore.Clear(historyFolder);
         for(int i=0;i<HistoryStore.Limit+2;i++){HistoryStore.Save(white,historyFolder);Thread.Sleep(3);}

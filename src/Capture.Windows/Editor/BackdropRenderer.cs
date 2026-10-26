@@ -61,7 +61,16 @@ internal static class BackdropRenderer
     }
 
     /// <summary>Rendered annotations plus backdrop — the image every copy/save/pin path exports.</summary>
-    internal static BitmapSource Export(BitmapSource source,EditableDocument document)=>Compose(ImageRenderer.Render(source,document),document.Backdrop);
+    internal static BitmapSource Export(BitmapSource source,EditableDocument document)=>Scale(Compose(ImageRenderer.Render(source,document),document.Backdrop),document.ExportScale);
+    /// <summary>High-quality downscale for export; 1 returns the image unchanged.</summary>
+    internal static BitmapSource Scale(BitmapSource image,double scale)
+    {
+        if(scale>=1)return image;
+        int width=Math.Max(1,(int)Math.Round(image.PixelWidth*scale)),height=Math.Max(1,(int)Math.Round(image.PixelHeight*scale));
+        var visual=new DrawingVisual();RenderOptions.SetBitmapScalingMode(visual,BitmapScalingMode.HighQuality);
+        using(var dc=visual.RenderOpen())dc.DrawImage(image,new Rect(0,0,width,height));
+        var output=new RenderTargetBitmap(width,height,96,96,PixelFormats.Pbgra32);output.Render(visual);output.Freeze();return output;
+    }
 
     private static T Frozen<T>(T freezable) where T:Freezable {freezable.Freeze();return freezable;}
 }

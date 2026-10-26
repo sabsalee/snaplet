@@ -117,6 +117,10 @@ internal static class BackdropChecks
         Rejects(() => doc.SetBackdrop(new Backdrop(Shadow: 1.5)), "Shadow above one rejected.");
         Rejects(() => doc.SetBackdrop(new Backdrop(Fill: (BackdropFill)9)), "Unknown fill rejected.");
         check(before >= 0, "Backdrop checks completed.");
+        doc.SetExportScale(.5); check(doc.ExportScale == .5, "Export scale is stored.");
+        doc.Undo(); check(doc.ExportScale == 1, "Export scale is undoable.");
+        bool scaleRejected = false; try { doc.SetExportScale(0); } catch (ArgumentException) { scaleRejected = true; }
+        check(scaleRejected, "Export scale below 0.1 rejected.");
     }
 }
 

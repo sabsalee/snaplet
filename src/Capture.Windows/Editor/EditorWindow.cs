@@ -109,6 +109,12 @@ public sealed class EditorWindow : Window
             Item(menu,"선택 객체 복제 · Ctrl+D",surface.DuplicateSelected);Item(menu,"선택 객체 삭제 · Delete",surface.DeleteSelected);
             menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));
             Item(menu,"텍스트 추출",()=>{if(!FinishTextEdit(true))return;OcrRequested?.Invoke(ImageRenderer.Render(source,document));});
+            var scaleMenu=new MenuItem {Header=$"내보내기 크기 · {document.ExportScale:P0}"};
+            foreach(var (label,value) in new[]{("100% (원본)",1d),("75%",.75),("50% (200% 화면을 1배로)",.5),("25%",.25)}) {
+                var item=new MenuItem {Header=label,IsCheckable=true,IsChecked=Math.Abs(document.ExportScale-value)<1e-9};var v=value;
+                item.Click+=(_,_)=>{if(!FinishTextEdit(true))return;document.SetExportScale(v);};scaleMenu.Items.Add(item);
+            }
+            menu.Items.Add(scaleMenu);
             Item(menu,"합쳐서 새 편집창",()=>{if(!FinishTextEdit(true))return;RasterizedRequested?.Invoke(ImageRenderer.Render(source,document));});
             more.ContextMenu=menu;menu.PlacementTarget=more;menu.IsOpen=true;
         };
@@ -612,7 +618,8 @@ public sealed class EditorWindow : Window
     }
     internal void NudgeKeyUp(Key key){if(nudgeKeys.Count==1 && nudgeKeys.Contains(key))FinishNudge();else nudgeKeys.Remove(key);}
     private void FinishNudge(){if(nudgeKeys.Count==0)return;nudgeKeys.Clear();document.EndEdit();}
-    private void UpdateStatus(){var pad=2*document.Backdrop.PaddingPixels;dimensions.Text=pad>0?$"{document.Crop.Width+pad:0}×{document.Crop.Height+pad:0} (배경 포함)":$"{document.Crop.Width:0}×{document.Crop.Height:0}";status.Text=$"{document.Annotations.Count}개 주석 · Ctrl+휠 확대 · Space / 오른쪽 드래그 이동 · C 자르기 · V 선택";}
+    private void UpdateStatus(){var pad=2*document.Backdrop.PaddingPixels;var k=document.ExportScale;
+        dimensions.Text=$"{Math.Round((document.Crop.Width+pad)*k):0}×{Math.Round((document.Crop.Height+pad)*k):0}"+(pad>0?" (배경 포함)":"")+(k<1?$" · {k:P0}":"");status.Text=$"{document.Annotations.Count}개 주석 · Ctrl+휠 확대 · Space / 오른쪽 드래그 이동 · C 자르기 · V 선택";}
     private void OnKey(object sender,KeyEventArgs e)
     {
         if(e.OriginalSource is TextBox || textEditor!=null || IsPropertyInput(e.OriginalSource as DependencyObject))return;

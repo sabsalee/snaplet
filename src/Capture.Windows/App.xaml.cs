@@ -41,6 +41,7 @@ public partial class App : Application
     private string? repeatMonitor;
     private Native.RECT? repeatMonitorBounds;
     private CancellationTokenSource? activeCapture;
+    private readonly CancellationTokenSource commandListener=new();
     private readonly DispatcherTimer foregroundPoll=new() {Interval=TimeSpan.FromMilliseconds(250)};
     private readonly TextBlock status=new() {Foreground=Brushes.LightSteelBlue,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,16,0,0)};
 
@@ -53,11 +54,15 @@ public partial class App : Application
             var editor=new EditorWindow(ImageActions.Demo(),closeOnDismiss:true);
             editor.Closed+=(_,_)=>Shutdown();editor.Show();return;
         }
+        var forwarded=CommandChannel.Parse(e.Args);
         singleton=new Mutex(true,@"Local\Snaplet.Windows11.User",out var created);
+        if(!created && forwarded!=null && CommandChannel.Send(forwarded)){Shutdown();return;}
         if(!created){try{using var handle=EventWaitHandle.OpenExisting(@"Local\Snaplet.Windows11.Show");handle.Set();}catch(WaitHandleCannotBeOpenedException){}Shutdown();return;}
         wake=new EventWaitHandle(false,EventResetMode.AutoReset,@"Local\Snaplet.Windows11.Show");
         wakeRegistration=ThreadPool.RegisterWaitForSingleObject(wake,(_,_)=>Dispatcher.BeginInvoke(ShowHome),null,Timeout.Infinite,false);
         settings=SettingsStore.Load(out var warning);
+        _=CommandChannel.ListenAsync(command=>Dispatcher.BeginInvoke(()=>_=RunCommandAsync(command)),commandListener.Token);
+        if(settings.EnableDeepLinks)CommandChannel.SetProtocolRegistration(true);
         updates=new UpdateService(new VelopackBackend());updates.Changed+=()=>{if(updates.Snapshot.Stage==UpdateStage.Ready && !capturing)status.Text=$"업데이트 {updates.Snapshot.TargetVersion} 준비됨 · 설정 → 업데이트에서 다시 시작하세요.";};
         updatePoll.Tick+=async(_,_)=>{if(settings.AutoUpdate)await updates.CheckAsync(true);};updatePoll.Start();
         _=CheckUpdatesAfterStartupAsync();
@@ -73,6 +78,7 @@ public partial class App : Application
         CleanDragFiles();
         if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load());}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
         if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지");Edit(demo);}
+        else if(forwarded!=null)Dispatcher.BeginInvoke(()=>_=RunCommandAsync(forwarded),DispatcherPriority.ApplicationIdle);
         else ShowHome();
         if(warning is not null)status.Text=warning;
         foreach(var path in e.Args.Where(File.Exists)){try{Edit(ImageActions.Load(path));}catch(Exception error){Error(error);}}
@@ -290,6 +296,7 @@ public partial class App : Application
         preferences=new SettingsWindow(settings,next=>{
             var previous=settings;
             if(previous.KeepHistoryOnDisk && !next.KeepHistoryOnDisk)HistoryStore.Clear();
+            if(previous.EnableDeepLinks!=next.EnableDeepLinks)CommandChannel.SetProtocolRegistration(next.EnableDeepLinks);
             if(!previous.KeepHistoryOnDisk && next.KeepHistoryOnDisk){var oldestFirst=history.AsEnumerable().Reverse().ToArray();_=Task.Run(()=>{foreach(var image in oldestFirst){try{HistoryStore.Save(image);Thread.Sleep(2);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}}});}
             hotkeys?.Apply(next.Hotkeys);
             try{SettingsStore.Save(next);settings=next;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
@@ -362,6 +369,6 @@ public partial class App : Application
         try {var folder=Path.Combine(SettingsStore.DirectoryPath,"Drag");if(Directory.Exists(folder))foreach(var path in Directory.GetFiles(folder,"*.png"))if(File.GetLastWriteTimeUtc(path)<DateTime.UtcNow.AddDays(-1))File.Delete(path);}catch(IOException){}catch(UnauthorizedAccessException){}
     }
     protected override void OnExit(ExitEventArgs e) {
-        quitting=true;updates?.Dispose();updatePoll.Stop();activeCapture?.Cancel();foregroundPoll.Stop();wakeRegistration?.Unregister(null);wake?.Dispose();tray?.Dispose();hotkeys?.Dispose();singleton?.Dispose();base.OnExit(e);
+        quitting=true;commandListener.Cancel();updates?.Dispose();updatePoll.Stop();activeCapture?.Cancel();foregroundPoll.Stop();wakeRegistration?.Unregister(null);wake?.Dispose();tray?.Dispose();hotkeys?.Dispose();singleton?.Dispose();base.OnExit(e);
     }
 }
