@@ -119,3 +119,23 @@ internal static class BackdropChecks
         check(before >= 0, "Backdrop checks completed.");
     }
 }
+
+/// <summary>Colour formats and contrast against published reference values.</summary>
+internal static class ColorChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        ColorRgba black = new(0, 0, 0), white = new(255, 255, 255), red = new(255, 0, 0);
+        check(ColorMath.Hsl(red) == "hsl(0, 100%, 50%)" && ColorMath.Hsl(new ColorRgba(0, 128, 128)) == "hsl(180, 100%, 25%)", "HSL matches CSS for red and teal.");
+        check(ColorMath.Hsl(new ColorRgba(128, 128, 128)) == "hsl(0, 0%, 50%)", "Grey has zero saturation.");
+        var (l, c, h) = ColorMath.Oklch(red);
+        check(Math.Abs(l - 0.628) < 0.002 && Math.Abs(c - 0.2577) < 0.002 && Math.Abs(h - 29.23) < 0.3, "OKLCH of sRGB red matches the CSS reference.");
+        check(ColorMath.OklchText(white).StartsWith("oklch(100% 0 "), "White is 100% lightness with no chroma.");
+        check(Math.Abs(ColorMath.WcagRatio(black, white) - 21) < 1e-9 && ColorMath.WcagRatio(white, white) == 1, "WCAG ratio spans 1 to 21.");
+        check(Math.Abs(ColorMath.WcagRatio(new ColorRgba(0x77, 0x77, 0x77), white) - 4.48) < 0.01, "#777 on white is just below AA (4.48).");
+        check(ColorMath.WcagLevel(4.48) == "AA 큰 글자" && ColorMath.WcagLevel(4.5) == "AA" && ColorMath.WcagLevel(7.1) == "AAA" && ColorMath.WcagLevel(2) == "미달", "WCAG levels use 3, 4.5 and 7 thresholds.");
+        check(Math.Abs(ColorMath.ApcaLc(black, white) - 106.04) < 0.05, "APCA black on white is Lc 106.04.");
+        check(Math.Abs(ColorMath.ApcaLc(white, black) + 107.88) < 0.05, "APCA white on black is Lc -107.88.");
+        check(ColorMath.ApcaLc(new ColorRgba(120, 120, 120), new ColorRgba(121, 121, 121)) == 0, "Near-identical colours have no APCA contrast.");
+    }
+}

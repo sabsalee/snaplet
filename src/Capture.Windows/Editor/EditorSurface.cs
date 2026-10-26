@@ -13,6 +13,9 @@ internal sealed class EditorSurface : FrameworkElement
     internal readonly EditableDocument Document;
     internal AnnotationKind? Tool;
     internal bool CropTool;
+    /// <summary>Eyedropper mode: clicks report image points instead of drawing or selecting.</summary>
+    internal bool PickColorTool;
+    internal event Action<PointD,ModifierKeys>? ColorPickRequested;
     internal bool SnapToObjects=true;
     private double? guideX,guideY;
     private Guid? hovered;
@@ -162,7 +165,9 @@ internal sealed class EditorSurface : FrameworkElement
     private Handle? NearHandle(IEnumerable<Handle> handles,PointD p)=>handles.Where(h=>AnnotationGeometry.Distance(h.Point,p)<=10/Zoom).OrderBy(h=>AnnotationGeometry.Distance(h.Point,p)).Cast<Handle?>().FirstOrDefault();
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        base.OnMouseLeftButtonDown(e);Focus();BeginPointer(ImagePoint(e),Keyboard.Modifiers,e.ClickCount);
+        base.OnMouseLeftButtonDown(e);Focus();
+        if(PickColorTool){ColorPickRequested?.Invoke(ImagePoint(e),Keyboard.Modifiers);e.Handled=true;return;}
+        BeginPointer(ImagePoint(e),Keyboard.Modifiers,e.ClickCount);
     }
     internal void BeginPointer(PointD position,ModifierKeys modifiers=ModifierKeys.None,int clickCount=1)
     {
@@ -259,7 +264,7 @@ internal sealed class EditorSurface : FrameworkElement
         hovered=Tool is null?hit?.Id:null;hoveredControl=near?.Index;
         var textInsertion=Tool==AnnotationKind.Text && hit?.Kind==AnnotationKind.Text;
         var editable=hit!=null && (Tool is null || hit.Id==Selected || textInsertion);
-        Cursor=near is Handle h?HandleCursor(h.Index):textInsertion?Cursors.IBeam:editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
+        Cursor=PickColorTool?Cursors.Cross:near is Handle h?HandleCursor(h.Index):textInsertion?Cursors.IBeam:editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
         SetPointerHint(near is Handle control?control.Index switch {
             -3=>"곡률 · 드래그해 화살표를 휘세요",-4=>"말꼬리 · 파란 원을 드래그해 방향과 길이를 바꾸세요",
             -6=>"모서리 · 민트색 마름모를 드래그해 둥글기를 바꾸세요",-5=>"원본 영역 이동",_=>"크기 조절 · Shift 비율 유지"

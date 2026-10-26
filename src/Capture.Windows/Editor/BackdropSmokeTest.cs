@@ -30,6 +30,18 @@ internal static class BackdropSmokeTest
         var square=BackdropRenderer.Export(content,doc);Check(Pixel(square,40,40).B==220,"zero radius keeps square corners");
         Check(Pixel(square,10,10) is {R:255,G:255,B:255},"solid backdrop uses its colour");
         doc.Undo();doc.Undo();doc.Undo();Check(!doc.Backdrop.Enabled,"backdrop changes undo back to the plain image");
+        // Eyedropper samples the composited image and computes contrast between the two picks.
+        var split=new DrawingVisual();using(var dc=split.RenderOpen()){dc.DrawRectangle(Brushes.Black,null,new Rect(0,0,100,80));dc.DrawRectangle(Brushes.White,null,new Rect(100,0,100,80));}
+        var splitImage=new RenderTargetBitmap(200,80,96,96,PixelFormats.Pbgra32);splitImage.Render(split);splitImage.Freeze();
+        var editor=new EditorWindow(splitImage,closeOnDismiss:true);
+        try {
+            editor.Show();editor.UpdateLayout();
+            editor.SimulatePick(new PointD(20,20),false);editor.SimulatePick(new PointD(150,20),true);
+            var state=editor.PickState;
+            Check(state.Active && state.Foreground==new ColorRgba(0,0,0) && state.Background==new ColorRgba(255,255,255),"eyedropper picks foreground and Shift background from the image");
+            Check(Math.Abs(ColorMath.WcagRatio(state.Foreground,state.Background)-21)<1e-9,"picked colours give the 21:1 WCAG maximum");
+            Check(editor.SampleColor(new PointD(500,500)) is null,"sampling outside the image is ignored");
+        } finally {editor.CloseForExit();}
         var gallery=new EditableDocument(200,100);gallery.SetBackdrop(new Backdrop(Enabled:true,Preset:2,Padding:48,CornerRadius:14,Shadow:.6));
         Save(BackdropRenderer.Export(content,gallery),Path.Combine(directory,"backdrop-preview.png"));
         File.WriteAllText(Path.Combine(directory,"backdrop-smoke.json"),System.Text.Json.JsonSerializer.Serialize(new{component="backdrop export",passed=checks.Count,checks}));

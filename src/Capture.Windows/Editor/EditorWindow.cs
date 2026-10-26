@@ -98,6 +98,7 @@ public sealed class EditorWindow : Window
             foreach(var entry in toolButtons.Where(x=>x.Button.Visibility==Visibility.Collapsed)) {
                 var kind=entry.Kind;Item(menu,entry.Button.ToolTip?.ToString() ?? ToolName(kind),()=>SetTool(kind));
             }
+            Item(menu,"스포이트·대비 검사 · I",StartColorPick);
             Item(menu,"돋보기 · G",()=>SetTool(AnnotationKind.Magnifier));Item(menu,"Spotlight · S",()=>SetTool(AnnotationKind.Spotlight));
             Item(menu,"캡처 추가 · Ctrl+Shift+A",()=>_=CaptureIntoDocumentAsync());Item(menu,"이미지 붙여넣기 · Ctrl+V",PasteImage);Item(menu,"이미지 파일 추가 · Ctrl+O",InsertImageFile);
             Item(menu,"선 · L",()=>SetTool(AnnotationKind.Line));Item(menu,"형광펜 · H",()=>SetTool(AnnotationKind.Highlight));
@@ -141,7 +142,9 @@ public sealed class EditorWindow : Window
         // Viewport dimensions are current here; SizeChanged can still expose the previous layout.
         scroll.ScrollChanged+=(_,e)=>{if(fitMode && (e.ViewportWidthChange!=0 || e.ViewportHeightChange!=0))Fit();};
         PreviewMouseWheel+=(_,e)=>{if(textEditor==null && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){ChangeZoom(e.Delta>0?1.25:.8,e.GetPosition(scroll));e.Handled=true;}};
-        document.Changed+=(_,_)=>{revision++;undoButton.IsEnabled=document.CanUndo;redoButton.IsEnabled=document.CanRedo;if(fitMode)Fit();SyncStage();UpdateStatus();SyncInspector();};
+        surface.ColorPickRequested+=PickColor;
+        Deactivated+=(_,_)=>{if(colorPopup!=null)colorPopup.IsOpen=false;};Activated+=(_,_)=>{if(colorPopup!=null && surface.PickColorTool)colorPopup.IsOpen=true;};
+        document.Changed+=(_,_)=>{pickCache=null;revision++;undoButton.IsEnabled=document.CanUndo;redoButton.IsEnabled=document.CanRedo;if(fitMode)Fit();SyncStage();UpdateStatus();SyncInspector();};
         surface.OperationFailed+=message=>NoticeWindow.Alert(this,"편집 작업",message);
         surface.PointerHintChanged+=hint=>{if(textEditor==null && !string.IsNullOrEmpty(hint))status.Text=hint;};
         surface.SelectionChanged+=SyncInspector;surface.TextEditRequested+=BeginTextEdit;
@@ -259,7 +262,7 @@ public sealed class EditorWindow : Window
     }
     private void SetTool(AnnotationKind? kind)
     {
-        if(!FinishTextEdit(true))return;document.EndEdit();surface.CancelGesture();surface.ClearCrop();
+        if(!FinishTextEdit(true))return;document.EndEdit();surface.CancelGesture();surface.ClearCrop();StopColorPick();
         if((surface.Selection?.Kind ?? surface.Tool) is AnnotationKind previous)toolStyles[previous]=(surface.Ink,surface.Thickness,surface.InkStyle);
         if(kind is AnnotationKind next) {
             var first=EditorPresets.For(next)[0];
@@ -271,6 +274,70 @@ public sealed class EditorWindow : Window
         surface.Tool=kind;surface.Selected=null;surface.UpdateHover(new(-100,-100));surface.Focus();SyncInspector();
         status.Text=kind is null?"객체 선택·이동 · Alt+드래그 복제 · Delete 삭제":"드래그하여 그리기 · 파란 원은 꼬리 · 마름모는 곡률/모서리 · Shift 각도/비율 · Esc 선택 모드";
     }
+    // ---- eyedropper and contrast -----------------------------------------------------------
+    private BitmapSource? pickCache;
+    private Popup? colorPopup;
+    private ColorRgba pickForeground=new(0,0,0),pickBackground=new(255,255,255);
+    private StackPanel? colorPanel;
+    private void StartColorPick()
+    {
+        SetTool(null);if(textEditor!=null)return;
+        surface.PickColorTool=true;surface.Cursor=Cursors.Cross;
+        colorPanel=new StackPanel {Width=290};
+        colorPopup=new Popup {PlacementTarget=dimensions,Placement=PlacementMode.Bottom,StaysOpen=true,AllowsTransparency=true,
+            Child=new Border {Child=colorPanel,Background=PanelBrush,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(10)}};
+        RenderColorPanel();colorPopup.IsOpen=true;
+        status.Text="클릭: 전경색(HEX 복사) · Shift+클릭: 배경색 · 두 색의 대비를 바로 계산합니다 · Esc 종료";
+    }
+    private void StopColorPick(){surface.PickColorTool=false;if(colorPopup!=null){colorPopup.IsOpen=false;colorPopup=null;}}
+    /// <summary>Samples the composited (annotated) image so the colour matches what will be exported.</summary>
+    internal ColorRgba? SampleColor(PointD at)
+    {
+        pickCache??=ImageRenderer.Render(source,document);
+        int x=(int)Math.Floor(at.X)-(int)Math.Floor(document.Crop.X),y=(int)Math.Floor(at.Y)-(int)Math.Floor(document.Crop.Y);
+        if(x<0 || y<0 || x>=pickCache.PixelWidth || y>=pickCache.PixelHeight)return null;
+        var px=new byte[4];pickCache.CopyPixels(new Int32Rect(x,y,1,1),px,4,0);
+        return new ColorRgba(px[2],px[1],px[0]);
+    }
+    private void PickColor(PointD at,ModifierKeys modifiers)
+    {
+        if(SampleColor(at) is not ColorRgba color)return;
+        if(modifiers.HasFlag(ModifierKeys.Shift))pickBackground=color;else pickForeground=color;
+        var hex=PixelProbe.Hex(color);
+        try{Clipboard.SetText(hex);status.Text=$"{hex} 복사됨 · 대비 {ColorMath.WcagRatio(pickForeground,pickBackground):0.00}:1";}
+        catch(System.Runtime.InteropServices.ExternalException){status.Text=hex+" · 다른 앱이 클립보드를 사용 중입니다";}
+        RenderColorPanel();
+    }
+    private void RenderColorPanel()
+    {
+        if(colorPanel==null)return;colorPanel.Children.Clear();
+        var header=new DockPanel {Margin=new Thickness(0,0,0,8)};
+        var close=new Button {Content="닫기",Padding=new Thickness(8,2,8,2),FontSize=11};close.Click+=(_,_)=>SetTool(null);DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);
+        header.Children.Add(new TextBlock {Text="스포이트 · 대비 검사",FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center});colorPanel.Children.Add(header);
+        void ColorRow(string label,ColorRgba color)
+        {
+            var row=new DockPanel {Margin=new Thickness(0,2,0,6)};
+            var swatch=new Border {Width=28,Height=28,CornerRadius=new CornerRadius(6),BorderBrush=Ui.Line,BorderThickness=new Thickness(1),Background=new SolidColorBrush(Color.FromRgb(color.R,color.G,color.B)),Margin=new Thickness(0,0,10,0)};
+            DockPanel.SetDock(swatch,Dock.Left);row.Children.Add(swatch);
+            var formats=new WrapPanel();
+            foreach(var text in new[]{PixelProbe.Hex(color),PixelProbe.Rgb(color),ColorMath.Hsl(color),ColorMath.OklchText(color)}) {
+                var value=text;var b=new Button {Content=value,FontSize=11,Padding=new Thickness(6,2,6,2),Margin=new Thickness(0,0,4,4),ToolTip="클릭하여 복사"};
+                System.Windows.Automation.AutomationProperties.SetName(b,label+" "+value);
+                b.Click+=(_,_)=>{try{Clipboard.SetText(value);status.Text=value+" 복사됨";}catch(System.Runtime.InteropServices.ExternalException){status.Text="다른 앱이 클립보드를 사용 중입니다";}};formats.Children.Add(b);
+            }
+            var stack=new StackPanel();stack.Children.Add(new TextBlock {Text=label,FontSize=11,Foreground=MutedBrush,Margin=new Thickness(0,0,0,3)});stack.Children.Add(formats);row.Children.Add(stack);
+            colorPanel.Children.Add(row);
+        }
+        ColorRow("전경 · 클릭",pickForeground);ColorRow("배경 · Shift+클릭",pickBackground);
+        var ratio=ColorMath.WcagRatio(pickForeground,pickBackground);var lc=ColorMath.ApcaLc(pickForeground,pickBackground);
+        colorPanel.Children.Add(new TextBlock {Text=$"WCAG 2  {ratio:0.00}:1 · {ColorMath.WcagLevel(ratio)}",FontWeight=FontWeights.SemiBold,Margin=new Thickness(0,4,0,2)});
+        colorPanel.Children.Add(new TextBlock {Text=$"APCA  Lc {lc:0.0} · 본문 권장 |Lc| ≥ 75, 큰 글자 ≥ 60",FontSize=12});
+        var swap=new Button {Content="전경 ↔ 배경",FontSize=11,Padding=new Thickness(8,2,8,2),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+        swap.Click+=(_,_)=>{(pickForeground,pickBackground)=(pickBackground,pickForeground);RenderColorPanel();};colorPanel.Children.Add(swap);
+    }
+    /// <summary>Test hook: the same path as a click in eyedropper mode.</summary>
+    internal (ColorRgba Foreground,ColorRgba Background,bool Active) PickState=>(pickForeground,pickBackground,surface.PickColorTool);
+    internal void SimulatePick(PointD at,bool background){if(!surface.PickColorTool)StartColorPick();PickColor(at,background?ModifierKeys.Shift:ModifierKeys.None);}
     private void StartCrop(){SetTool(null);if(textEditor!=null)return;surface.CropTool=true;SyncInspector();status.Text="범위 선택·재조정 → Enter 적용 · Esc 취소 · Shift 정사각형";}
     private void SyncInspector()
     {
@@ -578,13 +645,13 @@ public sealed class EditorWindow : Window
         }
         switch(e.Key) {
             case Key.Delete:surface.DeleteSelected();break;
-            case Key.Escape:if(surface.Tool is null && !surface.CropTool && surface.Selected is null)_=DismissWithEscapeAsync();else SetTool(null);break;
+            case Key.Escape:if(surface.Tool is null && !surface.CropTool && !surface.PickColorTool && surface.Selected is null)_=DismissWithEscapeAsync();else SetTool(null);break;
             case Key.Enter:surface.ApplyCrop();break;
             case Key.V:SetTool(null);break;case Key.A:SetTool(AnnotationKind.Arrow);break;case Key.L:SetTool(AnnotationKind.Line);break;
             case Key.R:SetTool(AnnotationKind.Rectangle);break;case Key.O:SetTool(AnnotationKind.Ellipse);break;case Key.P:SetTool(AnnotationKind.Pen);break;
             case Key.T:SetTool(AnnotationKind.Text);break;case Key.N:SetTool(AnnotationKind.Step);break;case Key.H:SetTool(AnnotationKind.Highlight);break;
             case Key.G:SetTool(AnnotationKind.Magnifier);break;case Key.S:SetTool(AnnotationKind.Spotlight);break;case Key.E:SetTool(AnnotationKind.Erase);break;
-            case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;
+            case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;case Key.I:StartColorPick();break;
             case Key.Left:case Key.Right:case Key.Up:case Key.Down:NudgeKeyDown(e.Key,shift);break;
             default:return;
         }

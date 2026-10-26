@@ -272,4 +272,5 @@ Check(!AnnotationGeometry.HasTail(shapeCallout with {Kind=AnnotationKind.Arrow})
 AdvancedModelChecks.Run(Check);
 PrecisionChecks.Run(Check);
 BackdropChecks.Run(Check);
+ColorChecks.Run(Check);
 Console.WriteLine($"PASS: {passed} assertions (geometry, history, pixel effects, scroll matching).");
