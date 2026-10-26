@@ -8,6 +8,8 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v6
@@ -26,6 +28,13 @@ jobs:
         if: success()
         shell: pwsh
         run: ./scripts/report-failure.ps1 -Summary
+      - name: Publish visual review images
+        # Review PNGs go to the visual-review branch so they can be fetched with git when artifacts are unreachable.
+        if: success() && github.event_name == 'push' && github.repository == 'sabsalee/snaplet'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-visual-review.ps1
       - name: Report failure details as annotations
         if: failure()
         shell: pwsh
