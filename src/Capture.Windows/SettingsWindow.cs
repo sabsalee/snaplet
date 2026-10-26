@@ -15,7 +15,7 @@ internal sealed class SettingsWindow : Window
     private readonly List<HotkeyBinding> keys;
     private readonly AppSettings original;
     private readonly Action<AppSettings> apply;
-    private readonly CheckBox preview,copy,save,outside,autoUpdate,adjust,loupe,joinLines,cursor;
+    private readonly CheckBox preview,copy,save,outside,autoUpdate,adjust,loupe,joinLines,cursor,keepHistory;
     private readonly ComboBox escape,windowStyle;
     private readonly UpdateService updates;
     private readonly Action? restartUpdate;
@@ -31,7 +31,7 @@ internal sealed class SettingsWindow : Window
         Title="Snaplet 설정";Width=800;Height=660;MinWidth=720;MinHeight=540;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         preview=Toggle("캡처 미리보기",settings.ShowPreview);copy=Toggle("자동 복사",settings.CopyAfterCapture);save=Toggle("자동 저장",settings.SaveAfterCapture);outside=Toggle("바깥 클릭으로 미리보기 닫기",settings.ClosePreviewOutside);
         autoUpdate=Toggle("업데이트 자동 확인 및 다운로드",settings.AutoUpdate);
-        adjust=Toggle("영역을 놓은 뒤 조정",settings.AdjustSelectionBeforeCapture);loupe=Toggle("픽셀 확대경 표시",settings.ShowLoupe);joinLines=Toggle("인식한 줄바꿈 합치기",settings.OcrJoinLines);cursor=Toggle("마우스 포인터 포함",settings.IncludeCursor);
+        adjust=Toggle("영역을 놓은 뒤 조정",settings.AdjustSelectionBeforeCapture);loupe=Toggle("픽셀 확대경 표시",settings.ShowLoupe);joinLines=Toggle("인식한 줄바꿈 합치기",settings.OcrJoinLines);cursor=Toggle("마우스 포인터 포함",settings.IncludeCursor);keepHistory=Toggle("최근 캡처 디스크 보관",settings.KeepHistoryOnDisk);
         windowStyle=new ComboBox{MinWidth=150,VerticalAlignment=VerticalAlignment.Center,ItemsSource=new[]{"그대로","투명 여백 + 그림자","그라데이션 배경"},SelectedIndex=(int)settings.WindowStyle};AutomationProperties.SetName(windowStyle,"창 캡처 모양");
         escape=new ComboBox{MinWidth=150,VerticalAlignment=VerticalAlignment.Center,ItemsSource=new[]{"아무것도 안 함","이미지 복사","이미지 저장"},SelectedIndex=(int)settings.EscapeAction};AutomationProperties.SetName(escape,"Esc로 편집창을 닫을 때");
         folder=new TextBox{Text=settings.SaveFolder,MinWidth=100,TextWrapping=TextWrapping.Wrap};AutomationProperties.SetName(folder,"저장 폴더 경로");
@@ -103,6 +103,7 @@ internal sealed class SettingsWindow : Window
         var p=Section("저장","자동 저장 이미지의 위치를 정합니다.");
         var card=new StackPanel();card.Children.Add(Ui.Label("캡처 저장 폴더",13,weight:FontWeights.SemiBold));folder.Margin=new Thickness(0,12,0,10);card.Children.Add(folder);
         var browse=Ui.Button("폴더 선택",()=>{var d=new OpenFolderDialog();if(d.ShowDialog(this)==true)folder.Text=d.FolderName;},"folder");browse.HorizontalAlignment=HorizontalAlignment.Left;card.Children.Add(browse);p.Children.Add(Ui.CardOf(card));
+        var history=Row("최근 캡처를 디스크에 보관","최근 12개 원본을 이 PC의 앱 데이터 폴더에 PNG로 남겨 다시 시작·업데이트 후에도 열 수 있습니다. 끄면 보관한 파일을 지웁니다. 편집 객체는 포함하지 않습니다.",keepHistory);history.Margin=new Thickness(0,16,0,0);p.Children.Add(history);
         var text=Ui.Label("자동 저장을 켠 경우 PNG 원본이 이 폴더에 저장됩니다. 편집창의 다른 이름으로 저장에서는 위치와 형식을 따로 고를 수 있습니다.",12,Ui.Muted);text.Margin=new Thickness(0,16,0,0);p.Children.Add(text);return p;
     }
     private UIElement UpdatesPage()
@@ -154,7 +155,7 @@ internal sealed class SettingsWindow : Window
         try {
             if(!Path.IsPathFullyQualified(folder.Text))throw new InvalidOperationException("저장 폴더를 전체 경로로 입력해 주세요.");
             if(keys.Where(k=>k.Assigned).GroupBy(k=>(k.Key,k.Modifiers)).Any(g=>g.Count()>1))throw new InvalidOperationException("같은 단축키를 두 작업에 지정할 수 없습니다.");
-            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,ShowPreview=preview.IsChecked==true,CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
+            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,ShowPreview=preview.IsChecked==true,CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,KeepHistoryOnDisk=keepHistory.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
         }catch(Exception ex){error.Text=ex.Message;}
     }
 }

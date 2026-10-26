@@ -33,6 +33,7 @@ internal static class Native
     [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] public static extern nint GetWindowLongPtr(nint hwnd,int index);
     [DllImport("user32.dll",EntryPoint="SetWindowLongPtrW")] public static extern nint SetWindowLongPtr(nint hwnd,int index,nint value);
     [DllImport("user32.dll")] public static extern bool SetWindowDisplayAffinity(nint hwnd,uint affinity);
+    [DllImport("user32.dll",SetLastError=true)] public static extern bool SetLayeredWindowAttributes(nint hwnd,uint key,byte alpha,uint flags);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(nint monitor,int type,out uint x,out uint y);
     [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);

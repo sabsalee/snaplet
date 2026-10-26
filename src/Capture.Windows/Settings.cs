@@ -31,6 +31,8 @@ public sealed record AppSettings
     public EscapeAction EscapeAction {get;init;}=EscapeAction.None;
     /// <summary>Composite the mouse pointer (as it was when the capture started) into the image.</summary>
     public bool IncludeCursor {get;init;}
+    /// <summary>Keep the last 12 capture originals on disk so they survive restarts and updates.</summary>
+    public bool KeepHistoryOnDisk {get;init;}
     public WindowCaptureStyle WindowStyle {get;init;}=WindowCaptureStyle.Plain;
     public string SaveFolder {get;init;}=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Snaplet");
     public List<HotkeyBinding> Hotkeys {get;init;}=DefaultHotkeys();

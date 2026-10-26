@@ -94,6 +94,14 @@ internal static class SelectionSmokeTest
             Check(Capture.Windows.Editor.BackdropRenderer.Compose(white,b).PixelWidth==20+2*b.PaddingPixels,"window style "+style+" frames the window");
         }
 
+        // --- optional on-disk history -----------------------------------------------------
+        var historyFolder=Path.Combine(directory,"history-check");HistoryStore.Clear(historyFolder);
+        for(int i=0;i<HistoryStore.Limit+2;i++){HistoryStore.Save(white,historyFolder);Thread.Sleep(3);}
+        Check(Directory.GetFiles(historyFolder,"*.png").Length==HistoryStore.Limit && HistoryStore.Load(historyFolder).Count==HistoryStore.Limit,"history keeps only the newest captures on disk");
+        File.WriteAllText(Path.Combine(historyFolder,"zzz-broken.png"),"not a png");
+        Check(HistoryStore.Load(historyFolder).Count==HistoryStore.Limit-1,"unreadable history files are skipped without failing");
+        HistoryStore.Clear(historyFolder);Check(!Directory.Exists(historyFolder),"turning history off deletes the stored captures");
+
         // --- editor crop precision reuses the same arithmetic --------------------------------
         var surface=new Capture.Windows.Editor.EditorSurface(image,new EditableDocument(image.PixelWidth,image.PixelHeight)) {CropTool=true,PendingCrop=new RectD(100,320,340,280)};
         Check(surface.FitCropToContent() && surface.PendingCrop is RectD c && Math.Abs(c.X-120)<=1 && Math.Abs(c.Width-290)<=2,"editor A fits the pending crop to content");

@@ -71,6 +71,7 @@ public partial class App : Application
             if(pid!=Environment.ProcessId && hwnd!=0)lastExternalWindow=hwnd;
         };foregroundPoll.Start();
         CleanDragFiles();
+        if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load());}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
         if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지");Edit(demo);}
         else ShowHome();
         if(warning is not null)status.Text=warning;
@@ -210,6 +211,7 @@ public partial class App : Application
             preview.Closed+=(_,_)=>previews.Remove(preview);preview.Show();
         }
         _=AfterCaptureAsync(image,settings,revision,copyLease);
+        if(settings.KeepHistoryOnDisk)_=Task.Run(()=>{try{HistoryStore.Save(image);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}});
     }
     private async Task AfterCaptureAsync(BitmapSource image,AppSettings snapshot,long revision,long copyLease) {
         backgroundExports++;
@@ -275,6 +277,8 @@ public partial class App : Application
         if(preferences is not null){preferences.SelectPage(page);preferences.Show();preferences.Activate();return;}
         preferences=new SettingsWindow(settings,next=>{
             var previous=settings;
+            if(previous.KeepHistoryOnDisk && !next.KeepHistoryOnDisk)HistoryStore.Clear();
+            if(!previous.KeepHistoryOnDisk && next.KeepHistoryOnDisk){var oldestFirst=history.AsEnumerable().Reverse().ToArray();_=Task.Run(()=>{foreach(var image in oldestFirst){try{HistoryStore.Save(image);Thread.Sleep(2);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}}});}
             hotkeys?.Apply(next.Hotkeys);
             try{SettingsStore.Save(next);settings=next;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
             foreach(var editor in editors.Values){editor.EscapeAction=settings.EscapeAction;editor.EscapeSaveFolder=settings.SaveFolder;}
@@ -299,7 +303,8 @@ public partial class App : Application
         void Add(string text,Action action){var item=new MenuItem {Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
         foreach(var (text,command) in new[]{("영역 캡처","region"),("활성 창 캡처","window"),("창 선택 캡처","pick-window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
-        var recent=new MenuItem {Header="최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
+        var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
+        if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
         menu.Items.Add(new Separator());Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("시작 화면",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
         menu.IsOpen=true;
     }
