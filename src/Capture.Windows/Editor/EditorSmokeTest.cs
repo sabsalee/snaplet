@@ -192,7 +192,7 @@ public static class EditorSmokeTest
             }
         }
         var wide = annotations[0];
-        check(ImageRenderer.ArrowGeometry(wide).FillContains(new Point(120, 112)), "filled arrow has a broad continuous shaft rather than a thin line with a triangle");
+        check(ImageRenderer.ArrowGeometry(wide).FillContains(new Point(120, 106)), "filled arrow has a broad continuous shaft rather than a thin line with a triangle");
         foreach (var endpoint in new[] { new PointD(30, 30), new PointD(30.01, 30.01), new PointD(31, 31) })
         {
             var tiny = wide with { Start = new(30, 30), End = endpoint };

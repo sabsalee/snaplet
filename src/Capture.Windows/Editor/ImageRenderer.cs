@@ -58,7 +58,7 @@ internal static class ImageRenderer
             case AnnotationKind.Ellipse:
                 Brush? fill=null;
                 if(a.Appearance.Fill!=ShapeFill.Outline) {
-                    var color=a.Color;fill=BrushOf(color with { A=(byte)(a.Appearance.Fill==ShapeFill.Translucent ? color.A*.25 : color.A) });
+                    var color=a.Color;fill=BrushOf(color with { A=(byte)(a.Appearance.Fill==ShapeFill.Translucent ? color.A*.3 : color.A) });
                 }
                 var outline = ShapeGeometry(a);
                 var hatchBounds=outline.Bounds;
