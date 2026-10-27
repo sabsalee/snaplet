@@ -71,5 +71,21 @@ internal static class PointerInteractionSmokeTest
         check(tailDoc.Annotations.Single().Tail==new PointD(250,100),"shape tail handle can move to another side independently");
         check(tailDoc.Annotations.Single().Bounds==callout.Bounds,"tail edit leaves the shape body fixed");
         tailDoc.Undo();check(tailDoc.Annotations.Single()==callout,"tail adjustment has a single undo step");
+
+        // Select mode: a drag on empty canvas draws a range box that Enter crops and Delete erases.
+        var region=Surface(out var regionDoc);
+        region.BeginPointer(new(100,100));region.EndPointer(new(101,101));
+        check(region.PendingCrop is null && regionDoc.Annotations.Count==0,"a select-mode click on empty canvas leaves no range box");
+        region.BeginPointer(new(100,100));region.UpdatePointer(new(220,180));region.EndPointer(new(220,180));
+        check(region.RegionActive && region.PendingCrop==new RectD(100,100,120,80) && regionDoc.Annotations.Count==0,"select-mode drag on empty canvas draws a range box without creating objects");
+        region.BeginPointer(new(150,140));region.EndPointer(new(170,150));
+        check(region.PendingCrop==new RectD(120,110,120,80),"dragging inside the range box moves it");
+        region.BeginPointer(new(240,190));region.EndPointer(new(260,200));
+        check(region.PendingCrop==new RectD(120,110,140,90),"the range box corner handle resizes it");
+        check(region.ApplyRegionEffect(AnnotationKind.Erase,red,4,new()) && regionDoc.Annotations.Single() is {Kind:AnnotationKind.Erase} erased
+            && erased.Bounds==new RectD(120,110,140,90) && region.Selected==erased.Id && region.PendingCrop is null,"Delete turns the range box into a selected Erase object");
+        regionDoc.Undo();check(regionDoc.Annotations.Count==0,"range erase is one undo step");
+        region.BeginPointer(new(100,100));region.UpdatePointer(new(300,200));region.EndPointer(new(300,200));
+        check(region.ApplyCrop() && regionDoc.Crop==new RectD(100,100,200,100),"Enter crops to the select-mode range box");
     }
 }

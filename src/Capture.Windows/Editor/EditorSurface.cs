@@ -29,6 +29,9 @@ internal sealed class EditorSurface : FrameworkElement
     internal double Zoom = 1;
     internal Guid? Selected;
     internal RectD? PendingCrop;
+    /// <summary>A pending range box exists that the pointer can move and resize: the crop tool, or a drag on empty canvas in select mode.</summary>
+    internal bool RegionActive=>PendingCrop is not null && (CropTool || Tool is null && !PickColorTool);
+    private bool IsRegionGesture=>gesture is Gesture.CropNew or Gesture.CropMove or Gesture.CropResize;
     internal event Action? SelectionChanged;
     internal event Action<string>? OperationFailed;
     internal event Action<Annotation,bool>? TextEditRequested;
@@ -89,6 +92,7 @@ internal sealed class EditorSurface : FrameworkElement
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(110,0,0,0)),null,new CombinedGeometry(GeometryCombineMode.Exclude,outer,inner));
             dc.DrawRectangle(null,new Pen(Brushes.White,1/Zoom){DashStyle=DashStyles.Dash},ImageRenderer.RectOf(crop));
             foreach(var h in BoxHandles(ImageRenderer.RectOf(crop)))DrawHandle(dc,h.Point);
+            DrawRegionSize(dc,crop);
         } else if(!CropTool && (draft ?? Selection) is Annotation a && a.Id!=editingTextId) {
             var shown=PreviewAnnotation(a);
             DrawSelection(dc,shown,false);
@@ -101,6 +105,21 @@ internal sealed class EditorSurface : FrameworkElement
         if(guideX is double gx)dc.DrawLine(guidePen,new(gx,Document.Crop.Y),new(gx,Document.Crop.Bottom));
         if(guideY is double gy)dc.DrawLine(guidePen,new(Document.Crop.X,gy),new(Document.Crop.Right,gy));
         dc.Pop();dc.Pop();dc.Pop();
+    }
+    private static readonly Brush RegionLabelFill=CreateFrozen(new SolidColorBrush(Color.FromArgb(200,20,22,26)));
+    private static Brush CreateFrozen(Brush brush){brush.Freeze();return brush;}
+    /// <summary>Whole-pixel size of the range box in a small dark tag below it, or above when it would leave the canvas.</summary>
+    private void DrawRegionSize(DrawingContext dc,RectD region)
+    {
+        var size=ToPixels(region);
+        var text=new FormattedText($"{size.Width} × {size.Height}",System.Globalization.CultureInfo.InvariantCulture,FlowDirection.LeftToRight,
+            new Typeface("Segoe UI"),11/Zoom,Brushes.White,VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        double padX=6/Zoom,padY=2/Zoom,gap=6/Zoom;
+        var w=text.Width+2*padX;var h=text.Height+2*padY;
+        var x=Math.Clamp(region.X,Document.Crop.X,Math.Max(Document.Crop.X,Document.Crop.Right-w));
+        var y=region.Bottom+gap+h<=Document.Crop.Bottom?region.Bottom+gap:Math.Max(Document.Crop.Y,region.Y-gap-h);
+        dc.DrawRoundedRectangle(RegionLabelFill,null,new Rect(x,y,w,h),4/Zoom,4/Zoom);
+        dc.DrawText(text,new Point(x+padX,y+padY));
     }
     private static readonly Brush SelectionInk=new SolidColorBrush(Color.FromRgb(104,165,255));
     private void DrawSelection(DrawingContext dc,Annotation a,bool hover)
@@ -199,6 +218,13 @@ internal sealed class EditorSurface : FrameworkElement
             else {gesture=Gesture.CropNew;PendingCrop=new(start.X,start.Y,1,1);}
             Selected=null;CaptureMouse();InvalidateVisual();return;
         }
+        if(Tool is null && PendingCrop is RectD region) {
+            // The select-mode range box keeps its handles and body until a click lands outside it.
+            cropBefore=region;
+            if(NearHandle(BoxHandles(ImageRenderer.RectOf(region)),start) is Handle rh){handle=rh.Index;gesture=Gesture.CropResize;CaptureMouse();InvalidateVisual();return;}
+            if(region.Contains(start)){gesture=Gesture.CropMove;CaptureMouse();InvalidateVisual();return;}
+            PendingCrop=null;InvalidateVisual();
+        }
         var hit=ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,start));
         if(hit?.Kind==AnnotationKind.Text && (Tool==AnnotationKind.Text || clickCount==2) && ImageRenderer.BoundsOf(hit).Contains(ImageRenderer.P(start))) {
             Selected=hit.Id;SelectionChanged?.Invoke();TextEditRequested?.Invoke(hit,false);return;
@@ -216,7 +242,10 @@ internal sealed class EditorSurface : FrameworkElement
             if(pointerModifiers.HasFlag(ModifierKeys.Alt))original=hit with {Id=Guid.NewGuid()};
             gesture=hit.Kind==AnnotationKind.Magnifier && AdvancedDrawing.SampleBounds(hit).Contains(start) && !hit.Bounds.Contains(start)?Gesture.SampleMove:Gesture.Move;CaptureMouse();InvalidateVisual();return;
         }
-        if(Tool is not AnnotationKind kind){Selected=null;SelectionChanged?.Invoke();InvalidateVisual();return;}
+        if(Tool is not AnnotationKind kind) {
+            // Dragging on empty canvas in select mode draws a range box: Enter crops, Delete erases.
+            Selected=null;SelectionChanged?.Invoke();gesture=Gesture.CropNew;CaptureMouse();InvalidateVisual();return;
+        }
         var a=new Annotation(Guid.NewGuid(),kind,start,start,Ink,Thickness,Style:InkStyle);
         if(kind==AnnotationKind.Text) {
             a=NewTextAt(start);
@@ -282,16 +311,18 @@ internal sealed class EditorSurface : FrameworkElement
     internal void UpdateHover(PointD position)
     {
         current=position;var previousHover=hovered;var previousControl=hoveredControl;
-        var near=CropTool && PendingCrop is RectD crop?NearHandle(BoxHandles(ImageRenderer.RectOf(crop)),position):Selection is Annotation selected?NearHandle(Handles(selected),position):null;
-        var hit=CropTool?null:ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,position));
+        var region=RegionActive?PendingCrop:null;
+        var near=region is RectD crop?NearHandle(BoxHandles(ImageRenderer.RectOf(crop)),position):Selection is Annotation selected?NearHandle(Handles(selected),position):null;
+        var insideRegion=region is RectD box && box.Contains(position);
+        var hit=CropTool || insideRegion?null:ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,position));
         hovered=Tool is null?hit?.Id:null;hoveredControl=near?.Index;
         var textInsertion=Tool==AnnotationKind.Text && hit?.Kind==AnnotationKind.Text;
         var editable=hit!=null && (Tool is null || hit.Id==Selected || textInsertion);
-        Cursor=PickColorTool?Cursors.Cross:near is Handle h?HandleCursor(h.Index):textInsertion?Cursors.IBeam:editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
+        Cursor=PickColorTool?Cursors.Cross:near is Handle h?HandleCursor(h.Index):insideRegion?Cursors.SizeAll:textInsertion?Cursors.IBeam:editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
         SetPointerHint(near is Handle control?control.Index switch {
             -3=>"곡률 · 드래그해 화살표를 휘세요",-4=>"말꼬리 · 파란 원을 드래그해 방향과 길이를 바꾸세요",
             -6=>"모서리 · 민트색 마름모를 드래그해 둥글기를 바꾸세요",-5=>"원본 영역 이동",_=>"크기 조절 · Shift 비율 유지"
-        }:textInsertion?"클릭 글자 편집 · V 선택·이동":editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":"객체를 가리키면 선택 범위를 표시합니다 · V 선택");
+        }:textInsertion?"클릭 글자 편집 · V 선택·이동":editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":insideRegion?"범위 이동 · Enter 자르기 · Delete 지우기 · Esc 취소":"객체 선택 · 빈 곳을 드래그해 범위 지정");
         if(previousHover!=hovered || previousControl!=hoveredControl)InvalidateVisual();
     }
     private void SetPointerHint(string value) {if(PointerHint==value)return;PointerHint=value;PointerHintChanged?.Invoke(value);}
@@ -447,7 +478,8 @@ internal sealed class EditorSurface : FrameworkElement
                 }
             } catch(Exception error) when(error is InvalidOperationException or ArgumentException or OverflowException) {OperationFailed?.Invoke(error.Message);}
         }
-        if(!CropTool && Selection is null)Selected=selectionBeforeGesture;
+        if(gesture==Gesture.CropNew && PendingCrop is RectD drawn && Math.Min(drawn.Width,drawn.Height)*Zoom<3)PendingCrop=null;
+        if(!CropTool && !IsRegionGesture && Selection is null)Selected=selectionBeforeGesture;
         gesture=Gesture.None;guideX=guideY=null;draft=original=null;points=null;ReleaseMouseCapture();SelectionChanged?.Invoke();UpdateHover(position);InvalidateVisual();
     }
     protected override void OnLostMouseCapture(MouseEventArgs e) {base.OnLostMouseCapture(e);if(gesture!=Gesture.None)CancelGesture();}
@@ -465,6 +497,13 @@ internal sealed class EditorSurface : FrameworkElement
         PendingCrop=null;CropTool=false;InvalidateVisual();return true;
     }
     internal void ClearCrop() {PendingCrop=null;CropTool=false;InvalidateVisual();}
+    /// <summary>Turns the range box into an effect object (Delete → Erase) and selects it so its options appear.</summary>
+    internal bool ApplyRegionEffect(AnnotationKind kind,ColorRgba color,double thickness,AnnotationStyle style)
+    {
+        if(PendingCrop is not RectD r || r.Width<1 || r.Height<1)return false;
+        var a=new Annotation(Guid.NewGuid(),kind,new(r.X,r.Y),new(r.Right,r.Bottom),color,thickness,Style:style);
+        PendingCrop=null;CropTool=false;CommitAnnotation(a,true);Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();return true;
+    }
     private static PixelRect ToPixels(RectD r)=>new((int)Math.Floor(r.X),(int)Math.Floor(r.Y),(int)Math.Ceiling(r.Right)-(int)Math.Floor(r.X),(int)Math.Ceiling(r.Bottom)-(int)Math.Floor(r.Y));
     private static RectD FromPixels(PixelRect r)=>new(r.X,r.Y,r.Width,r.Height);
     /// <summary>Keyboard precision for the pending crop: move, or resize the right/bottom edges, by whole image pixels.</summary>

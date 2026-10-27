@@ -143,7 +143,17 @@ public static class EditorSmokeTest
             Check(rich.Annotations.Single(a=>a.Id==pointer.Id).Text=="42" && rich.NextCounter==43,"consecutive digits edit the selected counter and next number");
             editingSurface.CancelGesture();rich.Undo();
             Check(rich.Annotations.Single(a=>a.Id==pointer.Id).Text==beforeNumber,"two-digit counter typing undoes as one gesture");
-            Check(buttons.Any(b=>Equals(b.ToolTip,"번호 / 포인터 · N")),"a tool picked from ··· takes the slot before ··· like the reference toolbar");
+            int ShownTools()=>buttons.Count(b=>b.IsVisible);
+            bool Shown(string tip)=>buttons.Any(b=>b.IsVisible && Equals(b.ToolTip,tip));
+            var editorWidth=window.Width;
+            window.Width=1500;window.UpdateLayout();window.UpdateLayout();
+            Check(Shown("흐림 · B") && Shown("돋보기 · G") && Shown("불투명 가림"),"a wide editor shows every tool in the toolbar");
+            var wideCount=ShownTools();
+            window.Width=760;window.UpdateLayout();window.UpdateLayout();
+            Check(ShownTools()<wideCount,"a narrow editor folds tools behind ···");
+            window.SetTool(AnnotationKind.Magnifier);window.UpdateLayout();
+            Check(buttons.Count(b=>b.IsVisible && Equals(b.ToolTip,"돋보기 · G"))==1,"a folded tool picked from ··· takes the slot before ··· like the reference toolbar");
+            window.SetTool(null);window.Width=editorWidth;window.UpdateLayout();window.UpdateLayout();
             ClickTool("사각형 · R");editingSurface.Selected=shape.Id;editingSurface.ChangeSelected(a=>a);
             window.InspectorExpanded=true;
             var tailOption=Descendants(window).OfType<CheckBox>().Single(c=>Equals(c.Content,"말꼬리"));
