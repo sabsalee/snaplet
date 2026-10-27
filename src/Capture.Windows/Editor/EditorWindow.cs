@@ -526,7 +526,7 @@ public sealed class EditorWindow : Window
                 var oval=kind==AnnotationKind.Ellipse;var style=surface.InkStyle;
                 var rounded=style.CornerRadius>0?style.CornerRadius:Math.Max(1,EditorPresets.For(AnnotationKind.Rectangle)[0].Style.CornerRadius);
                 if(oval)Segment(FillIcon(ShapeFill.Translucent,true,icon),"반투명 채움",style.Fill==ShapeFill.Translucent,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Translucent});
-                else Segment(FillIcon(ShapeFill.Outline,true,icon),"둥근 테두리",style.Fill==ShapeFill.Outline && style.CornerRadius>0,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Outline,CornerRadius=rounded});
+                else Segment(FillIcon(ShapeFill.Outline,false,icon),"둥근 테두리",style.Fill==ShapeFill.Outline && style.CornerRadius>0,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Outline,CornerRadius=rounded});
                 Segment(FillIcon(ShapeFill.Outline,oval,icon,square:!oval),"테두리",style.Fill==ShapeFill.Outline && (oval || style.CornerRadius==0),()=>surface.InkStyle=oval?surface.InkStyle with {Fill=ShapeFill.Outline}:surface.InkStyle with {Fill=ShapeFill.Outline,CornerRadius=0});
                 Segment(FillIcon(ShapeFill.Hatched,oval,icon),"사선 채움",style.Fill==ShapeFill.Hatched,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Hatched});
                 Segment(FillIcon(ShapeFill.Solid,oval,icon),"단색 채움",style.Fill==ShapeFill.Solid,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Solid});
