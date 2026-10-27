@@ -15,8 +15,8 @@ internal sealed class SettingsWindow : Window
     private readonly List<HotkeyBinding> keys;
     private readonly AppSettings original;
     private readonly Action<AppSettings> apply;
-    private readonly CheckBox preview,copy,save,outside,autoUpdate,adjust,loupe,joinLines,cursor,keepHistory,deepLinks,launchAtLogin;
-    private readonly ComboBox escape,windowStyle;
+    private readonly CheckBox copy,save,outside,autoUpdate,adjust,loupe,joinLines,cursor,keepHistory,deepLinks,launchAtLogin;
+    private readonly ComboBox escape,windowStyle,afterCapture;
     private readonly UpdateService updates;
     private readonly Action? restartUpdate;
     private readonly TextBox folder;
@@ -29,7 +29,8 @@ internal sealed class SettingsWindow : Window
         updates=updateService ?? new UpdateService(new UninstalledBackend());this.restartUpdate=restartUpdate;
         original=settings;apply=applySettings;keys=settings.Hotkeys.ToList();
         Title="Snaplet 설정";Width=800;Height=660;MinWidth=720;MinHeight=540;WindowStartupLocation=WindowStartupLocation.CenterScreen;
-        preview=Toggle("캡처 미리보기",settings.ShowPreview);copy=Toggle("자동 복사",settings.CopyAfterCapture);save=Toggle("자동 저장",settings.SaveAfterCapture);outside=Toggle("바깥 클릭으로 미리보기 닫기",settings.ClosePreviewOutside);
+        afterCapture=new ComboBox{MinWidth=150,VerticalAlignment=VerticalAlignment.Center,ItemsSource=new[]{"커서 옆 작은 팝업","바로 편집창 열기","아무것도 안 함"},SelectedIndex=(int)settings.AfterCapture};AutomationProperties.SetName(afterCapture,"캡처 후 표시");
+        copy=Toggle("자동 복사",settings.CopyAfterCapture);save=Toggle("자동 저장",settings.SaveAfterCapture);outside=Toggle("바깥 클릭으로 미리보기 닫기",settings.ClosePreviewOutside);
         launchAtLogin=Toggle("로그인 시 자동 실행",settings.LaunchAtLogin);
         autoUpdate=Toggle("업데이트 자동 확인 및 다운로드",settings.AutoUpdate);
         adjust=Toggle("영역을 놓은 뒤 조정",settings.AdjustSelectionBeforeCapture);loupe=Toggle("픽셀 확대경 표시",settings.ShowLoupe);joinLines=Toggle("인식한 줄바꿈 합치기",settings.OcrJoinLines);cursor=Toggle("마우스 포인터 포함",settings.IncludeCursor);keepHistory=Toggle("최근 캡처 디스크 보관",settings.KeepHistoryOnDisk);deepLinks=Toggle("snaplet:// 링크 허용",settings.EnableDeepLinks);
@@ -61,11 +62,11 @@ internal sealed class SettingsWindow : Window
     private UIElement CapturePage()
     {
         var p=Section("캡처 후 동작","필요한 작업만 켜 두세요. 각각 독립적으로 동작합니다.");
-        p.Children.Add(Row("작은 미리보기 표시","캡처 직후 편집·복사·저장 버튼을 보여 줍니다.",preview));
+        p.Children.Add(Row("캡처 후 표시","작은 팝업은 마우스 포인터 옆에 편집·복사·저장·고정 버튼을 띄우고, 포커스를 가져가지 않아 바로 다른 앱에 붙여넣을 수 있습니다.",afterCapture));
         p.Children.Add(Row("클립보드에 자동 복사","캡처가 끝나면 다른 앱에 바로 붙여넣을 수 있습니다.",copy));
         p.Children.Add(Row("파일로 자동 저장","캡처 원본을 저장 페이지에서 정한 폴더에 남깁니다.",save));
-        p.Children.Add(Row("바깥 클릭으로 닫기","고정하지 않은 미리보기만 닫습니다.",outside));
-        void Update()=>outside.IsEnabled=preview.IsChecked==true;preview.Click+=(_,_)=>Update();Update();
+        p.Children.Add(Row("바깥 클릭으로 닫기","고정하지 않은 팝업만 닫습니다.",outside));
+        void Update()=>outside.IsEnabled=afterCapture.SelectedIndex==(int)AfterCaptureAction.Popup;afterCapture.SelectionChanged+=(_,_)=>Update();Update();
         p.Children.Add(Ui.Label("고정한 이미지는 새 캡처 후에도 화면에 남습니다.",11,Ui.Muted));
         p.Children.Add(Row("마우스 포인터 포함","캡처를 시작한 순간의 포인터를 이미지에 넣습니다. 숨겨진 포인터는 넣지 않습니다.",cursor));
         p.Children.Add(Row("창 캡처 모양","활성 창·창 선택 캡처에 Windows 11 스타일 그림자나 배경을 더합니다. 편집창의 배경 꾸미기로 이후에도 바꿀 수 있습니다.",windowStyle));
@@ -161,7 +162,7 @@ internal sealed class SettingsWindow : Window
         try {
             if(!Path.IsPathFullyQualified(folder.Text))throw new InvalidOperationException("저장 폴더를 전체 경로로 입력해 주세요.");
             if(keys.Where(k=>k.Assigned).GroupBy(k=>(k.Key,k.Modifiers)).Any(g=>g.Count()>1))throw new InvalidOperationException("같은 단축키를 두 작업에 지정할 수 없습니다.");
-            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,ShowPreview=preview.IsChecked==true,CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,LaunchAtLogin=launchAtLogin.IsChecked==true,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,KeepHistoryOnDisk=keepHistory.IsChecked==true,EnableDeepLinks=deepLinks.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
+            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,AfterCapture=(AfterCaptureAction)Math.Max(0,afterCapture.SelectedIndex),CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,LaunchAtLogin=launchAtLogin.IsChecked==true,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,KeepHistoryOnDisk=keepHistory.IsChecked==true,EnableDeepLinks=deepLinks.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
         }catch(Exception ex){error.Text=ex.Message;}
     }
 }

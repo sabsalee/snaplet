@@ -12,15 +12,21 @@ public enum EscapeAction { None, Copy, Save }
 /// <summary>How window captures are framed: as captured, with a transparent margin and soft shadow, or on a gradient backdrop.</summary>
 public enum WindowCaptureStyle { Plain, Shadow, Backdrop }
 
+/// <summary>What appears once a capture is ready: a small action popup beside the pointer, the editor, or nothing.</summary>
+public enum AfterCaptureAction { Popup, Editor, None }
+
 public sealed record AppSettings
 {
     /// <summary>Bumped whenever stored fields change meaning. Older files are migrated in <see cref="SettingsStore.Normalize"/>.</summary>
-    public const int CurrentSchema = 2;
+    public const int CurrentSchema = 3;
     public int SchemaVersion {get;init;}=CurrentSchema;
     public bool AutoUpdate {get;init;}=true;
     public bool CopyAfterCapture {get;init;}=true;
     public bool SaveAfterCapture {get;init;}
-    public bool ShowPreview {get;init;}=true;
+    public AfterCaptureAction AfterCapture {get;init;}=AfterCaptureAction.Popup;
+    /// <summary>Schema 2 and earlier: the on/off preview switch. Read only to migrate into <see cref="AfterCapture"/>.</summary>
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ShowPreview {get;init;}
     public bool ClosePreviewOutside {get;init;}=true;
     /// <summary>Keep the drawn area adjustable (handles, arrow keys, smart fit) until Enter instead of capturing on mouse release.</summary>
     public bool AdjustSelectionBeforeCapture {get;init;}
@@ -111,7 +117,9 @@ internal static class SettingsStore
         var folder=string.IsNullOrWhiteSpace(stored.SaveFolder) || !Path.IsPathFullyQualified(stored.SaveFolder)?new AppSettings().SaveFolder:stored.SaveFolder;
         var escape=Enum.IsDefined(stored.EscapeAction)?stored.EscapeAction:EscapeAction.None;
         var windowStyle=Enum.IsDefined(stored.WindowStyle)?stored.WindowStyle:WindowCaptureStyle.Plain;
-        return stored with{SchemaVersion=AppSettings.CurrentSchema,Hotkeys=hotkeys,SaveFolder=folder,EscapeAction=escape,WindowStyle=windowStyle};
+        // Files without SchemaVersion deserialize with the current one, so the legacy field itself marks an old file.
+        var after=stored.ShowPreview==false?AfterCaptureAction.None:Enum.IsDefined(stored.AfterCapture)?stored.AfterCapture:AfterCaptureAction.Popup;
+        return stored with{SchemaVersion=AppSettings.CurrentSchema,Hotkeys=hotkeys,SaveFolder=folder,EscapeAction=escape,WindowStyle=windowStyle,AfterCapture=after,ShowPreview=null};
     }
 
     public static void Save(AppSettings settings) {
