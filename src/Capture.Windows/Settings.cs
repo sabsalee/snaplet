@@ -35,6 +35,10 @@ public sealed record AppSettings
     public bool KeepHistoryOnDisk {get;init;}
     /// <summary>Register the per-user snaplet:// protocol so links and launchers can trigger commands. Off by default.</summary>
     public bool EnableDeepLinks {get;init;}
+    /// <summary>Start Snaplet in the tray when the user signs in to Windows (HKCU Run key).</summary>
+    public bool LaunchAtLogin {get;init;}
+    /// <summary>The one-time "Snaplet keeps running in the tray" notification has been shown.</summary>
+    public bool TrayNoticeShown {get;init;}
     public WindowCaptureStyle WindowStyle {get;init;}=WindowCaptureStyle.Plain;
     public string SaveFolder {get;init;}=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Snaplet");
     public List<HotkeyBinding> Hotkeys {get;init;}=DefaultHotkeys();

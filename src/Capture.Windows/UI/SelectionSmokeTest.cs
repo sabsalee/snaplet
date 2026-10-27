@@ -27,6 +27,9 @@ internal static class SelectionSmokeTest
         Check(migrated.Hotkeys[0] is {Key:Key.Q,Modifiers:ModifierKeys.Control|ModifierKeys.Alt},"customised shortcut survives migration");
         Check(migrated.Hotkeys.Where(h=>h.Command is "desktop" or "pick-window" or "scroll" or "ocr" or "home").All(h=>!h.Assigned),"new commands start unassigned instead of taking keys from other apps");
         Check(!migrated.CopyAfterCapture && migrated.SaveFolder=="C:\\Shots","other stored preferences survive migration");
+        Check(!migrated.LaunchAtLogin && !migrated.TrayNoticeShown,"sign-in start stays off until chosen, and upgraded users see the tray notice once");
+        Check(SettingsStore.Parse("""{"LaunchAtLogin":true,"TrayNoticeShown":true}""",out _) is {LaunchAtLogin:true,TrayNoticeShown:true},"sign-in start and the tray notice flag round-trip");
+        Check(Capture.Windows.Platform.StartupRegistration.Command(@"C:\Users\a b\AppData\Local\Snaplet\current\Snaplet.exe")=="\"C:\\Users\\a b\\AppData\\Local\\Snaplet\\current\\Snaplet.exe\" --background","the Run value quotes a path with spaces");
         var conflicted=SettingsStore.Parse("""{"SaveFolder":"relative","Hotkeys":[{"Command":"region","Key":"D1","Modifiers":"Control, Shift"},{"Command":"ocr","Key":"D1","Modifiers":"Control, Shift"},{"Command":"bogus","Key":"F1","Modifiers":"Control"},{"Command":"region","Key":"F2","Modifiers":"Control"}]}""",out var conflictWarning);
         Check(conflicted.Hotkeys.Single(h=>h.Command=="region").Key==Key.D1 && !conflicted.Hotkeys.Single(h=>h.Command=="ocr").Assigned,"duplicate shortcut keeps the first command and unassigns the second");
         Check(conflicted.Hotkeys.All(h=>h.Command!="bogus") && conflictWarning is not null,"unknown commands are dropped with a visible warning");

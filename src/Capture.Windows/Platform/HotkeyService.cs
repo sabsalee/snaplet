@@ -18,7 +18,10 @@ internal sealed class HotkeyService : IDisposable
     private readonly Dictionary<int,HotkeyBinding> registered=[];
     private readonly HashSet<int> temporary=[];
     public event Action<string,long>? Pressed;
+    /// <summary>Right click: the tray menu.</summary>
     public event Action? TrayClicked;
+    /// <summary>Left click: open the main window, as Windows tray apps do.</summary>
+    public event Action? TrayActivated;
     public nint Handle=>source.Handle;
     public HotkeyService() {
         source=new HwndSource(new HwndSourceParameters("Snaplet command window") { Width=0,Height=0,WindowStyle=0 });
@@ -55,7 +58,8 @@ internal sealed class HotkeyService : IDisposable
     private nint Hook(nint hwnd,int message,nint wparam,nint lparam,ref bool handled) {
         if(message==Native.WM_HOTKEY && registered.TryGetValue((int)wparam,out var b)) { handled=true; Pressed?.Invoke(b.Command,Stopwatch.GetTimestamp()); }
         else if(message==Native.WM_HOTKEY && temporary.Contains((int)wparam)) {handled=true;Pressed?.Invoke((int)wparam==100?"scroll-add":"scroll-finish",Stopwatch.GetTimestamp());}
-        if(message==Native.WM_APP_TRAY && ((int)lparam==Native.WM_LBUTTONUP || (int)lparam==Native.WM_RBUTTONUP)) { handled=true; TrayClicked?.Invoke(); }
+        if(message==Native.WM_APP_TRAY && (int)lparam==Native.WM_LBUTTONUP) { handled=true; TrayActivated?.Invoke(); }
+        else if(message==Native.WM_APP_TRAY && (int)lparam==Native.WM_RBUTTONUP) { handled=true; TrayClicked?.Invoke(); }
         return 0;
     }
     private void Clear() { foreach(var id in registered.Keys)Native.UnregisterHotKey(source.Handle,id); registered.Clear(); }
