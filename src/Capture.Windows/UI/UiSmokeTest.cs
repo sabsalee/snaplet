@@ -19,11 +19,14 @@ internal static class UiSmokeTest
             var icon=Ui.Icon(name);Check(icon is Viewbox {Child:Canvas {Width:24,Height:24}},"Fluent icon retains consistent design grid: "+name);
         }
         var image=ImageActions.Demo();var settings=new AppSettings();var commands=new List<string>();
-        var home=new HomeWindow(settings,commands.Add,()=>commands.Add("open"),()=>{},()=>{},()=>{},_=>{},new TextBlock());
+        var home=new HomeWindow(settings,commands.Add,()=>commands.Add("open"),()=>commands.Add("paste"),()=>{},()=>{},_=>{},new TextBlock());
         try {
             Shot(home,"home-empty");
             Check(Find<TextBlock>(home).Where(t=>t.IsVisible && !string.IsNullOrWhiteSpace(t.Text)).All(t=>t.Foreground is SolidColorBrush c && c.Color!=Colors.Black),"home text uses explicit readable theme foregrounds");
             Click(home,"영역 캡처");Check(commands.SequenceEqual(new[]{"region"}),"home region action invokes the expected command without taking a screenshot");
+            Click(home,"클립보드에서 가져오기");Click(home,"이미지 열기");Check(commands.SequenceEqual(new[]{"region","paste","open"}),"the empty main window pastes and opens images from its toolbar");
+            Check(home.AllowDrop && Find<TextBlock>(home).Any(t=>t.IsVisible && t.Text=="캡처하거나 이미지를 끌어다 놓으세요"),"the empty main window accepts dropped images and says so");
+            Check(Find<TextBlock>(home).Any(t=>t.IsVisible && t.Text==settings.Hotkeys.First(k=>k.Command=="region").ToString()),"the empty main window shows the region capture shortcut");
             home.UpdateRecent(new[]{image,image});Shot(home,"home-recent");
             home.Width=660;home.Height=540;Shot(home,"home-compact");
             Check(Find<Button>(home).Any(b=>b.IsVisible && AutomationProperties.GetName(b)=="설정 열기"),"compact home retains visible settings action");
