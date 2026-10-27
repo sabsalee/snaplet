@@ -60,7 +60,7 @@ internal static class UiSmokeTest
             Check(((FrameworkElement)popup.Content).ActualWidth<=220,"the after-capture popup stays small");
             Check(new[]{"편집","이미지 복사","이미지 저장","텍스트 추출","이미지 고정","미리보기 닫기"}.All(n=>Find<Button>(popup).Any(b=>b.IsVisible && AutomationProperties.GetName(b)==n)),"the popup offers edit, copy, save, text, pin and close");
             Click(popup,"이미지 고정");Check(popup.Pinned,"pinning from the popup switches to a pinned image");
-            Click(popup,"고정 해제");popup.UpdateLayout();Check(!popup.Pinned && ((FrameworkElement)popup.Content).ActualWidth<=220,"unpinning returns to the small popup");
+            popup.UpdateLayout();Click(popup,"고정 해제");popup.UpdateLayout();Check(!popup.Pinned && ((FrameworkElement)popup.Content).ActualWidth<=220,"unpinning returns to the small popup");
         }finally{if(popup.IsVisible)popup.Close();}
         Check(PreviewWindow.PopupPlacement(100,100,200,150,0,0,1920,1040)==(118,118),"the popup opens below and right of the pointer");
         Check(PreviewWindow.PopupPlacement(1900,1000,200,150,0,0,1920,1040)==(1682,832),"the popup flips left and up at the bottom-right corner");
