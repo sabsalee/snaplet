@@ -266,6 +266,8 @@ public sealed class EditorWindow : Window
         if(scroll.HorizontalOffset!=x || scroll.VerticalOffset!=y)
             surface.UpdatePointer(surface.PointerPosition(scroll.TranslatePoint(cursor,surface)),Keyboard.Modifiers);
     }
+    // Preset sizes are in display points like the reference app; a 200% capture gets twice the source pixels.
+    private double PresetScale=>Math.Max(1,VisualTreeHelper.GetDpi(this).DpiScaleX);
     private void SetTool(AnnotationKind? kind)
     {
         if(!FinishTextEdit(true))return;document.EndEdit();surface.CancelGesture();surface.ClearCrop();StopColorPick();
@@ -273,7 +275,7 @@ public sealed class EditorWindow : Window
         if(kind is AnnotationKind next) {
             var first=EditorPresets.For(next)[0];
             var defaults=next is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line
-                ?(first.Color,first.Size,first.Style):(new ColorRgba(240,65,70,255),4d,new AnnotationStyle(Elliptical:next==AnnotationKind.Magnifier));
+                ?(first.Color,first.Size*PresetScale,first.Style):(new ColorRgba(240,65,70,255),4d*PresetScale,new AnnotationStyle(Elliptical:next==AnnotationKind.Magnifier));
             var preset=toolStyles.GetValueOrDefault(next,defaults);
             surface.Ink=preset.Item1;surface.Thickness=preset.Item2;surface.InkStyle=preset.Item3;
         }
@@ -478,7 +480,7 @@ public sealed class EditorWindow : Window
             row.Children.Add(new TextBlock {Text=preset.Name,VerticalAlignment=VerticalAlignment.Center,FontSize=12});
             var button=new Button {Content=row,HorizontalContentAlignment=HorizontalAlignment.Left,Margin=new Thickness(2),Padding=new Thickness(6),ToolTip=preset.Name+" · 선택 객체와 다음 그리기에 적용"};
             System.Windows.Automation.AutomationProperties.SetName(button,preset.Name);
-            button.Click+=(_,_)=>{surface.Ink=preset.Color;surface.Thickness=preset.Size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,preset.Size,preset.Style);popup.IsOpen=false;SyncInspector();surface.Focus();};panel.Children.Add(button);
+            button.Click+=(_,_)=>{var size=preset.Size*PresetScale;surface.Ink=preset.Color;surface.Thickness=size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,size,preset.Style);popup.IsOpen=false;SyncInspector();surface.Focus();};panel.Children.Add(button);
         }
         popup.Child=new Border {Child=panel,Background=PanelBrush,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(8)};
         KeyboardNavigation.SetTabNavigation(panel,KeyboardNavigationMode.Cycle);
