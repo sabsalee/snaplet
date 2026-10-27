@@ -80,36 +80,46 @@ internal static class AnnotationPaths
             distances[i] = distances[i - 1] + (Curve(a, i / (double)samples) - Curve(a, (i - 1) / (double)samples)).Length;
         var length = distances[^1];
         if (length < .5) return new EllipseGeometry(P(a.Start), a.Thickness / 2, a.Thickness / 2);
-        // A broad ribbon uses a short wedge nose and a softly concave tail.
-        var noseLength = Math.Min(a.Thickness * 4, length * .3);
-        var halfWidth = Math.Min(a.Thickness * 3, length * .3);
-        var neckDistance = length - noseLength;
-        int j = Array.FindIndex(distances, d => d >= neckDistance);
-        var neckT = ((j - 1) + (neckDistance - distances[j - 1]) / Math.Max(.000001, distances[j] - distances[j - 1])) / samples;
+        // Proportions are in units of a 100-long reference arrow; the head keeps its size and only the shaft stretches.
+        var (headScale, tailScale) = RibbonScales(a.Thickness, length);
+        double headLength = 48 * headScale, barbBack = 46.2 * headScale, headHalf = 22.1 * headScale;
+        double innerHalf = 10.5 * headScale, neckHalf = 8.9 * headScale, tailHalf = 7.1 * tailScale;
+        double TAt(double distance)
+        {
+            distance = Math.Clamp(distance, 0, length);
+            int j = Math.Max(1, Array.FindIndex(distances, d => d >= distance));
+            return ((j - 1) + (distance - distances[j - 1]) / Math.Max(.000001, distances[j] - distances[j - 1])) / samples;
+        }
+        Point Side(double distance, double half, double sign)
+        {
+            var t = TAt(distance); var direction = Tangent(a, t);
+            return Curve(a, t) + new Vector(-direction.Y, direction.X) * (half * sign);
+        }
         var vertices = new List<Point>(); var rounding = new List<double>();
         void Add(Point p, double radius = 0) { vertices.Add(p); rounding.Add(radius); }
-        for (int i = 0; i <= 40; i++)
-        {
-            double t = neckT * i / 40;
-            var direction = Tangent(a, t); var normal = new Vector(-direction.Y, direction.X);
-            Add(Curve(a, t) + normal * (halfWidth * (.85 + .15 * i / 40)), i is 0 or 40 ? a.Thickness * .35 : 0);
-        }
-        Add(P(a.End), Math.Min(.8, a.Thickness * .18));
-        for (int i = 40; i >= 0; i--)
-        {
-            double t = neckT * i / 40;
-            var direction = Tangent(a, t); var normal = new Vector(-direction.Y, direction.X);
-            Add(Curve(a, t) - normal * (halfWidth * (.85 + .15 * i / 40)), i is 0 or 40 ? a.Thickness * .35 : 0);
-        }
-        var tailDirection = Tangent(a, 0); var tailNormal = new Vector(-tailDirection.Y, tailDirection.X);
-        var indent = Math.Min(a.Thickness * .8, length * .08);
-        // A shallow parabolic cut gives the tail a soft concavity rather than a sharp V notch.
-        for (int i = 1; i < 16; i++)
-        {
-            double across = -1 + i / 8d;
-            Add(P(a.Start) + tailNormal * (halfWidth * .85 * across) + tailDirection * (indent * (1 - across * across)));
-        }
+        var neck = length - headLength - .9 * headScale;
+        const int steps = 24;
+        for (int i = 0; i <= steps; i++)
+            Add(Side(neck * i / steps, tailHalf + (neckHalf - tailHalf) * i / steps, 1), i == 0 ? 1.6 * tailScale : 0);
+        Add(Side(length - headLength, innerHalf, 1), .6 * headScale);
+        Add(Side(length - barbBack, headHalf, 1), 1.5 * headScale);
+        Add(P(a.End), .8 * headScale);
+        Add(Side(length - barbBack, headHalf, -1), 1.5 * headScale);
+        Add(Side(length - headLength, innerHalf, -1), .6 * headScale);
+        for (int i = steps; i >= 0; i--)
+            Add(Side(neck * i / steps, tailHalf + (neckHalf - tailHalf) * i / steps, -1), i == 0 ? 1.6 * tailScale : 0);
         return RoundedPolygon(vertices, rounding);
+    }
+
+    /// <summary>Size step of a ribbon arrow from its thickness, and the length rules: short arrows shrink as a whole, long ones thin the tail.</summary>
+    internal static (double Head, double Tail) RibbonScales(double thickness, double length)
+    {
+        var s = .18 * thickness + .15;
+        var threshold = 56 * s < 100 ? 200 : 112 * s;
+        if (length < threshold) { var k = length / threshold; return (s * k, s * k); }
+        if (length <= 520) return (s, s);
+        var f = Math.Max(.8, 1 - (length - 520) / 1000);
+        return (s / f, s * f);
     }
 
     private static Geometry RoundedPolygon(IReadOnlyList<Point> vertices, IReadOnlyList<double> radii)

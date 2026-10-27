@@ -16,9 +16,13 @@ public static class WindowAppearance
     public static bool GetDarkChrome(DependencyObject target)=>(bool)target.GetValue(DarkChromeProperty);
     private static void Changed(DependencyObject target,DependencyPropertyChangedEventArgs e)
     {
-        if(target is not Window w || e.NewValue is not true)return;
-        void Apply(){var hwnd=new WindowInteropHelper(w).Handle;if(hwnd==0)return;int enabled=1;DwmSetWindowAttribute(hwnd,20,ref enabled,4);int caption=0x00211C19;DwmSetWindowAttribute(hwnd,35,ref caption,4);int text=0x00F6F2F0;DwmSetWindowAttribute(hwnd,36,ref text,4);}
-        if(new WindowInteropHelper(w).Handle!=0)Apply();else w.SourceInitialized+=(_,_)=>Apply();
+        if(target is Window w)Apply(w,e.NewValue is true);
+    }
+    /// <summary>Title bar colours for the editor, which follows the Windows app theme instead of always being dark.</summary>
+    public static void Apply(Window w,bool dark)
+    {
+        void Set(){var hwnd=new WindowInteropHelper(w).Handle;if(hwnd==0)return;int enabled=dark?1:0;DwmSetWindowAttribute(hwnd,20,ref enabled,4);int caption=dark?0x00211C19:0x00F7F6F6;DwmSetWindowAttribute(hwnd,35,ref caption,4);int text=dark?0x00F6F2F0:0x001F1D1D;DwmSetWindowAttribute(hwnd,36,ref text,4);}
+        if(new WindowInteropHelper(w).Handle!=0)Set();else w.SourceInitialized+=(_,_)=>Set();
     }
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint hwnd,int attribute,ref int value,int size);
 }

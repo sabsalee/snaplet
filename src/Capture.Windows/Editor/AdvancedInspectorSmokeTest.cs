@@ -30,7 +30,7 @@ internal static class AdvancedInspectorSmokeTest
         var window = new EditorWindow(source, document);
         try
         {
-            window.Show(); window.UpdateLayout();
+            window.Show(); window.InspectorExpanded = true; window.UpdateLayout();
             var surface = Descendants(window).OfType<EditorSurface>().Single();
             foreach (var annotation in new[] { magnifier, spotlight, highlighter, erase, image })
             {

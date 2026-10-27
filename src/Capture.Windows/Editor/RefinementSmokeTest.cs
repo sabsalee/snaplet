@@ -18,7 +18,7 @@ internal static class RefinementSmokeTest
         try {
             window.Show();window.UpdateLayout();
             var surface=Descendants(window).OfType<EditorSurface>().Single();
-            var scroll=Descendants(window).OfType<ScrollViewer>().Single(v=>v.Content is Grid);
+            var scroll=Descendants(window).OfType<ScrollViewer>().Single(v=>v.Content is Grid or Border {Child:Grid});
             var anchor=new Point(scroll.ActualWidth*.57,scroll.ActualHeight*.52);
             Point ImageAtAnchor(){var p=scroll.TranslatePoint(anchor,surface);return new(p.X/surface.Zoom,p.Y/surface.Zoom);}
             window.ZoomAt(2,anchor);var original=ImageAtAnchor();

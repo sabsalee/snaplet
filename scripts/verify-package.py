@@ -8,7 +8,7 @@ import sys
 root = Path(__file__).resolve().parents[1]
 package = Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/snaplet-win-x64'
 required = ['Snaplet.exe', 'Snaplet.dll', 'Capture.Core.dll', 'Snaplet.runtimeconfig.json',
-            'Tesseract.dll', 'Velopack.dll', 'licenses/Velopack-1.2.161-LICENSE.txt', 'x64/leptonica-1.82.0.dll', 'x64/tesseract50.dll',
+            'Tesseract.dll', 'Velopack.dll', 'zxing.dll', 'licenses/ZXing.Net-0.16.9-LICENSE.txt', 'licenses/Velopack-1.2.161-LICENSE.txt', 'x64/leptonica-1.82.0.dll', 'x64/tesseract50.dll',
             'tessdata/kor.traineddata', 'tessdata/eng.traineddata', 'tessdata/LICENSE',
             'licenses/Tesseract.NET-5.2.0-LICENSE.txt', 'licenses/Tesseract-5.2.0-LICENSE.txt',
             'licenses/Leptonica-1.82.0-LICENSE.txt', 'START-HERE.ko.md', 'THIRD-PARTY-NOTICES.md']

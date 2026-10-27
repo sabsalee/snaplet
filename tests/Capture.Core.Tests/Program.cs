@@ -270,4 +270,8 @@ Check(!AnnotationGeometry.HasTail(shapeCallout with {Style=new()}),"Shape tails 
 Check(AnnotationGeometry.HasTail(shapeCallout with {Kind=AnnotationKind.Ellipse}),"Ellipse supports the same explicit tail option.");
 Check(!AnnotationGeometry.HasTail(shapeCallout with {Kind=AnnotationKind.Arrow}),"Shape tail option does not affect unrelated tools.");
 AdvancedModelChecks.Run(Check);
+PrecisionChecks.Run(Check);
+BackdropChecks.Run(Check);
+ColorChecks.Run(Check);
+ScrollBandChecks.Run(Check);
 Console.WriteLine($"PASS: {passed} assertions (geometry, history, pixel effects, scroll matching).");

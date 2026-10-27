@@ -60,9 +60,9 @@ public static class AnnotationGeometry
     }
     public static PointD CounterTip(Annotation a)
     {
-        var r=CounterRadius(a);var t=a.Tail ?? new(a.Start.X,a.Start.Y-r*1.5);
+        var r=CounterRadius(a);var t=a.Tail ?? new(a.Start.X-r*1.03,a.Start.Y+r*1.03);
         var length=Distance(a.Start,t);
-        if(length<.001)return new(a.Start.X,a.Start.Y-r*1.5);
+        if(length<.001)return new(a.Start.X-r*1.03,a.Start.Y+r*1.03);
         var clamped=Math.Clamp(length,r*1.15,r*1.55);
         return new(a.Start.X+(t.X-a.Start.X)*clamped/length,a.Start.Y+(t.Y-a.Start.Y)*clamped/length);
     }

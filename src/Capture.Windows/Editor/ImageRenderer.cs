@@ -58,7 +58,7 @@ internal static class ImageRenderer
             case AnnotationKind.Ellipse:
                 Brush? fill=null;
                 if(a.Appearance.Fill!=ShapeFill.Outline) {
-                    var color=a.Color;fill=BrushOf(color with { A=(byte)(a.Appearance.Fill==ShapeFill.Translucent ? color.A*.25 : color.A) });
+                    var color=a.Color;fill=BrushOf(color with { A=(byte)(a.Appearance.Fill==ShapeFill.Translucent ? color.A*.3 : color.A) });
                 }
                 var outline = ShapeGeometry(a);
                 var hatchBounds=outline.Bounds;
@@ -187,7 +187,7 @@ internal static class ImageRenderer
     internal static FormattedText TextLayout(Annotation a,Brush? ink=null)
     {
         var result=new FormattedText(string.IsNullOrEmpty(a.Text)?" ":a.Text,CultureInfo.CurrentCulture,FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"),Math.Max(14,a.Thickness*5),ink ?? Brushes.White,1);
+            new Typeface(new FontFamily("Segoe UI"),FontStyles.Normal,FontWeights.SemiBold,FontStretches.Normal),Math.Max(14,a.Thickness*5),ink ?? Brushes.White,1);
         var width=Math.Abs(a.End.X-a.Start.X);
         result.MaxTextWidth=Math.Max(20,width>2?width-(a.Appearance.Bubble?20:0):240);
         return result;

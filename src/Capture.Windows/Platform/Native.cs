@@ -19,6 +19,16 @@ internal static class Native
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool GetMonitorInfo(nint monitor,ref MONITORINFOEX info);
     [DllImport("user32.dll")] public static extern nint MonitorFromPoint(POINT p,uint flags);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+    [StructLayout(LayoutKind.Sequential)] private struct MOUSEINPUT { public int Dx,Dy,MouseData; public uint Flags,Time; public nint ExtraInfo; }
+    [StructLayout(LayoutKind.Sequential)] private struct INPUT { public uint Type; public MOUSEINPUT Mouse; }
+    [DllImport("user32.dll",SetLastError=true)] private static extern uint SendInput(uint count,INPUT[] inputs,int size);
+    /// <summary>Scrolls the window under the given desktop point by whole wheel notches (positive = down). Returns false if Windows blocked the input.</summary>
+    public static bool WheelAt(int x,int y,int notches) {
+        SetCursorPos(x,y);
+        var input=new INPUT[]{new(){Type=0,Mouse=new MOUSEINPUT{MouseData=-120*notches,Flags=0x0800}}};
+        return SendInput(1,input,Marshal.SizeOf<INPUT>())==1;
+    }
     [DllImport("user32.dll")] public static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool GetWindowRect(nint hwnd,out RECT bounds);
     [DllImport("user32.dll")] public static extern bool IsWindow(nint hwnd);
@@ -32,6 +42,7 @@ internal static class Native
     [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] public static extern nint GetWindowLongPtr(nint hwnd,int index);
     [DllImport("user32.dll",EntryPoint="SetWindowLongPtrW")] public static extern nint SetWindowLongPtr(nint hwnd,int index,nint value);
     [DllImport("user32.dll")] public static extern bool SetWindowDisplayAffinity(nint hwnd,uint affinity);
+    [DllImport("user32.dll",SetLastError=true)] public static extern bool SetLayeredWindowAttributes(nint hwnd,uint key,byte alpha,uint flags);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(nint monitor,int type,out uint x,out uint y);
     [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);

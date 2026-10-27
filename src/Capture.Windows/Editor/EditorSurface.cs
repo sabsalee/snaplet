@@ -13,6 +13,9 @@ internal sealed class EditorSurface : FrameworkElement
     internal readonly EditableDocument Document;
     internal AnnotationKind? Tool;
     internal bool CropTool;
+    /// <summary>Eyedropper mode: clicks report image points instead of drawing or selecting.</summary>
+    internal bool PickColorTool;
+    internal event Action<PointD,ModifierKeys>? ColorPickRequested;
     internal bool SnapToObjects=true;
     private double? guideX,guideY;
     private Guid? hovered;
@@ -35,6 +38,7 @@ internal sealed class EditorSurface : FrameworkElement
     private Annotation? original,draft;
     private List<PointD>? points;
     private int handle;
+    private Vector grabOffset;
     private ModifierKeys pointerModifiers;
     private Vector cornerDirection;
     private double cornerRadiusStart;
@@ -106,7 +110,7 @@ internal sealed class EditorSurface : FrameworkElement
             dc.DrawGeometry(null,pen,ImageRenderer.ArrowStrokeGeometry(a));return;
         }
         if(a.Kind==AnnotationKind.Pen) {dc.DrawGeometry(null,pen,ImageRenderer.PenGeometry(a));return;}
-        var b=ImageRenderer.BoundsOf(a);b.Inflate(2/Zoom,2/Zoom);
+        var b=ImageRenderer.BoundsOf(a);var outset=hover?2/Zoom:HandleOutset/Zoom;b.Inflate(outset,outset);
         dc.DrawRectangle(null,pen,b);
     }
     private void DrawControl(DrawingContext dc,Handle h)
@@ -117,15 +121,32 @@ internal sealed class EditorSurface : FrameworkElement
             var b=ImageRenderer.BoundsOf(selected);var anchor=new Point(Math.Clamp(p.X,b.Left,b.Right),Math.Clamp(p.Y,b.Top,b.Bottom));
             dc.DrawLine(new Pen(SelectionInk,1/Zoom){DashStyle=DashStyles.Dot},anchor,p);
         }
-        if(h.Index is -3 or -6) {
+        if(h.Index==-6) {
             var radius=5/Zoom;var diamond=new StreamGeometry();
             using(var g=diamond.Open()) {g.BeginFigure(new(p.X,p.Y-radius),true,true);g.LineTo(new(p.X+radius,p.Y),true,false);g.LineTo(new(p.X,p.Y+radius),true,false);g.LineTo(new(p.X-radius,p.Y),true,false);}
-            dc.DrawGeometry(h.Index==-6?Brushes.MediumAquamarine:Brushes.White,pen,diamond);
-        } else if(h.Index<0)dc.DrawEllipse(h.Index==-4?SelectionInk:Brushes.White,new Pen(Brushes.White,1.5/Zoom),p,5/Zoom,5/Zoom);
+            dc.DrawGeometry(Brushes.MediumAquamarine,pen,diamond);
+        } else if(h.Index==-4)dc.DrawEllipse(SelectionInk,new Pen(Brushes.White,1.5/Zoom),p,5/Zoom,5/Zoom);
         else DrawHandle(dc,h.Point);
     }
-    private void DrawHandle(DrawingContext dc,PointD p)=>dc.DrawRoundedRectangle(Brushes.White,new Pen(SelectionInk,1/Zoom),new(p.X-4/Zoom,p.Y-4/Zoom,8/Zoom,8/Zoom),2/Zoom,2/Zoom);
-    private readonly record struct Handle(int Index,PointD Point);
+    // Reference handles: white rounded 8 px squares with a gray border; shape handles sit 6 px outside the bounds.
+    private const double HandleOutset=6;
+    private static readonly Pen HandleBorder=CreateHandleBorder();
+    private static Pen CreateHandleBorder(){var pen=new Pen(new SolidColorBrush(Color.FromRgb(142,142,147)),1);pen.Freeze();return pen;}
+    private void DrawHandle(DrawingContext dc,PointD p)
+    {
+        var border=new Pen(HandleBorder.Brush,1/Zoom);
+        dc.DrawRoundedRectangle(Brushes.White,border,new(p.X-4/Zoom,p.Y-4/Zoom,8/Zoom,8/Zoom),2/Zoom,2/Zoom);
+    }
+    /// <summary>Anchor is the point on the object the handle edits; it differs from Point for handles drawn outside the bounds.</summary>
+    private readonly record struct Handle(int Index,PointD Point,PointD Anchor)
+    {
+        public Handle(int index,PointD point):this(index,point,point){}
+    }
+    private IEnumerable<Handle> OutsetHandles(Rect r)
+    {
+        var outer=r;outer.Inflate(HandleOutset/Zoom,HandleOutset/Zoom);
+        return BoxHandles(outer).Zip(BoxHandles(r),(drawn,edge)=>new Handle(drawn.Index,drawn.Point,edge.Point));
+    }
     private static IEnumerable<Handle> BoxHandles(Rect r)
     {
         yield return new(0,new(r.Left,r.Top));yield return new(1,new(r.X+r.Width/2,r.Top));yield return new(2,new(r.Right,r.Top));
@@ -138,7 +159,7 @@ internal sealed class EditorSurface : FrameworkElement
             yield return new(-1,a.Start);yield return new(-2,a.End);
             if(a.Kind==AnnotationKind.Arrow)yield return new(-3,AnnotationGeometry.CurvePoint(a,.5));
         } else if(a.Kind!=AnnotationKind.Pen && a.Kind!=AnnotationKind.Step && !(a.Kind==AnnotationKind.Highlight && a.Appearance.HighlightShape==MarkerShape.Freehand)) {
-            foreach(var h in BoxHandles(ImageRenderer.BoundsOf(a)))yield return h;
+            foreach(var h in OutsetHandles(ImageRenderer.BoundsOf(a)))yield return h;
         }
         if(a.Kind==AnnotationKind.Rectangle && !a.Appearance.Sketch || a.Kind==AnnotationKind.Text && a.Appearance.Bubble) {
             var box=ImageRenderer.BoundsOf(a);var inset=Math.Min(Math.Max(12/Zoom,a.Appearance.CornerRadius),Math.Min(box.Width,box.Height)/2);
@@ -159,10 +180,14 @@ internal sealed class EditorSurface : FrameworkElement
             yield return new(-4,ImageRenderer.TailTip(a));
         }
     }
-    private Handle? NearHandle(IEnumerable<Handle> handles,PointD p)=>handles.Where(h=>AnnotationGeometry.Distance(h.Point,p)<=10/Zoom).OrderBy(h=>AnnotationGeometry.Distance(h.Point,p)).Cast<Handle?>().FirstOrDefault();
+    // Ties between outset handles of small objects go to the handle whose edited point is nearest.
+    private Handle? NearHandle(IEnumerable<Handle> handles,PointD p)=>handles.Where(h=>AnnotationGeometry.Distance(h.Point,p)<=10/Zoom)
+        .OrderBy(h=>Math.Round(AnnotationGeometry.Distance(h.Point,p),3)).ThenBy(h=>AnnotationGeometry.Distance(h.Anchor,p)).Cast<Handle?>().FirstOrDefault();
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        base.OnMouseLeftButtonDown(e);Focus();BeginPointer(ImagePoint(e),Keyboard.Modifiers,e.ClickCount);
+        base.OnMouseLeftButtonDown(e);Focus();
+        if(PickColorTool){ColorPickRequested?.Invoke(ImagePoint(e),Keyboard.Modifiers);e.Handled=true;return;}
+        BeginPointer(ImagePoint(e),Keyboard.Modifiers,e.ClickCount);
     }
     internal void BeginPointer(PointD position,ModifierKeys modifiers=ModifierKeys.None,int clickCount=1)
     {
@@ -180,7 +205,7 @@ internal sealed class EditorSurface : FrameworkElement
         }
         var selected=Selection;var selectedHandle=selected is null?null:NearHandle(Handles(selected),start);
         if(selectedHandle is Handle sh) {
-            original=selected;handle=sh.Index;
+            original=selected;handle=sh.Index;grabOffset=new(sh.Anchor.X-start.X,sh.Anchor.Y-start.Y);
             if(handle==-6) {var b=ImageRenderer.BoundsOf(selected!);cornerRadiusStart=Math.Min(selected!.Appearance.CornerRadius,Math.Min(b.Width,b.Height)/2);cornerDirection=new(b.X+b.Width/2-start.X,b.Y+b.Height/2-start.Y);if(cornerDirection.LengthSquared>0)cornerDirection.Normalize();}
             gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:handle==-6?Gesture.Corner:Gesture.Resize;CaptureMouse();return;
         }
@@ -198,7 +223,10 @@ internal sealed class EditorSurface : FrameworkElement
             TextEditRequested?.Invoke(a,true);return;
         }
         if(kind==AnnotationKind.Step) {
-            a=a with {Text=Document.NextCounter.ToString(),Tail=new(start.X,start.Y-AnnotationGeometry.CounterRadius(a)*1.5)};
+            // With a pointer the click marks the pointer tip and the bubble sits up and to the right, like the reference app.
+            var reach=AnnotationGeometry.CounterRadius(a)*1.45/Math.Sqrt(2);
+            a=a.Appearance.ShowTail ? a with {Text=Document.NextCounter.ToString(),Start=new(start.X+reach,start.Y-reach),End=new(start.X+reach,start.Y-reach),Tail=start}
+                : a with {Text=Document.NextCounter.ToString(),Tail=new(start.X-reach,start.Y+reach)};
             Document.Add(a);Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();return;
         }
         Selected=a.Id;points=kind==AnnotationKind.Pen || kind==AnnotationKind.Highlight && InkStyle.HighlightShape==MarkerShape.Freehand?[start]:null;draft=a with {Points=points?.ToArray()};gesture=Gesture.Create;CaptureMouse();InvalidateVisual();
@@ -259,7 +287,7 @@ internal sealed class EditorSurface : FrameworkElement
         hovered=Tool is null?hit?.Id:null;hoveredControl=near?.Index;
         var textInsertion=Tool==AnnotationKind.Text && hit?.Kind==AnnotationKind.Text;
         var editable=hit!=null && (Tool is null || hit.Id==Selected || textInsertion);
-        Cursor=near is Handle h?HandleCursor(h.Index):textInsertion?Cursors.IBeam:editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
+        Cursor=PickColorTool?Cursors.Cross:near is Handle h?HandleCursor(h.Index):textInsertion?Cursors.IBeam:editable?Cursors.SizeAll:Tool==AnnotationKind.Text?Cursors.IBeam:Tool is null && !CropTool?Cursors.Arrow:Cursors.Cross;
         SetPointerHint(near is Handle control?control.Index switch {
             -3=>"곡률 · 드래그해 화살표를 휘세요",-4=>"말꼬리 · 파란 원을 드래그해 방향과 길이를 바꾸세요",
             -6=>"모서리 · 민트색 마름모를 드래그해 둥글기를 바꾸세요",-5=>"원본 영역 이동",_=>"크기 조절 · Shift 비율 유지"
@@ -291,7 +319,8 @@ internal sealed class EditorSurface : FrameworkElement
                 Gesture.SampleResize=>ResizeSample(a,current),
                 Gesture.Resize when handle==-1=>ResizeEndpoint(a,Constrained(a.End,current,a.Kind),true),
                 Gesture.Resize when handle==-2=>ResizeEndpoint(a,Constrained(a.Start,current,a.Kind),false),
-                Gesture.Resize=>ResizeAnnotation(a,current),
+                // Grabbing an outset handle must not jump the edge to the pointer.
+                Gesture.Resize=>ResizeAnnotation(a,new(current.X+grabOffset.X,current.Y+grabOffset.Y)),
                 _=>a
             };
         } else if(draft is Annotation created) {
@@ -436,6 +465,34 @@ internal sealed class EditorSurface : FrameworkElement
         PendingCrop=null;CropTool=false;InvalidateVisual();return true;
     }
     internal void ClearCrop() {PendingCrop=null;CropTool=false;InvalidateVisual();}
+    private static PixelRect ToPixels(RectD r)=>new((int)Math.Floor(r.X),(int)Math.Floor(r.Y),(int)Math.Ceiling(r.Right)-(int)Math.Floor(r.X),(int)Math.Ceiling(r.Bottom)-(int)Math.Floor(r.Y));
+    private static RectD FromPixels(PixelRect r)=>new(r.X,r.Y,r.Width,r.Height);
+    /// <summary>Keyboard precision for the pending crop: move, or resize the right/bottom edges, by whole image pixels.</summary>
+    internal bool NudgeCrop(int dx,int dy,bool resize)
+    {
+        if(PendingCrop is not RectD c)return false;
+        var bounds=ToPixels(Document.Crop);var r=ToPixels(c);
+        PendingCrop=FromPixels(resize?SelectionMath.ResizeBy(r,dx,dy,bounds):SelectionMath.Move(r,dx,dy,bounds));InvalidateVisual();return true;
+    }
+    /// <summary>[ and ] grow or shrink every side of the pending crop.</summary>
+    internal bool GrowCrop(int amount)
+    {
+        if(PendingCrop is not RectD c)return false;
+        PendingCrop=FromPixels(SelectionMath.Grow(ToPixels(c),amount,ToPixels(Document.Crop)));InvalidateVisual();return true;
+    }
+    /// <summary>Fits the pending crop to content by trimming uniform margins of the original screenshot. Returns false when nothing changed.</summary>
+    internal bool FitCropToContent()
+    {
+        if(PendingCrop is not RectD c)return false;
+        var area=ToPixels(c).Intersect(new PixelRect(0,0,source.PixelWidth,source.PixelHeight));
+        if(area.IsEmpty || (long)area.Width*area.Height>40_000_000)return false;
+        BitmapSource pixels=source.Format==PixelFormats.Bgra32 || source.Format==PixelFormats.Pbgra32?source:new FormatConvertedBitmap(source,PixelFormats.Bgra32,null,0);
+        var buffer=new byte[area.Width*area.Height*4];pixels.CopyPixels(new Int32Rect(area.X,area.Y,area.Width,area.Height),buffer,area.Width*4,0);
+        var local=PixelProbe.TrimUniformBorder(buffer,area.Width,area.Height,new PixelRect(0,0,area.Width,area.Height),10);
+        var fitted=new PixelRect(area.X+local.X,area.Y+local.Y,local.Width,local.Height);
+        if(fitted==ToPixels(c))return false;
+        PendingCrop=FromPixels(fitted);InvalidateVisual();return true;
+    }
     internal void DeleteSelected() {CancelGesture();if(Selected is Guid id)Document.Delete(id);Selected=null;SelectionChanged?.Invoke();InvalidateVisual();}
     internal void ChangeSelected(Func<Annotation,Annotation> update) {FinishNumberEdit();if(Selection is Annotation a){var changed=update(a);if(changed.Kind is AnnotationKind.Image or AnnotationKind.Magnifier or AnnotationKind.Text)CommitAnnotation(changed,false);else Document.Replace(changed);SelectionChanged?.Invoke();InvalidateVisual();}}
     internal void ApplyStyle()=>ChangeSelected(a=>WithReachableShapeTail(a with {Color=Ink,Thickness=Thickness,Style=InkStyle}));

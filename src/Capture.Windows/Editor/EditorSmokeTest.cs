@@ -120,6 +120,8 @@ public static class EditorSmokeTest
         Check(edgeText.End.X<=640 && edgeText.End.Y<=420 && edgeText.Tail!.Value.Y<=420,"new text and initial tail remain reachable near screenshot edge");
         surface.Selected=pointer.Id;surface.ChangeSelected(a=>a with {Text="7"});surface.DuplicateSelected();
         Check(rich.Annotations.Count(a=>a.Kind==AnnotationKind.Step)==2 && rich.Annotations.Last().Id!=pointer.Id,"duplicate creates an independent editable counter");
+        // The reviewed screenshot uses the light theme the reference app shows by default; the dark variant is rendered below.
+        EditorTheme.Override=false;
         var window=new EditorWindow(sheet,rich);
         try {
             // A real synthetic WPF window exercises toolbar/inspector/layout construction.
@@ -129,7 +131,7 @@ public static class EditorSmokeTest
             var buttons=Descendants(window).OfType<Button>().ToArray();
             void ClickTool(string tooltip)=>buttons.Single(b=>Equals(b.ToolTip,tooltip)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             ClickTool("화살표 · A");editingSurface.Ink=new(35,90,210);editingSurface.Thickness=7;editingSurface.InkStyle=new(ArrowHead:ArrowHead.Open);
-            ClickTool("번호 / 포인터 · N");editingSurface.Thickness=9;
+            window.SetTool(AnnotationKind.Step);editingSurface.Thickness=9;
             ClickTool("화살표 · A");
             Check(editingSurface.Thickness==7 && editingSurface.Ink==new ColorRgba(35,90,210) && editingSurface.InkStyle.ArrowHead==ArrowHead.Open,"switching tools restores that tool's color size and style");
             editingSurface.Selected=pointer.Id;
@@ -141,18 +143,35 @@ public static class EditorSmokeTest
             Check(rich.Annotations.Single(a=>a.Id==pointer.Id).Text=="42" && rich.NextCounter==43,"consecutive digits edit the selected counter and next number");
             editingSurface.CancelGesture();rich.Undo();
             Check(rich.Annotations.Single(a=>a.Id==pointer.Id).Text==beforeNumber,"two-digit counter typing undoes as one gesture");
+            Check(buttons.Any(b=>Equals(b.ToolTip,"번호 / 포인터 · N")),"a tool picked from ··· takes the slot before ··· like the reference toolbar");
             ClickTool("사각형 · R");editingSurface.Selected=shape.Id;editingSurface.ChangeSelected(a=>a);
+            window.InspectorExpanded=true;
             var tailOption=Descendants(window).OfType<CheckBox>().Single(c=>Equals(c.Content,"말꼬리"));
             tailOption.IsChecked=true;tailOption.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             Check(rich.Annotations.Single(a=>a.Id==shape.Id) is {Tail:not null,Appearance.ShapeTail:true},"rectangle inspector enables a tail with a reachable drag target");
             rich.Undo();Check(!rich.Annotations.Single(a=>a.Id==shape.Id).Appearance.ShapeTail,"shape tail checkbox is one undoable edit");
-            rich.Redo();window.UpdateLayout();
+            rich.Redo();window.InspectorExpanded=false;window.UpdateLayout();
+            Check(!window.UsesDarkTheme && Capture.Windows.UI.WindowAppearance.GetDarkChrome(window)==false,"light editor theme requests a light title bar");
+            var panel=Descendants(window).OfType<Border>().Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="속성 패널");
+            var panelAt=panel.TransformToAncestor((Visual)window.Content).Transform(new Point(0,0));
+            Check(panel.IsVisible && panelAt.X>((FrameworkElement)window.Content).ActualWidth/2 && panelAt.Y<130,"property panel floats at the top right below the toolbar");
+            Check(Descendants(panel).OfType<Slider>().Count(s=>s.IsVisible)==1 && !Descendants(panel).OfType<ComboBox>().Any(c=>c.IsVisible),"compact property panel shows one size slider and keeps secondary controls behind ···");
             var content=(FrameworkElement)window.Content;
             var ui=new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth),(int)Math.Ceiling(content.ActualHeight),96,96,PixelFormats.Pbgra32);ui.Render(content);
             var uiPng=new PngBitmapEncoder();uiPng.Frames.Add(BitmapFrame.Create(ui));
             using var file=File.Create(Path.Combine(outputDirectory,"editor-ui.png"));uiPng.Save(file);
             Check(content.ActualWidth>600 && content.ActualHeight>300,"compact editor toolbar and workspace construct on Windows");
         } finally {window.CloseForExit();}
+        EditorTheme.Override=true;
+        var darkWindow=new EditorWindow(sheet,rich);
+        try {
+            darkWindow.Show();darkWindow.UpdateLayout();
+            Check(darkWindow.UsesDarkTheme && Capture.Windows.UI.WindowAppearance.GetDarkChrome(darkWindow),"dark Windows app mode keeps the dark editor theme and title bar");
+            var content=(FrameworkElement)darkWindow.Content;
+            var ui=new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth),(int)Math.Ceiling(content.ActualHeight),96,96,PixelFormats.Pbgra32);ui.Render(content);
+            var uiPng=new PngBitmapEncoder();uiPng.Frames.Add(BitmapFrame.Create(ui));
+            using var file=File.Create(Path.Combine(outputDirectory,"editor-ui-dark.png"));uiPng.Save(file);
+        } finally {darkWindow.CloseForExit();EditorTheme.Override=null;}
         var richPng=new PngBitmapEncoder();richPng.Frames.Add(BitmapFrame.Create(ImageRenderer.Render(sheet,rich)));
         using(var file=File.Create(Path.Combine(outputDirectory,"editor-callouts.png")))richPng.Save(file);
         CheckPolishedTools(outputDirectory, Check);
@@ -192,7 +211,7 @@ public static class EditorSmokeTest
             }
         }
         var wide = annotations[0];
-        check(ImageRenderer.ArrowGeometry(wide).FillContains(new Point(120, 112)), "filled arrow has a broad continuous shaft rather than a thin line with a triangle");
+        check(ImageRenderer.ArrowGeometry(wide).FillContains(new Point(120, 106)), "filled arrow has a broad continuous shaft rather than a thin line with a triangle");
         foreach (var endpoint in new[] { new PointD(30, 30), new PointD(30.01, 30.01), new PointD(31, 31) })
         {
             var tiny = wide with { Start = new(30, 30), End = endpoint };

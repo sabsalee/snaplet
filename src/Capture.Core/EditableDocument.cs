@@ -11,6 +11,21 @@ public sealed record AnnotationStyle(ArrowHead ArrowHead = ArrowHead.Filled, Sha
     bool Bubble = true, bool ShowTail = true, double Opacity = 1, bool Sketch = false, bool ShapeTail = false, double Magnification = 3, double Dim = .6, bool Elliptical = false,
     MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat, double CornerRadius = 8, double TailWidth = 24);
 
+/// <summary>Background behind the exported image: gradient/solid/transparent fill, padding, rounded corners and a soft shadow.</summary>
+public enum BackdropFill { Gradient, Solid, Transparent }
+public sealed record Backdrop(bool Enabled = false, BackdropFill Fill = BackdropFill.Gradient, int Preset = 0, ColorRgba Color = default,
+    double Padding = 56, double CornerRadius = 12, double Shadow = .5)
+{
+    public const int PresetCount = 8;
+    public const double MaxPadding = 400, MaxCornerRadius = 120;
+    /// <summary>Whole-pixel padding actually added on every side when enabled.</summary>
+    public int PaddingPixels => Enabled ? (int)Math.Round(Padding) : 0;
+    public bool IsValid => Enum.IsDefined(Fill) && Preset is >= 0 and < PresetCount &&
+        double.IsFinite(Padding) && Padding is >= 0 and <= MaxPadding &&
+        double.IsFinite(CornerRadius) && CornerRadius is >= 0 and <= MaxCornerRadius &&
+        double.IsFinite(Shadow) && Shadow is >= 0 and <= 1;
+}
+
 public sealed record Annotation(Guid Id, AnnotationKind Kind, PointD Start, PointD End, ColorRgba Color,
     double Thickness = 4, string Text = "", IReadOnlyList<PointD>? Points = null,
     PointD? Control = null, PointD? Tail = null, AnnotationStyle? Style = null,
@@ -39,7 +54,7 @@ public sealed record Annotation(Guid Id, AnnotationKind Kind, PointD Start, Poin
 public sealed class EditableDocument
 {
     private const int HistoryLimit = 128;
-    private sealed record State(RectD Canvas, RectD Crop, ReadOnlyCollection<Annotation> Annotations, int NextCounter = 1);
+    private sealed record State(RectD Canvas, RectD Crop, ReadOnlyCollection<Annotation> Annotations, int NextCounter = 1, Backdrop? Backdrop = null, double ExportScale = 1);
     private State state;
     private readonly List<State> undo = [];
     private readonly List<State> redo = [];
@@ -48,6 +63,9 @@ public sealed class EditableDocument
     public int Height { get; }
     public RectD Crop => state.Crop;
     public RectD Canvas => state.Canvas;
+    public Backdrop Backdrop => state.Backdrop ?? new();
+    /// <summary>Output scale for copy/save (e.g. 0.5 to send a 200% display capture at 1x). Editing always uses full resolution.</summary>
+    public double ExportScale => state.ExportScale;
     public IReadOnlyList<Annotation> Annotations => state.Annotations;
     public bool IsEditing => editStart is not null;
     public bool CanUndo => undo.Count > 0;
@@ -104,6 +122,18 @@ public sealed class EditableDocument
         if (clipped != Crop) Commit(state with { Crop = clipped });
     }
     public void ResetCrop() => CropTo(Canvas);
+    /// <summary>Changes the export backdrop as one undoable step. Disabled backdrops keep their settings for the next time.</summary>
+    public void SetExportScale(double scale)
+    {
+        if (!double.IsFinite(scale) || scale < 0.1 || scale > 1) throw new ArgumentOutOfRangeException(nameof(scale), "Export scale must be between 0.1 and 1.");
+        if (scale != ExportScale) Commit(state with { ExportScale = scale });
+    }
+    public void SetBackdrop(Backdrop backdrop)
+    {
+        ArgumentNullException.ThrowIfNull(backdrop);
+        if (!backdrop.IsValid) throw new ArgumentException("Backdrop contains invalid values.", nameof(backdrop));
+        if (backdrop != Backdrop) Commit(state with { Backdrop = backdrop });
+    }
     public void ExpandToInclude(RectD bounds)
     {
         if(bounds.IsEmpty)throw new ArgumentException("Invalid canvas bounds.");
