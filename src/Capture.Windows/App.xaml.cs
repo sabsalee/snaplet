@@ -63,11 +63,12 @@ public partial class App : Application
         settings=SettingsStore.Load(out var warning);
         _=CommandChannel.ListenAsync(command=>Dispatcher.BeginInvoke(()=>_=RunCommandAsync(command)),commandListener.Token);
         if(settings.EnableDeepLinks)CommandChannel.SetProtocolRegistration(true);
+        if(settings.LaunchAtLogin)StartupRegistration.Apply(true);
         updates=new UpdateService(new VelopackBackend());updates.Changed+=()=>{if(updates.Snapshot.Stage==UpdateStage.Ready && !capturing)status.Text=$"업데이트 {updates.Snapshot.TargetVersion} 준비됨 · 설정 → 업데이트에서 다시 시작하세요.";};
         updatePoll.Tick+=async(_,_)=>{if(settings.AutoUpdate)await updates.CheckAsync(true);};updatePoll.Start();
         _=CheckUpdatesAfterStartupAsync();
         try {
-            hotkeys=new HotkeyService();hotkeys.Pressed+=(command,timestamp)=>_=RunCommandAsync(command,timestamp);hotkeys.TrayClicked+=ShowTrayMenu;
+            hotkeys=new HotkeyService();hotkeys.Pressed+=(command,timestamp)=>_=RunCommandAsync(command,timestamp);hotkeys.TrayClicked+=ShowTrayMenu;hotkeys.TrayActivated+=ShowHome;
             tray=new TrayIcon(hotkeys.Handle);
             try{hotkeys.Apply(settings.Hotkeys);}catch(Exception error){warning=error.Message+"\n설정에서 단축키를 바꿔 주세요. 트레이 메뉴는 사용할 수 있습니다.";}
         } catch(Exception error){Error(error);}
@@ -79,8 +80,9 @@ public partial class App : Application
         if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load());}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
         if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지",true);Edit(demo);}
         else if(forwarded!=null)Dispatcher.BeginInvoke(()=>_=RunCommandAsync(forwarded),DispatcherPriority.ApplicationIdle);
-        else ShowHome();
-        if(warning is not null)status.Text=warning;
+        // Snaplet starts in the tray; the main window opens from the tray icon, the "home" shortcut or a second launch.
+        if(warning is not null){status.Text=warning;tray?.Notify("Snaplet 확인 필요",warning);}
+        else if(!settings.TrayNoticeShown && forwarded is null && !e.Args.Contains("--background"))ShowTrayNotice();
         foreach(var path in e.Args.Where(File.Exists)){try{Edit(ImageActions.Load(path));}catch(Exception error){Error(error);}}
     }
     private async Task RunCommandAsync(string command,long? hotkeyTimestamp=null,EditorWindow? destination=null) {
@@ -256,7 +258,10 @@ public partial class App : Application
             var pin=new PreviewWindow(bitmap,settings,true);previews.Add(pin);pin.EditRequested+=Edit;pin.OcrRequested+=source=>_=RecognizeAsync(source);
             pin.Closed+=(_,_)=>previews.Remove(pin);pin.Show();
         };
-        window.Closed+=(_,_)=>editors.Remove(image);Exclude(window);window.ShowDocument();
+        window.Closed+=(_,_)=>editors.Remove(image);Exclude(window);
+        // An image opened from the empty main window takes its place, so the window appears to fill in.
+        if(home is {IsVisible:true,WindowState:not WindowState.Minimized}){window.WindowStartupLocation=WindowStartupLocation.Manual;window.Left=home.Left;window.Top=home.Top;window.Width=home.Width;window.Height=home.Height;window.WindowState=home.WindowState;home.Hide();}
+        window.ShowDocument();
     }
     /// <summary>OCR button in preview/editor: decoded QR codes first, then recognised text.</summary>
     private async Task RecognizeAsync(BitmapSource image) {
@@ -298,6 +303,7 @@ public partial class App : Application
             var previous=settings;
             if(previous.KeepHistoryOnDisk && !next.KeepHistoryOnDisk)HistoryStore.Clear();
             if(previous.EnableDeepLinks!=next.EnableDeepLinks)CommandChannel.SetProtocolRegistration(next.EnableDeepLinks);
+            if(previous.LaunchAtLogin!=next.LaunchAtLogin && !StartupRegistration.Apply(next.LaunchAtLogin))throw new InvalidOperationException("로그인 시 자동 실행을 설정하지 못했습니다. Windows 설정 → 앱 → 시작 프로그램을 확인해 주세요.");
             if(!previous.KeepHistoryOnDisk && next.KeepHistoryOnDisk){var oldestFirst=history.AsEnumerable().Reverse().ToArray();_=Task.Run(()=>{foreach(var image in oldestFirst){try{HistoryStore.Save(image);Thread.Sleep(2);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}}});}
             hotkeys?.Apply(next.Hotkeys);
             try{SettingsStore.Save(next);settings=next;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
@@ -325,8 +331,14 @@ public partial class App : Application
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
         var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
         if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
-        menu.Items.Add(new Separator());Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("시작 화면",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
+        menu.Items.Add(new Separator());Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
         menu.IsOpen=true;
+    }
+    private void ShowTrayNotice() {
+        if(tray is null)return;
+        var region=settings.Hotkeys.FirstOrDefault(k=>k.Command=="region");
+        tray.Notify("Snaplet이 트레이에서 실행 중입니다",(region is {Assigned:true}?$"{region} 영역 캡처 · ":"")+"아이콘 클릭으로 열기, 오른쪽 클릭으로 메뉴");
+        try{var next=settings with{TrayNoticeShown=true};SettingsStore.Save(next);settings=next;}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}
     }
     private void ShowHome() {
         if(home is not null){home.UpdateSettings(settings);home.UpdateRecent(history);home.Show();home.Activate();return;}

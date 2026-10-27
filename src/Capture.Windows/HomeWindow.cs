@@ -1,70 +1,111 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Capture.Windows.Editor;
 using Capture.Windows.UI;
 
 namespace Capture.Windows;
 
+/// <summary>
+/// The main window is an editor with nothing in it: the same toolbar band and workspace, a few hints in the middle,
+/// and images arrive by capture, drop, paste or open. The app itself lives in the tray; this window only opens on request.
+/// </summary>
 internal sealed class HomeWindow : Window
 {
     private readonly Action<string> command;
-    private readonly StackPanel recent=new();
-    private readonly Dictionary<string,Border> keycaps=[];
     private readonly Action<BitmapSource> edit;
+    private readonly Action clipboard;
+    private readonly Action open;
+    private readonly Border regionKeycap;
+    private readonly WrapPanel recent=new() {HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,26,0,0)};
+    private readonly Button recentButton;
+    private IReadOnlyList<BitmapSource> recentImages=[];
     internal HomeWindow(AppSettings settings,Action<string> capture,Action open,Action clipboard,Action demo,Action preferences,Action<BitmapSource> editImage,TextBlock status)
     {
-        command=capture;edit=editImage;Title="Snaplet";Width=820;Height=650;MinWidth=660;MinHeight=520;WindowStartupLocation=WindowStartupLocation.CenterScreen;
-        var root=new DockPanel{Background=Ui.Page};Content=root;
-        var footer=new DockPanel{Margin=new Thickness(28,12,28,18)};DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
-        var version=Ui.Label("v"+typeof(HomeWindow).Assembly.GetName().Version?.ToString(3),11,Ui.Muted);DockPanel.SetDock(version,Dock.Right);footer.Children.Add(version);
-        footer.Children.Add(Ui.Label("로컬 캡처 · 닫아도 트레이에서 실행됩니다",11,Ui.Muted));
-        var content=new StackPanel{Margin=new Thickness(28,24,28,0)};root.Children.Add(new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
-        var brand=new DockPanel{Margin=new Thickness(0,0,0,26)};
-        var settingsButton=Ui.IconButton("settings","설정 열기",preferences);DockPanel.SetDock(settingsButton,Dock.Right);brand.Children.Add(settingsButton);
-        var logo=new Border{Background=Ui.Brush("AccentFillBrush"),CornerRadius=new CornerRadius(8),Width=34,Height=34,Child=Ui.Icon("region",21),Margin=new Thickness(0,0,11,0)};DockPanel.SetDock(logo,Dock.Left);brand.Children.Add(logo);
-        brand.Children.Add(new TextBlock{Text="Snaplet",FontSize=20,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center});content.Children.Add(brand);
-        content.Children.Add(Ui.Label("캡처하고, 바로 전달하세요.",28,weight:FontWeights.SemiBold));
-        content.Children.Add(new TextBlock{Text="단축키로 화면을 담고, 작은 미리보기에서 편집·복사·저장까지.",Foreground=Ui.Muted,Margin=new Thickness(0,9,0,22),TextWrapping=TextWrapping.Wrap});
-        var columns=new Grid();columns.ColumnDefinitions.Add(new(){Width=new GridLength(1.4,GridUnitType.Star)});columns.ColumnDefinitions.Add(new(){Width=new GridLength(1,GridUnitType.Star)});content.Children.Add(columns);
-        var capturePanel=new StackPanel{Margin=new Thickness(0,0,16,0)};columns.Children.Add(capturePanel);
-        capturePanel.Children.Add(ActionCard("영역 캡처","필요한 부분만 드래그하세요","region","region",true));
-        capturePanel.Children.Add(ActionCard("활성 창","현재 사용 중인 창을 담습니다","window","window"));
-        capturePanel.Children.Add(ActionCard("현재 화면","마우스가 있는 모니터 전체","display","display"));
-        var other=new StackPanel();Grid.SetColumn(other,1);columns.Children.Add(other);
-        other.Children.Add(Ui.Label("이미지로 시작",11,Ui.Muted,FontWeights.SemiBold));
-        void Link(string text,string glyph,Action action){var b=Ui.Button(text,action,glyph,"QuietButton");b.HorizontalContentAlignment=HorizontalAlignment.Left;b.Margin=new Thickness(0,6,0,0);other.Children.Add(b);}
-        Link("이미지 열기","folder",open);Link("클립보드에서 가져오기","clipboard",clipboard);Link("편집 도구 체험","spark",demo);
-        var extra=new WrapPanel{Margin=new Thickness(0,14,0,0)};other.Children.Add(extra);
-        var timer=Ui.Button("3초 타이머",()=>command("delayed"),"clock","QuietButton");timer.Margin=new Thickness(0,0,6,0);extra.Children.Add(timer);
-        var scroll=Ui.Button("긴 화면",()=>command("scroll"),"scroll","QuietButton");scroll.Margin=new Thickness(0,0,6,0);extra.Children.Add(scroll);
-        extra.Children.Add(Ui.Button("텍스트·QR",()=>command("ocr"),"ocr","QuietButton"));
-        var recentHeader=new DockPanel{Margin=new Thickness(0,23,0,10)};content.Children.Add(recentHeader);
-        var last=Ui.Button("최근 편집 열기",()=>command("last"),style:"QuietButton");last.FontSize=11;last.Padding=new Thickness(8,2,8,2);last.MinHeight=24;DockPanel.SetDock(last,Dock.Right);recentHeader.Children.Add(last);recentHeader.Children.Add(Ui.Label("최근 캡처",13,weight:FontWeights.SemiBold));
-        content.Children.Add(recent);status.Foreground=Ui.Muted;status.FontSize=11;status.Margin=new Thickness(0,12,0,0);content.Children.Add(status);
+        command=capture;edit=editImage;this.clipboard=clipboard;this.open=open;
+        Title="Snaplet";Width=1180;Height=800;MinWidth=660;MinHeight=450;WindowStartupLocation=WindowStartupLocation.CenterScreen;AllowDrop=true;
+        var dark=EditorTheme.SystemUsesDark();EditorTheme.Themed(this,dark);WindowAppearance.SetDarkChrome(this,dark);WindowAppearance.Apply(this,dark);
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=new FontFamily("Segoe UI");
+        var root=new DockPanel();Content=root;
+
+        // Same toolbar band as the editor; capture and image sources sit where the editor keeps its tools.
+        var toolbar=new DockPanel {LastChildFill=false,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
+        var toolbarFrame=new Border {Child=toolbar,BorderThickness=new Thickness(0,0,0,1)};toolbarFrame.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
+        DockPanel.SetDock(toolbarFrame,Dock.Top);root.Children.Add(toolbarFrame);
+        var left=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(left,Dock.Left);toolbar.Children.Add(left);
+        void Tool(Panel panel,string glyph,string label,Action action){var b=Ui.IconButton(glyph,label,action,36);b.Margin=new Thickness(2);panel.Children.Add(b);}
+        Tool(left,"region","영역 캡처",()=>command("region"));Tool(left,"window","활성 창",()=>command("window"));Tool(left,"display","현재 화면",()=>command("display"));
+        Tool(left,"clock","3초 타이머",()=>command("delayed"));Tool(left,"scroll","긴 화면",()=>command("scroll"));Tool(left,"ocr","텍스트·QR",()=>command("ocr"));
+        left.Children.Add(Divider());
+        Tool(left,"folder","이미지 열기",open);Tool(left,"clipboard","클립보드에서 가져오기",clipboard);
+        var right=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,8,0)};DockPanel.SetDock(right,Dock.Right);toolbar.Children.Add(right);
+        recentButton=Ui.IconButton("clock","최근 캡처",()=>{},36);recentButton.Margin=new Thickness(2);recentButton.Click+=(_,_)=>ShowRecentMenu(demo);right.Children.Add(recentButton);
+        Tool(right,"settings","설정 열기",preferences);
+
+        var footer=new DockPanel {Margin=new Thickness(14,6,14,7)};DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
+        var version=Muted("v"+typeof(HomeWindow).Assembly.GetName().Version?.ToString(3),11);DockPanel.SetDock(version,Dock.Right);footer.Children.Add(version);
+        status.FontSize=11;status.Margin=new Thickness(0);status.TextTrimming=TextTrimming.CharacterEllipsis;status.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");
+        if(status.Parent is Panel previous)previous.Children.Remove(status);footer.Children.Add(status);
+
+        var workspace=new Grid();workspace.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");root.Children.Add(workspace);
+        var hints=new StackPanel {HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(24)};workspace.Children.Add(hints);
+        var mark=Ui.Icon("region",44);mark.Opacity=.35;mark.HorizontalAlignment=HorizontalAlignment.Center;mark.Margin=new Thickness(0,0,0,16);hints.Children.Add(mark);
+        if(mark is Viewbox {Child:Canvas canvas})foreach(var path in canvas.Children.OfType<System.Windows.Shapes.Path>())path.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"MutedBrush");
+        var title=new TextBlock {Text="캡처하거나 이미지를 끌어다 놓으세요",FontSize=16,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center};hints.Children.Add(title);
+        var keys=new Grid {HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,16,0,0)};keys.ColumnDefinitions.Add(new());keys.ColumnDefinitions.Add(new(){Width=GridLength.Auto});hints.Children.Add(keys);
+        regionKeycap=Hint(keys,"영역 캡처","");Hint(keys,"클립보드 이미지 붙여넣기","Ctrl+V");Hint(keys,"이미지 파일 열기","Ctrl+O");
+        hints.Children.Add(recent);
+
+        Drop+=(_,e)=>{
+            if(e.Data.GetData(DataFormats.FileDrop) is not string[] files)return;
+            foreach(var path in files.Where(File.Exists)) {
+                try{edit(ImageActions.Load(path));}catch(Exception error) when(error is IOException or NotSupportedException or ArgumentException or InvalidOperationException or UnauthorizedAccessException){status.Text=error.Message;}
+            }
+        };
+        PreviewKeyDown+=(_,e)=>{
+            if(!Keyboard.Modifiers.HasFlag(ModifierKeys.Control))return;
+            if(e.Key==Key.V){this.clipboard();e.Handled=true;}else if(e.Key==Key.O){this.open();e.Handled=true;}
+        };
         UpdateSettings(settings);UpdateRecent([]);
     }
-    private Button ActionCard(string title,string detail,string glyph,string key,bool primary=false)
+    private static Border Divider(){var d=new Border {Width=1,Height=24,Margin=new Thickness(6,0,6,0)};d.SetResourceReference(Border.BackgroundProperty,"BorderBrush");return d;}
+    private static TextBlock Muted(string text,double size){var t=new TextBlock {Text=text,FontSize=size,VerticalAlignment=VerticalAlignment.Center};t.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");return t;}
+    private static Border Hint(Grid grid,string label,string keys)
     {
-        var row=new Grid();row.ColumnDefinitions.Add(new(){Width=new GridLength(36)});row.ColumnDefinitions.Add(new());row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});
-        var icon=Ui.Icon(glyph,23);icon.HorizontalAlignment=HorizontalAlignment.Left;icon.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(icon);
-        var text=new StackPanel{Margin=new Thickness(3,0,8,0)};Grid.SetColumn(text,1);row.Children.Add(text);text.Children.Add(Ui.Label(title,14,weight:FontWeights.SemiBold));text.Children.Add(new TextBlock{Text=detail,FontSize=11,Foreground=primary?Ui.Text:Ui.Muted,Margin=new Thickness(0,4,0,0)});
-        var keycap=Ui.Keycap("");keycaps[key]=keycap;Grid.SetColumn(keycap,2);row.Children.Add(keycap);
-        var b=Ui.Button(title,()=>command(key),style:primary?"PrimaryButton":"BaseButton");b.Content=row;b.HorizontalContentAlignment=HorizontalAlignment.Stretch;b.Margin=new Thickness(0,0,10,9);b.Padding=new Thickness(14);return b;
+        var row=grid.RowDefinitions.Count;grid.RowDefinitions.Add(new());
+        var name=Muted(label,12);name.Margin=new Thickness(0,4,14,4);Grid.SetRow(name,row);grid.Children.Add(name);
+        var cap=new Border {CornerRadius=new CornerRadius(4),BorderThickness=new Thickness(1),Padding=new Thickness(6,1,6,2),Margin=new Thickness(0,3,0,3),HorizontalAlignment=HorizontalAlignment.Left,Child=Muted(keys,11)};
+        cap.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");cap.SetResourceReference(Border.BackgroundProperty,"CardBrush");
+        Grid.SetRow(cap,row);Grid.SetColumn(cap,1);grid.Children.Add(cap);return cap;
     }
+    private void ShowRecentMenu(Action demo)
+    {
+        var menu=EditorTheme.Themed(new ContextMenu {PlacementTarget=recentButton,Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom},!IsLightTheme);
+        foreach(var image in recentImages) {
+            var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image {Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};
+            item.Click+=(_,_)=>edit(bitmap);menu.Items.Add(item);
+        }
+        if(recentImages.Count==0)menu.Items.Add(new MenuItem {Header="아직 캡처가 없습니다",IsEnabled=false});
+        menu.Items.Add(new Separator());
+        var sample=new MenuItem {Header="편집 도구 체험"};sample.Click+=(_,_)=>demo();menu.Items.Add(sample);
+        menu.IsOpen=true;
+    }
+    private bool IsLightTheme=>Resources.MergedDictionaries.Contains(EditorTheme.Light);
     internal void UpdateSettings(AppSettings settings)
     {
-        foreach(var pair in keycaps)if(pair.Value.Child is TextBlock text)text.Text=settings.Hotkeys.FirstOrDefault(k=>k.Command==pair.Key)?.ToString()??"미지정";
+        if(regionKeycap.Child is TextBlock text)text.Text=settings.Hotkeys.FirstOrDefault(k=>k.Command=="region")?.ToString() ?? "단축키 없음";
     }
+    /// <summary>Up to four recent captures sit quietly under the hints; the toolbar menu lists all of them.</summary>
     internal void UpdateRecent(IReadOnlyList<BitmapSource> images)
     {
-        recent.Children.Clear();
-        if(images.Count==0){var empty=Ui.Label("첫 캡처를 시작해 보세요. 최근 이미지는 앱이 실행되는 동안 여기에 남습니다.",12,Ui.Muted);empty.Margin=new Thickness(0,1,0,1);recent.Children.Add(Ui.CardOf(empty,14));return;}
-        var grid=new UniformGrid{Columns=4};recent.Children.Add(grid);
+        recentImages=images;recent.Children.Clear();
         foreach(var image in images.Take(4)) {
-            var bitmap=image;var box=new StackPanel();box.Children.Add(new Image{Source=bitmap,Height=54,Stretch=Stretch.Uniform});box.Children.Add(new TextBlock{Text=$"{bitmap.PixelWidth} × {bitmap.PixelHeight}",FontSize=10,Foreground=Ui.Muted,TextAlignment=TextAlignment.Center,Margin=new Thickness(0,5,0,0)});
-            var b=Ui.Button("캡처 편집",()=>edit(bitmap));b.Content=box;b.Margin=new Thickness(0,0,8,0);b.Padding=new Thickness(8);grid.Children.Add(b);
+            var bitmap=image;
+            var b=new Button {Content=new Image {Source=bitmap,Height=56,MaxWidth=96,Stretch=Stretch.Uniform},ToolTip=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px · 클릭하여 편집",Margin=new Thickness(4),Padding=new Thickness(4),Style=(Style)Application.Current.FindResource("QuietButton")};
+            System.Windows.Automation.AutomationProperties.SetName(b,"캡처 편집");b.Click+=(_,_)=>edit(bitmap);recent.Children.Add(b);
         }
     }
 }

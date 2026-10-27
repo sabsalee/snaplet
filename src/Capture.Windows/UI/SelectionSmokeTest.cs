@@ -31,6 +31,9 @@ internal static class SelectionSmokeTest
         var noPreview=SettingsStore.Parse("""{"SchemaVersion":2,"ShowPreview":false}""",out _);
         Check(noPreview.AfterCapture==AfterCaptureAction.None && !System.Text.Json.JsonSerializer.Serialize(noPreview).Contains("ShowPreview",StringComparison.Ordinal),"a disabled preview migrates to showing nothing and the legacy field is not written back");
         Check(SettingsStore.Parse("""{"AfterCapture":"Editor"}""",out _).AfterCapture==AfterCaptureAction.Editor,"the editor choice round-trips");
+        Check(!migrated.LaunchAtLogin && !migrated.TrayNoticeShown,"sign-in start stays off until chosen, and upgraded users see the tray notice once");
+        Check(SettingsStore.Parse("""{"LaunchAtLogin":true,"TrayNoticeShown":true}""",out _) is {LaunchAtLogin:true,TrayNoticeShown:true},"sign-in start and the tray notice flag round-trip");
+        Check(Capture.Windows.Platform.StartupRegistration.Command(@"C:\Users\a b\AppData\Local\Snaplet\current\Snaplet.exe")=="\"C:\\Users\\a b\\AppData\\Local\\Snaplet\\current\\Snaplet.exe\" --background","the Run value quotes a path with spaces");
         var conflicted=SettingsStore.Parse("""{"SaveFolder":"relative","Hotkeys":[{"Command":"region","Key":"D1","Modifiers":"Control, Shift"},{"Command":"ocr","Key":"D1","Modifiers":"Control, Shift"},{"Command":"bogus","Key":"F1","Modifiers":"Control"},{"Command":"region","Key":"F2","Modifiers":"Control"}]}""",out var conflictWarning);
         Check(conflicted.Hotkeys.Single(h=>h.Command=="region").Key==Key.D1 && !conflicted.Hotkeys.Single(h=>h.Command=="ocr").Assigned,"duplicate shortcut keeps the first command and unassigns the second");
         Check(conflicted.Hotkeys.All(h=>h.Command!="bogus") && conflictWarning is not null,"unknown commands are dropped with a visible warning");
