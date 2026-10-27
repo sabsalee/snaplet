@@ -203,7 +203,10 @@ internal sealed class EditorSurface : FrameworkElement
             TextEditRequested?.Invoke(a,true);return;
         }
         if(kind==AnnotationKind.Step) {
-            a=a with {Text=Document.NextCounter.ToString(),Tail=new(start.X,start.Y-AnnotationGeometry.CounterRadius(a)*1.5)};
+            // With a pointer the click marks the pointer tip and the bubble sits up and to the right, like the reference app.
+            var reach=AnnotationGeometry.CounterRadius(a)*1.45/Math.Sqrt(2);
+            a=a.Appearance.ShowTail ? a with {Text=Document.NextCounter.ToString(),Start=new(start.X+reach,start.Y-reach),End=new(start.X+reach,start.Y-reach),Tail=start}
+                : a with {Text=Document.NextCounter.ToString(),Tail=new(start.X-reach,start.Y+reach)};
             Document.Add(a);Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();return;
         }
         Selected=a.Id;points=kind==AnnotationKind.Pen || kind==AnnotationKind.Highlight && InkStyle.HighlightShape==MarkerShape.Freehand?[start]:null;draft=a with {Points=points?.ToArray()};gesture=Gesture.Create;CaptureMouse();InvalidateVisual();

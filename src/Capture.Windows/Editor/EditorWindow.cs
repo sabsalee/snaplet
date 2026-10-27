@@ -535,7 +535,7 @@ public sealed class EditorWindow : Window
         var z=surface.Zoom;var preview=EditedText(a,textEditor.Text);surface.SetTextPreview(preview);
         var b=ImageRenderer.TextBounds(preview);
         EditorChrome.SetCornerRadius(textEditor,new CornerRadius(a.Appearance.Bubble?Math.Min(a.Appearance.CornerRadius,Math.Min(b.Width,b.Height)/2)*z+2:2));
-        textEditor.FontSize=Math.Max(14,a.Thickness*5)*z;
+        textEditor.FontSize=Math.Max(14,a.Thickness*5)*z;textEditor.FontWeight=FontWeights.SemiBold;
         textEditor.Padding=a.Appearance.Bubble?new Thickness(10*z,8*z,10*z,8*z):new Thickness(0);
         textEditor.Width=b.Width*z+4;textEditor.Height=Math.Min(32768,b.Height)*z+4;
         textEditor.VerticalScrollBarVisibility=b.Height>32768?ScrollBarVisibility.Auto:ScrollBarVisibility.Hidden;
