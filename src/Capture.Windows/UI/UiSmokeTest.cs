@@ -42,9 +42,10 @@ internal static class UiSmokeTest
             Check(saved==null && preferences.IsVisible,"invalid folder leaves settings open and never calls persistence callback");
             Shot(preferences,"settings-validation");folder.Text=settings.SaveFolder;
             preferences.SelectPage("capture");preferences.UpdateLayout();
-            var toggle=Find<CheckBox>(preferences).Single(c=>AutomationProperties.GetName(c)=="캡처 미리보기");toggle.IsChecked=false;toggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            var after=Find<ComboBox>(preferences).Single(c=>AutomationProperties.GetName(c)=="캡처 후 표시");after.SelectedIndex=(int)AfterCaptureAction.None;
+            Check(!Find<CheckBox>(preferences).Single(c=>AutomationProperties.GetName(c)=="바깥 클릭으로 미리보기 닫기").IsEnabled,"the outside-click option is disabled unless the popup is chosen");
             Find<Button>(preferences).Single(b=>AutomationProperties.GetAutomationId(b)=="settings-save").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Check(saved is {ShowPreview:false} && saved.Hotkeys.SequenceEqual(settings.Hotkeys),"settings applies changed capture preference and preserves key bindings");
+            Check(saved is {AfterCapture:AfterCaptureAction.None} && saved.Hotkeys.SequenceEqual(settings.Hotkeys),"settings applies changed capture preference and preserves key bindings");
         }finally{if(preferences.IsVisible)preferences.Close();}
         var preview=new PreviewWindow(image,settings,enableDesktopIntegration:false);
         try {
@@ -53,6 +54,17 @@ internal static class UiSmokeTest
             Click(preview,"고정 해제");preview.UpdateLayout();Check(!preview.Pinned,"unpin rebuilds compact preview without reparenting errors");
             bool edited=false;preview.EditRequested+=_=>edited=true;Click(preview,"편집");Check(edited && !preview.IsVisible,"preview edit dispatches image and dismisses unpinned window");
         }finally{if(preview.IsVisible)preview.Close();}
+        var popup=new PreviewWindow(image,settings,enableDesktopIntegration:false,nearPointer:true);
+        try {
+            Shot(popup,"popup");
+            Check(((FrameworkElement)popup.Content).ActualWidth<=220,"the after-capture popup stays small");
+            Check(new[]{"편집","이미지 복사","이미지 저장","텍스트 추출","이미지 고정","미리보기 닫기"}.All(n=>Find<Button>(popup).Any(b=>b.IsVisible && AutomationProperties.GetName(b)==n)),"the popup offers edit, copy, save, text, pin and close");
+            Click(popup,"이미지 고정");Check(popup.Pinned,"pinning from the popup switches to a pinned image");
+            Click(popup,"고정 해제");popup.UpdateLayout();Check(!popup.Pinned && ((FrameworkElement)popup.Content).ActualWidth<=220,"unpinning returns to the small popup");
+        }finally{if(popup.IsVisible)popup.Close();}
+        Check(PreviewWindow.PopupPlacement(100,100,200,150,0,0,1920,1040)==(118,118),"the popup opens below and right of the pointer");
+        Check(PreviewWindow.PopupPlacement(1900,1000,200,150,0,0,1920,1040)==(1682,832),"the popup flips left and up at the bottom-right corner");
+        Check(PreviewWindow.PopupPlacement(-1500,500,200,150,-1920,0,0,1040)==(-1482,518),"placement works on a monitor left of the primary one");
         var ocr=new OcrWindow("화면에서 읽은 텍스트입니다.\n필요한 부분만 수정하고 복사하세요.\n\nSnaplet — local OCR");
         try {
             Shot(ocr,"ocr");Click(ocr,"줄바꿈 합치기");Check(!Find<TextBox>(ocr).Single().Text.Contains('\n'),"OCR line-break action edits synthetic text without touching clipboard");

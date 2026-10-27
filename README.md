@@ -1,6 +1,6 @@
 # Snaplet
 
-Windows 11 x64용 로컬 화면 캡처·이미지 편집 앱입니다. 단축키로 캡처하고 작은 미리보기에서 편집·복사·저장·OCR·고정으로 이어갑니다.
+Windows 11 x64용 로컬 화면 캡처·이미지 편집 앱입니다. 단축키로 캡처하고 마우스 포인터 옆에 뜨는 작은 팝업에서 편집·복사·저장·OCR·고정으로 이어갑니다.
 
 **[다운로드 및 변경 사항](https://github.com/sabsalee/snaplet/releases)** · [설치·사용 안내](docs/START-HERE.ko.md) · [자동 업데이트](docs/UPDATING.md)
 

@@ -27,6 +27,10 @@ internal static class SelectionSmokeTest
         Check(migrated.Hotkeys[0] is {Key:Key.Q,Modifiers:ModifierKeys.Control|ModifierKeys.Alt},"customised shortcut survives migration");
         Check(migrated.Hotkeys.Where(h=>h.Command is "desktop" or "pick-window" or "scroll" or "ocr" or "home").All(h=>!h.Assigned),"new commands start unassigned instead of taking keys from other apps");
         Check(!migrated.CopyAfterCapture && migrated.SaveFolder=="C:\\Shots","other stored preferences survive migration");
+        Check(migrated.AfterCapture==AfterCaptureAction.Popup && migrated.ShowPreview is null,"an enabled 0.8 preview becomes the pointer-side popup");
+        var noPreview=SettingsStore.Parse("""{"SchemaVersion":2,"ShowPreview":false}""",out _);
+        Check(noPreview.AfterCapture==AfterCaptureAction.None && !System.Text.Json.JsonSerializer.Serialize(noPreview).Contains("ShowPreview",StringComparison.Ordinal),"a disabled preview migrates to showing nothing and the legacy field is not written back");
+        Check(SettingsStore.Parse("""{"AfterCapture":"Editor"}""",out _).AfterCapture==AfterCaptureAction.Editor,"the editor choice round-trips");
         var conflicted=SettingsStore.Parse("""{"SaveFolder":"relative","Hotkeys":[{"Command":"region","Key":"D1","Modifiers":"Control, Shift"},{"Command":"ocr","Key":"D1","Modifiers":"Control, Shift"},{"Command":"bogus","Key":"F1","Modifiers":"Control"},{"Command":"region","Key":"F2","Modifiers":"Control"}]}""",out var conflictWarning);
         Check(conflicted.Hotkeys.Single(h=>h.Command=="region").Key==Key.D1 && !conflicted.Hotkeys.Single(h=>h.Command=="ocr").Assigned,"duplicate shortcut keeps the first command and unassigns the second");
         Check(conflicted.Hotkeys.All(h=>h.Command!="bogus") && conflictWarning is not null,"unknown commands are dropped with a visible warning");

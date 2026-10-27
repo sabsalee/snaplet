@@ -19,6 +19,8 @@ internal sealed class PreviewWindow : Window
     private readonly DispatcherTimer outside=new(){Interval=TimeSpan.FromMilliseconds(100)};
     private readonly DateTime shown=DateTime.UtcNow;
     private readonly bool interactive;
+    /// <summary>The after-capture popup: a small card beside the pointer instead of the corner preview.</summary>
+    private readonly bool nearPointer;
     private bool busy,previousMouse;
     private Point? down;
     private Native.POINT? pinMoveStart;
@@ -31,9 +33,9 @@ internal sealed class PreviewWindow : Window
     public bool ClickThrough{get;private set;}
     public event Action<BitmapSource>? EditRequested;
     public event Action<BitmapSource>? OcrRequested;
-    internal PreviewWindow(BitmapSource bitmap,AppSettings preferences,bool pinned=false,bool enableDesktopIntegration=true)
+    internal PreviewWindow(BitmapSource bitmap,AppSettings preferences,bool pinned=false,bool enableDesktopIntegration=true,bool nearPointer=false)
     {
-        image=bitmap;settings=preferences;Pinned=pinned;interactive=enableDesktopIntegration;
+        image=bitmap;settings=preferences;Pinned=pinned;interactive=enableDesktopIntegration;this.nearPointer=nearPointer;
         Title="Snaplet · 미리보기";WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;ShowActivated=false;Topmost=true;
         thumbnail=new Image{Source=image,Stretch=Stretch.Uniform,Cursor=Cursors.Hand,ToolTip="클릭하여 편집 · 드래그하여 PNG 파일 전달"};
         thumbnail.MouseLeftButtonDown+=(_,e)=>down=e.GetPosition(thumbnail);
@@ -93,6 +95,21 @@ internal sealed class PreviewWindow : Window
             header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};
             // Drag a pinned image with the right mouse button; left drag keeps file transfer.
             thumbnail.MouseRightButtonDown-=MovePinned;thumbnail.MouseRightButtonDown+=MovePinned;
+        } else if(nearPointer) {
+            // Thumbnail, size and a row of small actions; it never takes focus, so Ctrl+V into another app keeps working.
+            SizeToContent=SizeToContent.Height;Width=212;Height=double.NaN;pinHeader=pinTools=null;
+            var root=new StackPanel();
+            thumbnail.Height=Math.Clamp(196d*image.PixelHeight/image.PixelWidth,48,120);imageContainer.CornerRadius=new CornerRadius(5);root.Children.Add(imageContainer);
+            var caption=new DockPanel{Margin=new Thickness(1,6,0,2)};
+            var dimensions=Ui.Label($"{image.PixelWidth:N0} × {image.PixelHeight:N0}",10,Ui.Muted);caption.Children.Add(dimensions);
+            if(settings.CopyAfterCapture){var copied=Ui.Label("복사됨 ✓",10,Ui.Accent,FontWeights.SemiBold);DockPanel.SetDock(copied,Dock.Right);caption.Children.Insert(0,copied);}
+            caption.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};root.Children.Add(caption);
+            var row=new StackPanel{Orientation=Orientation.Horizontal};root.Children.Add(row);
+            foreach(Button b in new[]{(Button)FindTool(tools,"편집"),FindTool(tools,"이미지 복사"),FindTool(tools,"이미지 저장"),FindTool(tools,"텍스트 추출"),pin,close}) {
+                ((Panel)b.Parent).Children.Remove(b);b.Width=b.Height=30;b.Padding=new Thickness(6);b.Margin=new Thickness(0,0,2,0);row.Children.Add(b);
+            }
+            message.Text="";message.Margin=new Thickness(1,3,0,0);root.Children.Add(message);
+            Content=Ui.CardOf(root,7);
         } else {
             SizeToContent=SizeToContent.Height;Width=334;Height=double.NaN;pinHeader=pinTools=null;
             var root=new StackPanel();header.Margin=new Thickness(0,0,0,8);root.Children.Add(header);
@@ -125,14 +142,36 @@ internal sealed class PreviewWindow : Window
         if(!Pinned)return;Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();e.Handled=true;
     }
     private void SetPinChrome(bool show){if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;}
+    private static Button FindTool(Panel tools,string label)=>tools.Children.OfType<Button>().Concat(tools.Children.OfType<Panel>().SelectMany(p=>p.Children.OfType<Button>()))
+        .Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)==label);
     private void Position()
     {
         var monitor=Native.PointerDisplay();var hwnd=new WindowInteropHelper(this).Handle;
+        if(nearPointer && !Pinned){PlaceNearPointer(hwnd,monitor);return;}
         Native.SetWindowPos(hwnd,(nint)(-1),monitor.Work.Left+16,monitor.Work.Top+16,0,0,0x1|0x10);
         Dispatcher.BeginInvoke(()=>{
             if(!IsVisible || !Native.GetWindowRect(hwnd,out var r))return;
             Native.SetWindowPos(hwnd,(nint)(-1),Math.Max(monitor.Work.Left,monitor.Work.Right-r.Width-18),Math.Max(monitor.Work.Top,monitor.Work.Bottom-r.Height-18),0,0,0x1|0x10);
         },DispatcherPriority.ContextIdle);
+    }
+    /// <summary>Below and right of the pointer, flipped to the other side wherever that would leave the monitor's work area.</summary>
+    private void PlaceNearPointer(nint hwnd,DisplayInfo monitor)
+    {
+        Native.GetCursorPos(out var at);
+        // Show off-screen first so the measured window size is in this monitor's physical pixels.
+        Native.SetWindowPos(hwnd,(nint)(-1),at.X+18,at.Y+18,0,0,0x1|0x10);
+        Dispatcher.BeginInvoke(()=>{
+            if(!IsVisible || !Native.GetWindowRect(hwnd,out var r))return;
+            var p=PopupPlacement(at.X,at.Y,r.Width,r.Height,monitor.Work.Left,monitor.Work.Top,monitor.Work.Right,monitor.Work.Bottom);
+            Native.SetWindowPos(hwnd,(nint)(-1),p.X,p.Y,0,0,0x1|0x10);
+        },DispatcherPriority.ContextIdle);
+    }
+    internal static (int X,int Y) PopupPlacement(int pointerX,int pointerY,int width,int height,int left,int top,int right,int bottom)
+    {
+        const int gap=18;
+        int x=pointerX+gap+width<=right?pointerX+gap:pointerX-gap-width;
+        int y=pointerY+gap+height<=bottom?pointerY+gap:pointerY-gap-height;
+        return (Math.Clamp(x,left,Math.Max(left,right-width)),Math.Clamp(y,top,Math.Max(top,bottom-height)));
     }
     private void RequestEdit(){if(busy)return;bool opened=false;Run(()=>{EditRequested?.Invoke(image);opened=true;});if(opened && !Pinned)Close();}
     private void Run(Action action){if(busy)return;busy=true;try{action();}catch(Exception e){message.Text=e.Message;}finally{busy=false;}}

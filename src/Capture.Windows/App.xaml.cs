@@ -77,7 +77,7 @@ public partial class App : Application
         };foregroundPoll.Start();
         CleanDragFiles();
         if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load());}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
-        if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지");Edit(demo);}
+        if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지",true);Edit(demo);}
         else if(forwarded!=null)Dispatcher.BeginInvoke(()=>_=RunCommandAsync(forwarded),DispatcherPriority.ApplicationIdle);
         else ShowHome();
         if(warning is not null)status.Text=warning;
@@ -140,7 +140,7 @@ public partial class App : Application
                         Native.GetCursorPos(out var pointerBefore);
                         scrollWindow.Closed+=(_,_)=>Native.SetCursorPos(pointerBefore.X,pointerBefore.Y);
                         scrollWindow.Loaded+=(_,_)=>PlaceBeside(scrollWindow,rect,displays[index]);
-                        scrollWindow.Finished+=image=>{Received(image,"수동 스크롤 캡처 · 겹침 검증 완료");Edit(image);};
+                        scrollWindow.Finished+=image=>{Received(image,"수동 스크롤 캡처 · 겹침 검증 완료",true);Edit(image);};
                         scrollWindow.Closed+=(_,_)=>{hotkeys?.UnregisterScrollKeys();scrollWindow=null;};
                         scrollWindow.Show();
                         try{hotkeys?.RegisterScrollKeys();}catch(Exception error){scrollWindow.Message(error.Message);}
@@ -216,18 +216,19 @@ public partial class App : Application
         if(!Contains(source,r))throw new InvalidOperationException("선택 영역이 캡처 화면을 벗어났습니다.");
         var image=new CroppedBitmap(source.Image,new Int32Rect(r.X-source.X,r.Y-source.Y,r.Width,r.Height));image.Freeze();return new(image,r.X,r.Y,source.Engine) {CaptureMilliseconds=source.CaptureMilliseconds,FallbackReason=source.FallbackReason};
     }
-    private void Received(BitmapSource image,string detail) {
+    /// <param name="openingEditor">The caller opens the editor itself (scroll capture), so the Editor setting must not open it again.</param>
+    private void Received(BitmapSource image,string detail,bool openingEditor=false) {
         var revision=++captureRevision;
         var copyLease=settings.CopyAfterCapture?ImageActions.ReserveClipboard():0;
         history.Insert(0,image);
         while(history.Count>1 && (history.Count>12 || history.Sum(x=>(long)x.PixelWidth*x.PixelHeight*4)>256_000_000))history.RemoveAt(history.Count-1);
         home?.UpdateRecent(history);status.Text=detail;
         foreach(var old in previews.Where(p=>!p.Pinned).ToArray())old.Close();
-        if(settings.ShowPreview) {
-            var preview=new PreviewWindow(image,settings);previews.Add(preview);
+        if(settings.AfterCapture==AfterCaptureAction.Popup) {
+            var preview=new PreviewWindow(image,settings,nearPointer:true);previews.Add(preview);
             preview.EditRequested+=Edit;preview.OcrRequested+=source=>_=RecognizeAsync(source);
             preview.Closed+=(_,_)=>previews.Remove(preview);preview.Show();
-        }
+        } else if(settings.AfterCapture==AfterCaptureAction.Editor && !openingEditor)Edit(image);
         _=AfterCaptureAsync(image,settings,revision,copyLease);
         if(settings.KeepHistoryOnDisk)_=Task.Run(()=>{try{HistoryStore.Save(image);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}});
     }
