@@ -32,7 +32,7 @@ public sealed class EditorWindow : Window
     private readonly System.Windows.Shapes.Ellipse hoverSwatch=new() {Width=14,Height=14,StrokeThickness=1,Margin=new Thickness(0,0,6,0),VerticalAlignment=VerticalAlignment.Center};
     private readonly List<(AnnotationKind? Kind,Button Button)> toolButtons=[];
     private readonly Button moreToolSlot;
-    private readonly Action layoutTools;
+    private readonly Action<double> layoutTools;
     // Toolbar buttons are 36 px wide with 2 px margins; the first eight tools stay inline before the colour readout.
     private const double ToolSlotWidth=40;
     private const int CoreToolCount=8;
@@ -114,9 +114,10 @@ public sealed class EditorWindow : Window
         moreToolSlot.Click+=(_,_)=>SetTool(toolButtons.Single(x=>x.Button==moreToolSlot).Kind);toolButtons.Add((AnnotationKind.Line,moreToolSlot));
         var more=ToolButton(toolStrip,"···","더 보기 · 캡처 추가·이미지 붙여넣기·스포이트·접힌 도구",()=>{});
         double hoverWidth=0;
-        layoutTools=()=>{
+        layoutTools=toolbarWidth=>{
             if(hoverInfo.IsVisible)hoverWidth=Math.Max(hoverWidth,hoverInfo.ActualWidth);
-            var room=toolbar.ActualWidth-actions.ActualWidth-(info.ActualWidth-hoverInfo.ActualWidth)-more.ActualWidth-24;
+            if(double.IsNaN(toolbarWidth))toolbarWidth=toolbar.ActualWidth;
+            var room=toolbarWidth-actions.ActualWidth-(info.ActualWidth-hoverInfo.ActualWidth)-more.ActualWidth-24;
             // The colour readout gives way before the core tools do.
             var showHover=room-hoverWidth>=CoreToolCount*ToolSlotWidth;
             hoverInfo.Visibility=showHover?Visibility.Visible:Visibility.Collapsed;if(showHover)room-=hoverWidth;
@@ -127,7 +128,7 @@ public sealed class EditorWindow : Window
             if(shown<inlineTools && !toolButtons.Take(inlineTools).Any(x=>x.Kind==slotKind && x.Button.Visibility==Visibility.Collapsed))
                 ShowInMoreSlot(surface.Tool is AnnotationKind current && IsFolded(current)?current:toolButtons[shown].Kind!.Value);
         };
-        toolbar.SizeChanged+=(_,_)=>layoutTools();
+        toolbar.SizeChanged+=(_,_)=>layoutTools(toolbar.ActualWidth);
         more.Click+=(_,_)=>{
             var menu=Menu();
             Item(menu,"캡처 추가 · Ctrl+Shift+A",()=>_=CaptureIntoDocumentAsync());
@@ -293,6 +294,8 @@ public sealed class EditorWindow : Window
         AnnotationKind.Step=>"①",AnnotationKind.Ellipse=>"○",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"■"};
     private static string ToolTipOf(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"흐림 · B",AnnotationKind.Erase=>"Erase · E",AnnotationKind.Highlight=>"형광펜 · H",AnnotationKind.Spotlight=>"Spotlight · S",
         AnnotationKind.Step=>"번호 / 포인터 · N",AnnotationKind.Ellipse=>"타원 · O",AnnotationKind.Line=>"선 · L",AnnotationKind.Magnifier=>"돋보기 · G",_=>"불투명 가림"};
+    /// <summary>Test hook: lays the toolbar out for a given width (NaN: its real width), independent of how wide the test machine's screen lets the window grow.</summary>
+    internal void LayoutToolbar(double toolbarWidth)=>layoutTools(toolbarWidth);
     private bool IsFolded(AnnotationKind kind)=>toolButtons.Any(x=>x.Kind==kind && x.Button!=moreToolSlot && x.Button.Visibility==Visibility.Collapsed);
     /// <summary>A tool picked from ··· takes the slot before ··· like the reference toolbar.</summary>
     private void ShowInMoreSlot(AnnotationKind kind)
