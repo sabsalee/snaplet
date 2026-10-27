@@ -38,6 +38,7 @@ internal sealed class EditorSurface : FrameworkElement
     private Annotation? original,draft;
     private List<PointD>? points;
     private int handle;
+    private Vector grabOffset;
     private ModifierKeys pointerModifiers;
     private Vector cornerDirection;
     private double cornerRadiusStart;
@@ -109,7 +110,7 @@ internal sealed class EditorSurface : FrameworkElement
             dc.DrawGeometry(null,pen,ImageRenderer.ArrowStrokeGeometry(a));return;
         }
         if(a.Kind==AnnotationKind.Pen) {dc.DrawGeometry(null,pen,ImageRenderer.PenGeometry(a));return;}
-        var b=ImageRenderer.BoundsOf(a);b.Inflate(2/Zoom,2/Zoom);
+        var b=ImageRenderer.BoundsOf(a);var outset=hover?2/Zoom:HandleOutset/Zoom;b.Inflate(outset,outset);
         dc.DrawRectangle(null,pen,b);
     }
     private void DrawControl(DrawingContext dc,Handle h)
@@ -120,15 +121,32 @@ internal sealed class EditorSurface : FrameworkElement
             var b=ImageRenderer.BoundsOf(selected);var anchor=new Point(Math.Clamp(p.X,b.Left,b.Right),Math.Clamp(p.Y,b.Top,b.Bottom));
             dc.DrawLine(new Pen(SelectionInk,1/Zoom){DashStyle=DashStyles.Dot},anchor,p);
         }
-        if(h.Index is -3 or -6) {
+        if(h.Index==-6) {
             var radius=5/Zoom;var diamond=new StreamGeometry();
             using(var g=diamond.Open()) {g.BeginFigure(new(p.X,p.Y-radius),true,true);g.LineTo(new(p.X+radius,p.Y),true,false);g.LineTo(new(p.X,p.Y+radius),true,false);g.LineTo(new(p.X-radius,p.Y),true,false);}
-            dc.DrawGeometry(h.Index==-6?Brushes.MediumAquamarine:Brushes.White,pen,diamond);
-        } else if(h.Index<0)dc.DrawEllipse(h.Index==-4?SelectionInk:Brushes.White,new Pen(Brushes.White,1.5/Zoom),p,5/Zoom,5/Zoom);
+            dc.DrawGeometry(Brushes.MediumAquamarine,pen,diamond);
+        } else if(h.Index==-4)dc.DrawEllipse(SelectionInk,new Pen(Brushes.White,1.5/Zoom),p,5/Zoom,5/Zoom);
         else DrawHandle(dc,h.Point);
     }
-    private void DrawHandle(DrawingContext dc,PointD p)=>dc.DrawRoundedRectangle(Brushes.White,new Pen(SelectionInk,1/Zoom),new(p.X-4/Zoom,p.Y-4/Zoom,8/Zoom,8/Zoom),2/Zoom,2/Zoom);
-    private readonly record struct Handle(int Index,PointD Point);
+    // Reference handles: white rounded 8 px squares with a gray border; shape handles sit 6 px outside the bounds.
+    private const double HandleOutset=6;
+    private static readonly Pen HandleBorder=CreateHandleBorder();
+    private static Pen CreateHandleBorder(){var pen=new Pen(new SolidColorBrush(Color.FromRgb(142,142,147)),1);pen.Freeze();return pen;}
+    private void DrawHandle(DrawingContext dc,PointD p)
+    {
+        var border=new Pen(HandleBorder.Brush,1/Zoom);
+        dc.DrawRoundedRectangle(Brushes.White,border,new(p.X-4/Zoom,p.Y-4/Zoom,8/Zoom,8/Zoom),2/Zoom,2/Zoom);
+    }
+    /// <summary>Anchor is the point on the object the handle edits; it differs from Point for handles drawn outside the bounds.</summary>
+    private readonly record struct Handle(int Index,PointD Point,PointD Anchor)
+    {
+        public Handle(int index,PointD point):this(index,point,point){}
+    }
+    private IEnumerable<Handle> OutsetHandles(Rect r)
+    {
+        var outer=r;outer.Inflate(HandleOutset/Zoom,HandleOutset/Zoom);
+        return BoxHandles(outer).Zip(BoxHandles(r),(drawn,edge)=>new Handle(drawn.Index,drawn.Point,edge.Point));
+    }
     private static IEnumerable<Handle> BoxHandles(Rect r)
     {
         yield return new(0,new(r.Left,r.Top));yield return new(1,new(r.X+r.Width/2,r.Top));yield return new(2,new(r.Right,r.Top));
@@ -141,7 +159,7 @@ internal sealed class EditorSurface : FrameworkElement
             yield return new(-1,a.Start);yield return new(-2,a.End);
             if(a.Kind==AnnotationKind.Arrow)yield return new(-3,AnnotationGeometry.CurvePoint(a,.5));
         } else if(a.Kind!=AnnotationKind.Pen && a.Kind!=AnnotationKind.Step && !(a.Kind==AnnotationKind.Highlight && a.Appearance.HighlightShape==MarkerShape.Freehand)) {
-            foreach(var h in BoxHandles(ImageRenderer.BoundsOf(a)))yield return h;
+            foreach(var h in OutsetHandles(ImageRenderer.BoundsOf(a)))yield return h;
         }
         if(a.Kind==AnnotationKind.Rectangle && !a.Appearance.Sketch || a.Kind==AnnotationKind.Text && a.Appearance.Bubble) {
             var box=ImageRenderer.BoundsOf(a);var inset=Math.Min(Math.Max(12/Zoom,a.Appearance.CornerRadius),Math.Min(box.Width,box.Height)/2);
@@ -162,7 +180,9 @@ internal sealed class EditorSurface : FrameworkElement
             yield return new(-4,ImageRenderer.TailTip(a));
         }
     }
-    private Handle? NearHandle(IEnumerable<Handle> handles,PointD p)=>handles.Where(h=>AnnotationGeometry.Distance(h.Point,p)<=10/Zoom).OrderBy(h=>AnnotationGeometry.Distance(h.Point,p)).Cast<Handle?>().FirstOrDefault();
+    // Ties between outset handles of small objects go to the handle whose edited point is nearest.
+    private Handle? NearHandle(IEnumerable<Handle> handles,PointD p)=>handles.Where(h=>AnnotationGeometry.Distance(h.Point,p)<=10/Zoom)
+        .OrderBy(h=>Math.Round(AnnotationGeometry.Distance(h.Point,p),3)).ThenBy(h=>AnnotationGeometry.Distance(h.Anchor,p)).Cast<Handle?>().FirstOrDefault();
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);Focus();
@@ -185,7 +205,7 @@ internal sealed class EditorSurface : FrameworkElement
         }
         var selected=Selection;var selectedHandle=selected is null?null:NearHandle(Handles(selected),start);
         if(selectedHandle is Handle sh) {
-            original=selected;handle=sh.Index;
+            original=selected;handle=sh.Index;grabOffset=new(sh.Anchor.X-start.X,sh.Anchor.Y-start.Y);
             if(handle==-6) {var b=ImageRenderer.BoundsOf(selected!);cornerRadiusStart=Math.Min(selected!.Appearance.CornerRadius,Math.Min(b.Width,b.Height)/2);cornerDirection=new(b.X+b.Width/2-start.X,b.Y+b.Height/2-start.Y);if(cornerDirection.LengthSquared>0)cornerDirection.Normalize();}
             gesture=handle>=100?Gesture.SampleResize:handle==-5?Gesture.SampleMove:handle==-3?Gesture.Bend:handle==-4?Gesture.Tail:handle==-6?Gesture.Corner:Gesture.Resize;CaptureMouse();return;
         }
@@ -299,7 +319,8 @@ internal sealed class EditorSurface : FrameworkElement
                 Gesture.SampleResize=>ResizeSample(a,current),
                 Gesture.Resize when handle==-1=>ResizeEndpoint(a,Constrained(a.End,current,a.Kind),true),
                 Gesture.Resize when handle==-2=>ResizeEndpoint(a,Constrained(a.Start,current,a.Kind),false),
-                Gesture.Resize=>ResizeAnnotation(a,current),
+                // Grabbing an outset handle must not jump the edge to the pointer.
+                Gesture.Resize=>ResizeAnnotation(a,new(current.X+grabOffset.X,current.Y+grabOffset.Y)),
                 _=>a
             };
         } else if(draft is Annotation created) {

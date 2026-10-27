@@ -72,7 +72,8 @@ internal static class ExperienceSmokeTest
         var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(output));using(var file=File.Create(Path.Combine(directory,"editor-style-presets.png")))png.Save(file);
         var window=new EditorWindow(source,doc);try {
             window.Show();window.UpdateLayout();
-            check(Capture.Windows.UI.WindowAppearance.GetDarkChrome(window),"editor explicitly requests matching dark Windows chrome");
+            check(Capture.Windows.UI.WindowAppearance.GetDarkChrome(window)==window.UsesDarkTheme,"editor title bar matches the editor theme that follows the Windows app setting");
+            window.InspectorExpanded=true;window.UpdateLayout();
             var root=(FrameworkElement)window.Content;
             var number=Descendants(root).OfType<TextBox>().Single(c=>AutomationProperties.GetName(c)=="말꼬리 너비 숫자 입력");
             check(number.Parent is StackPanel row && row.Children.OfType<Slider>().Count()==1 && row.Children.OfType<TextBlock>().Count()==1,"label, slider and number form one wrapping unit without orphaned values");
