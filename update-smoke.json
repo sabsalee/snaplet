@@ -1,0 +1,27 @@
+{
+  "passed": 21,
+  "checks": [
+    "actual ZIP launch initializes the updater safely without requesting installation metadata",
+    "plain ZIP does not contact an update feed or attempt self replacement",
+    "uninstalled or unverified updates cannot restart the app",
+    "manual check presents an offer without downloading or restarting",
+    "verified download becomes ready for an explicit restart",
+    "late progress callbacks cannot revert a ready update",
+    "background download never installs or restarts by itself",
+    "explicit restart schedules updater before graceful application exit",
+    "double click cannot apply the same update twice",
+    "up-to-date installations do not download a package",
+    "concurrent automatic and manual checks share one operation",
+    "failed download leaves the current app running",
+    "a failed download can be retried without restarting the current app",
+    "download completion without a verified pending package cannot enable apply",
+    "downloaded update remains available after an app relaunch",
+    "updater launch failure never shuts down the existing app",
+    "updater launch failure can return to the already downloaded package",
+    "closing the app cancels an in-progress download without enabling installation",
+    "settings shows an explicit restart action for a ready update",
+    "settings delegates restart to the application safeguard instead of forcing process exit",
+    "automatic update preference persists alongside existing settings"
+  ],
+  "scope": "state/operation and WPF controls; installed-update.json records the separate real installer/restart test"
+}
