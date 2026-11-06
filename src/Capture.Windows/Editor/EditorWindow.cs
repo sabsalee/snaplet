@@ -394,7 +394,7 @@ public sealed class EditorWindow : Window
         if((surface.Selection?.Kind ?? surface.Tool) is AnnotationKind previous)toolStyles[previous]=(surface.Ink,surface.Thickness,surface.InkStyle);
         if(kind is AnnotationKind next) {
             var first=EditorPresets.For(next)[0];
-            var defaults=next is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line
+            var defaults=next is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line or AnnotationKind.Magnifier or AnnotationKind.Spotlight
                 ?(first.Color,first.Size*PresetScale,first.Style):(new ColorRgba(240,65,70,255),4d*PresetScale,new AnnotationStyle(Elliptical:next==AnnotationKind.Magnifier));
             var preset=toolStyles.GetValueOrDefault(next,defaults);
             surface.Ink=preset.Item1;surface.Thickness=preset.Item2;surface.InkStyle=preset.Item3;
@@ -493,13 +493,13 @@ public sealed class EditorWindow : Window
                 System.Windows.Automation.AutomationProperties.SetName(presets,"스타일 프리셋");
                 presets.Click+=(_,_)=>ShowPresets(presets,kind.Value);propertyDetails.Children.Add(presets);
             }
-            if(kind is not (AnnotationKind.Image or AnnotationKind.Spotlight or AnnotationKind.Erase or AnnotationKind.Blur or AnnotationKind.Pixelate)) {
+            if(kind is not (AnnotationKind.Image or AnnotationKind.Erase or AnnotationKind.Blur or AnnotationKind.Pixelate)) {
                 var dot=new System.Windows.Shapes.Ellipse {Width=18,Height=18,Fill=ImageRenderer.BrushOf(surface.Ink with {A=255}),StrokeThickness=1};dot.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"HandleBorderBrush");
                 var color=new Button {Content=dot,ToolTip="색상 / 직접 HEX 입력",Width=32,Height=32,Padding=new Thickness(0),Margin=new Thickness(1,0,1,0),Style=(Style)Application.Current.FindResource("EditorIconButton")};
                 System.Windows.Automation.AutomationProperties.SetName(color,"색상 / 직접 HEX 입력");
                 color.Click+=(_,_)=>ShowColors(color);propertyRow.Children.Add(color);
             }
-            if(kind is not (AnnotationKind.Image or AnnotationKind.Spotlight or AnnotationKind.Erase)) {
+            if(kind is not (AnnotationKind.Image or AnnotationKind.Erase)) {
                 var slider=new Slider {Style=(Style)Application.Current.FindResource("WedgeSlider"),Minimum=1,Maximum=20,Value=surface.Thickness,Margin=new Thickness(4,0,6,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="크기 / 굵기 / 효과 강도"};
                 propertyRow.Children.Add(slider);
                 System.Windows.Automation.AutomationProperties.SetName(slider,"크기 / 굵기 / 효과 강도");
@@ -511,7 +511,7 @@ public sealed class EditorWindow : Window
                 Group(caption,sizeReadout);
             }
             if(kind==AnnotationKind.Magnifier) {
-                Choice(new[]{"사각 렌즈","원형 렌즈"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
+                Choice(new[]{"사각 렌즈","곡선 렌즈"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
                 ValueSlider("확대 배율",1,8,surface.InkStyle.Magnification,value=>{
                     surface.InkStyle=surface.InkStyle with {Magnification=value};
                     if(surface.Selection is Annotation lens) {var sample=AdvancedDrawing.SampleBounds(lens);surface.ChangeSelected(x=>x with {End=new(x.Start.X+sample.Width*value,x.Start.Y+sample.Height*value),Style=surface.InkStyle});}

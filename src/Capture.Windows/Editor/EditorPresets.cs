@@ -18,6 +18,8 @@ internal static class EditorPresets
         if(kind==AnnotationKind.Text)return [new("기본 말풍선",red,3.4,basic with {CornerRadius=5}),new("블루 말풍선",blue,3,basic with {CornerRadius=16,TailWidth=32}),new("차분한 라벨",ink,3,basic with {ShowTail=false}),new("간결한 텍스트",ink,3,basic with {Bubble=false,ShowTail=false})];
         if(kind==AnnotationKind.Step)return [new("기본 번호",red,4.5,basic),new("블루 포인터",blue,4,basic),new("미니멀 번호",ink,3,basic with {ShowTail=false}),new("민트 번호",teal,4,basic with {ShowTail=false})];
         if(kind==AnnotationKind.Highlight)return [new("옐로 마커",new(255,246,141),5.6,basic with {MarkerCap=MarkerCap.Round}),new("민트 마커",new(52,211,153),4,basic with {MarkerCap=MarkerCap.Round}),new("라벤더 영역",new(167,139,250),3,basic with {HighlightShape=MarkerShape.Rectangle}),new("자유로운 마커",new(250,204,21),4,basic with {HighlightShape=MarkerShape.Freehand,MarkerCap=MarkerCap.Round})];
+        if(kind==AnnotationKind.Magnifier)return [new("곡선 렌즈",red,3,basic with {Elliptical=true}),new("사각 렌즈",red,3,basic),new("블루 곡선 렌즈",blue,3,basic with {Elliptical=true}),new("차분한 사각 렌즈",ink,2,basic)];
+        if(kind==AnnotationKind.Spotlight)return [new("기본 강조",red,3,basic),new("블루 강조",blue,3,basic),new("차분한 강조",ink,2,basic),new("민트 강조",teal,3,basic)];
         if(kind is AnnotationKind.Pen or AnnotationKind.Line)return [new("기본 펜",red,3,basic),new("정밀한 블루",blue,2,basic),new("차분한 잉크",ink,2,basic),new("부드러운 민트",teal,4,basic)];
         return [new("손그림 테두리",red,3,basic with {Sketch=true,CornerRadius=5}),new("깔끔한 테두리",coral,2.5,basic),new("부드러운 채움",blue,2,basic with {Fill=ShapeFill.Translucent,CornerRadius=16}),new("포인터 카드",teal,2,basic with {Fill=ShapeFill.Solid,ShapeTail=true,TailWidth=32})];
     }

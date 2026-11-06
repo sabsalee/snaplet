@@ -22,10 +22,10 @@ internal static class AdvancedDrawing
         if (lens.IsEmpty || lens.Width <= 0 || lens.Height <= 0) return;
         var sample = ImageRenderer.RectOf(SampleBounds(a));
         var ink = ImageRenderer.BrushOf(a.Color);
-        var sourceGeometry = Frame(sample, a.Appearance.Elliptical);
-        var lensGeometry = Frame(lens, a.Appearance.Elliptical);
+        var sourceGeometry = LensFrame(sample, a.Appearance.Elliptical);
+        var lensGeometry = LensFrame(lens, a.Appearance.Elliptical);
         double thickness = Math.Max(1, a.Thickness);
-        var sourcePen = new Pen(ink, Math.Max(1, thickness * .5)) { LineJoin = PenLineJoin.Round };
+        var sourcePen = new Pen(ink, thickness) { LineJoin = PenLineJoin.Round };
         var lensPen = new Pen(ink, thickness) { LineJoin = PenLineJoin.Round };
         Point sourceCenter = new(sample.X + sample.Width / 2, sample.Y + sample.Height / 2);
         Point lensCenter = new(lens.X + lens.Width / 2, lens.Y + lens.Height / 2);
@@ -36,7 +36,7 @@ internal static class AdvancedDrawing
             var to = FrameEdge(lens, -direction, a.Appearance.Elliptical);
             // Overlapping source/lens frames have no exposed connector segment.
             if (Vector.Multiply(to - from, direction) > 0)
-                dc.DrawLine(new Pen(ink, Math.Max(1, thickness * .45)) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, from, to);
+                dc.DrawLine(new Pen(ink, thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, from, to);
         }
         dc.DrawGeometry(null, sourcePen, sourceGeometry);
         var image = new DrawingBrush(underlay)
@@ -50,8 +50,8 @@ internal static class AdvancedDrawing
             AlignmentX = AlignmentX.Left,
             AlignmentY = AlignmentY.Top
         };
-        // A narrow white keyline keeps the border legible on both dark and light content.
-        dc.DrawGeometry(Brushes.White, new Pen(Brushes.White, thickness + 2), lensGeometry);
+        // Opaque backing for sample areas with no pixels; the border itself has no keyline.
+        dc.DrawGeometry(Brushes.White, null, lensGeometry);
         dc.DrawGeometry(image, lensPen, lensGeometry);
     }
 
@@ -59,11 +59,29 @@ internal static class AdvancedDrawing
         ? new EllipseGeometry(bounds)
         : new RectangleGeometry(bounds, Math.Min(5, bounds.Width / 8), Math.Min(5, bounds.Height / 8));
 
+    private static Geometry LensFrame(Rect bounds, bool curved)
+    {
+        if (!curved) return Frame(bounds, false);
+        // Four fuller-than-circular arcs give the soft squared lens seen in reference output.
+        const double fullness = .78;
+        double rx = bounds.Width / 2, ry = bounds.Height / 2, cx = bounds.X + rx, cy = bounds.Y + ry;
+        var lens = new StreamGeometry();
+        using (var g = lens.Open())
+        {
+            g.BeginFigure(new(cx, bounds.Top), true, true);
+            g.BezierTo(new(cx + rx * fullness, bounds.Top), new(bounds.Right, cy - ry * fullness), new(bounds.Right, cy), true, true);
+            g.BezierTo(new(bounds.Right, cy + ry * fullness), new(cx + rx * fullness, bounds.Bottom), new(cx, bounds.Bottom), true, true);
+            g.BezierTo(new(cx - rx * fullness, bounds.Bottom), new(bounds.Left, cy + ry * fullness), new(bounds.Left, cy), true, true);
+            g.BezierTo(new(bounds.Left, cy - ry * fullness), new(cx - rx * fullness, bounds.Top), new(cx, bounds.Top), true, true);
+        }
+        lens.Freeze(); return lens;
+    }
+
     private static Point FrameEdge(Rect bounds, Vector direction, bool elliptical)
     {
         double halfWidth = Math.Max(.001, bounds.Width / 2), halfHeight = Math.Max(.001, bounds.Height / 2);
         double factor = elliptical
-            ? 1 / Math.Sqrt(direction.X * direction.X / (halfWidth * halfWidth) + direction.Y * direction.Y / (halfHeight * halfHeight))
+            ? 1 / Math.Cbrt(Math.Pow(Math.Abs(direction.X) / halfWidth, 3) + Math.Pow(Math.Abs(direction.Y) / halfHeight, 3))
             : 1 / Math.Max(Math.Abs(direction.X) / halfWidth, Math.Abs(direction.Y) / halfHeight);
         return new(bounds.X + halfWidth + direction.X * factor, bounds.Y + halfHeight + direction.Y * factor);
     }
@@ -142,5 +160,14 @@ internal static class AdvancedDrawing
         var dim = new SolidColorBrush(Color.FromArgb((byte)Math.Round(255 * spotlights.Max(a => a.Appearance.Dim * a.Appearance.Opacity)), 0, 0, 0));
         dim.Freeze();
         dc.DrawGeometry(dim, null, outside);
+        foreach (var a in spotlights)
+        {
+            // The outline sits mostly outside the lit area, so it never covers what it points at.
+            var ring = ImageRenderer.RectOf(a.Bounds); var width = Math.Max(1, a.Thickness);
+            ring.Inflate(width * .17, width * .17);
+            dc.PushOpacity(a.Appearance.Opacity);
+            dc.DrawGeometry(null, new Pen(ImageRenderer.BrushOf(a.Color), width) { LineJoin = PenLineJoin.Round }, Frame(ring, a.Appearance.Elliptical));
+            dc.Pop();
+        }
     }
 }
