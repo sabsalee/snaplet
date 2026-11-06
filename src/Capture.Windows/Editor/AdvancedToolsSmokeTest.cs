@@ -123,7 +123,7 @@ internal static class AdvancedToolsSmokeTest
             insertionDoc.Undo();check(insertionDoc.Annotations.Count==1,"one undo removes the duplicate image");
             insertionDoc.Add(new(Guid.NewGuid(), AnnotationKind.Solid, new(10, 10), new(30, 30), red));
             window.AddCapturedImage(Sheet(160, 120, new(25, 80, 230)));
-            check(Pixel(ImageRenderer.Render(white, insertionDoc), 40, 30).R == red.R, "new inserted captures remain below existing vector annotations");
+            check(Pixel(ImageRenderer.Render(white, insertionDoc), 20, 20).R == red.R, "new inserted captures remain below existing vector annotations");
         }
         finally { window.CloseForExit(); }
         var textDoc=new EditableDocument(120,100);var area=new Annotation(Guid.NewGuid(),AnnotationKind.Erase,new(25,25),new(90,75),red);textDoc.Add(area);
