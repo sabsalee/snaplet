@@ -197,9 +197,15 @@ internal static class ImageRenderer
     internal static FormattedText TextLayout(Annotation a,Brush? ink=null)
     {
         var result=new FormattedText(string.IsNullOrEmpty(a.Text)?" ":a.Text,CultureInfo.CurrentCulture,FlowDirection.LeftToRight,
-            new Typeface(TextFonts.For(a.Appearance.FontFamily),FontStyles.Normal,FontWeights.SemiBold,FontStretches.Normal),Math.Max(14,a.Thickness*5),ink ?? Brushes.White,1);
+            new Typeface(TextFonts.For(a.Appearance.FontFamily),a.Appearance.Italic?FontStyles.Italic:FontStyles.Normal,a.Appearance.Bold?FontWeights.SemiBold:FontWeights.Normal,FontStretches.Normal),Math.Max(14,a.Thickness*5),ink ?? Brushes.White,1);
         var width=Math.Abs(a.End.X-a.Start.X);
         result.MaxTextWidth=Math.Max(20,width>2?width-(a.Appearance.Bubble?20:0):240);
+        if(a.Appearance.Underline)result.SetTextDecorations(TextDecorations.Underline);
+        if(a.Appearance.Align!=TextAlign.Left) {
+            // Without a set width the box hugs the text, so lines align within the longest line rather than the wrap limit.
+            if(width<=2)result.MaxTextWidth=Math.Max(1,Math.Ceiling(result.WidthIncludingTrailingWhitespace)+1);
+            result.TextAlignment=a.Appearance.Align==TextAlign.Center?TextAlignment.Center:TextAlignment.Right;
+        }
         return result;
     }
     internal static Rect TextBounds(Annotation a)

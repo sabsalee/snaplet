@@ -54,6 +54,8 @@ internal static class UiSmokeTest
         try {
             Shot(preview,"preview");Click(preview,"이미지 고정");Check(preview.Pinned,"preview pin command switches to pinned presentation");
             Shot(preview,"pinned");preview.RaiseEvent(new System.Windows.Input.MouseEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0){RoutedEvent=UIElement.MouseEnterEvent});Shot(preview,"pinned-tools");
+            preview.SetPinOpacity(.5);Check(preview.Opacity==.5,"pin opacity reaches the window");preview.SetPinOpacity(1);
+            var pinWidth=preview.Width;Click(preview,"확대 · 휠");Check(preview.Width>pinWidth,"pin zoom button enlarges the image");Click(preview,"축소 · 휠");Check(preview.Width==pinWidth,"pin zoom button shrinks the image");
             Click(preview,"고정 해제");preview.UpdateLayout();Check(!preview.Pinned,"unpin rebuilds compact preview without reparenting errors");
             bool edited=false;preview.EditRequested+=_=>edited=true;Click(preview,"편집");Check(edited && !preview.IsVisible,"preview edit dispatches image and dismisses unpinned window");
         }finally{if(preview.IsVisible)preview.Close();}

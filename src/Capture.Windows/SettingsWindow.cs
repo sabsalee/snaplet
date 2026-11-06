@@ -76,7 +76,7 @@ internal sealed class SettingsWindow : Window
         void Update()=>outside.IsEnabled=afterCapture.SelectedIndex==(int)AfterCaptureAction.Popup;afterCapture.SelectionChanged+=(_,_)=>Update();Update();
         p.Children.Add(Ui.Label("고정한 이미지는 새 캡처 후에도 화면에 남습니다.",11,Ui.Muted));
         p.Children.Add(Row("마우스 포인터 포함","캡처를 시작한 순간의 포인터를 이미지에 넣습니다. 숨겨진 포인터는 넣지 않습니다.",cursor));
-        p.Children.Add(Row("창 캡처 모양","활성 창·창 선택 캡처에 Windows 11 스타일 그림자나 배경을 더합니다. 편집창의 배경 꾸미기로 이후에도 바꿀 수 있습니다.",windowStyle));
+        p.Children.Add(Row("창 캡처 모양","창 캡처에 Windows 11 스타일 그림자나 배경을 더합니다. 편집창의 배경 꾸미기로 이후에도 바꿀 수 있습니다.",windowStyle));
         var selection=Ui.Header("영역 선택","정밀하게 고를 때 쓰는 도구입니다.");selection.Margin=new Thickness(0,22,0,0);p.Children.Add(selection);
         p.Children.Add(Row("픽셀 확대경","선택 화면에서 포인터 주변 픽셀·좌표·색을 크게 보여 줍니다. Tab은 색상 코드를 복사합니다.",loupe));
         p.Children.Add(Row("놓은 뒤 조정하고 Enter로 캡처","끄면 마우스를 놓는 즉시 캡처합니다. 켜면 조절점·방향키·A(내용에 맞춤)로 다듬을 수 있습니다. 끈 상태에서도 Ctrl을 누른 채 놓으면 조정 단계로 들어갑니다.",adjust));

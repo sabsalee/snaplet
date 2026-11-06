@@ -93,15 +93,15 @@ public partial class App : Application
         if(command=="home"){ShowHome();return;}
         if(scrollWindow is not null){scrollWindow.Message("스크롤 캡처가 진행 중입니다. F9 또는 완료 버튼으로 마쳐 주세요.");return;}
         if(capturing)return;
-        var foreground=Native.GetForegroundWindow();Native.GetWindowThreadProcessId(foreground,out var pid);
-        if(pid==Environment.ProcessId)foreground=lastExternalWindow;
         capturing=true;activeCapture=new CancellationTokenSource();var token=activeCapture.Token;
         var hidden=new List<Window>();
         var clock=Stopwatch.StartNew();
         var diagnostics=new CaptureDiagnostics(command,hotkeyTimestamp);
         // The pointer is read before our windows hide or the overlay appears, so it matches what the user saw.
         var cursor=settings.IncludeCursor && command is not ("ocr" or "scroll")?CursorSnapshot.Capture():null;
-        bool windowCapture=command=="window";
+        // Window capture always asks which window: the active one is rarely known for sure once a shortcut is pressed.
+        if(command=="window")command="pick-window";
+        bool windowCapture=false;
         try {
             foreach(Window window in Windows)if(window.IsVisible && window is not SelectionWindow){hidden.Add(window);window.Hide();}
             await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.Render);
@@ -111,15 +111,12 @@ public partial class App : Application
             diagnostics.Mark("ownWindowsHiddenMs");
             if(command=="delayed") {status.Text="3초 후 현재 화면을 캡처합니다…";await Task.Delay(3000,token);}
             CapturedFrame result;
-            if(command=="window") {
-                if(foreground==0 || !Native.IsWindow(foreground))throw new InvalidOperationException("캡처할 창을 찾지 못했습니다. 대상 창을 활성화하고 단축키를 눌러 주세요.");
-                result=await engine.CaptureWindowAsync(foreground,token);
-            } else if(command is "region" or "pick-window" or "scroll" or "ocr") {
+            if(command is "region" or "pick-window" or "scroll" or "ocr") {
                 var displays=Native.Displays();
                 var targets=command=="pick-window"?Native.Windows():null;
                 var shots=await Task.WhenAll(displays.Select(d=>engine.CaptureMonitorAsync(d.Handle,token)));
                 diagnostics.Frames(shots);
-                var purpose=command switch {"ocr"=>"텍스트·QR 인식","scroll"=>"스크롤 캡처 영역",_=>destination!=null?"편집 중인 이미지에 추가":null};
+                var purpose=command switch {"ocr"=>"텍스트·QR 인식","scroll"=>"스크롤 캡처 영역","pick-window"=>"캡처할 창을 클릭하세요",_=>destination!=null?"편집 중인 이미지에 추가":null};
                 var options=new SelectionOptions(settings.ShowLoupe,settings.AdjustSelectionBeforeCapture || command=="scroll",purpose);
                 var selection=await SelectAsync(displays,shots,targets,token,diagnostics,options);
                 if(selection is null)return;
@@ -327,7 +324,7 @@ public partial class App : Application
     private void ShowTrayMenu() {
         var menu=new ContextMenu {Placement=PlacementMode.MousePoint};
         void Add(string text,Action action){var item=new MenuItem {Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
-        foreach(var (text,command) in new[]{("영역 캡처","region"),("활성 창 캡처","window"),("창 선택 캡처","pick-window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
+        foreach(var (text,command) in new[]{("영역 캡처","region"),("창 캡처","window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
         var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
         if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});

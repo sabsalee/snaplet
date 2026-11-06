@@ -31,6 +31,8 @@ jobs:
       - name: Publish visual review images
         # Review PNGs go to the visual-review branch so they can be fetched with git when artifacts are unreachable.
         if: success() && github.event_name == 'push' && github.repository == 'sabsalee/snaplet'
+        # Runs of one commit race for this branch; losing that race must not fail the build or block a release.
+        continue-on-error: true
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

@@ -623,15 +623,20 @@ public sealed class EditorWindow : Window
             if(kind==AnnotationKind.Rectangle || kind==AnnotationKind.Text && surface.InkStyle.Bubble)
                 ValueSlider("모서리 둥글기",0,48,surface.InkStyle.CornerRadius,value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
             if(kind==AnnotationKind.Text) {
-                Segment(LetterIcon(icon),"글자만",!surface.InkStyle.Bubble,()=>surface.InkStyle=surface.InkStyle with {Bubble=false,ShowTail=false});
-                Segment(FillIcon(ShapeFill.Solid,false,icon),"배경 있는 글자",surface.InkStyle.Bubble && !surface.InkStyle.ShowTail,()=>surface.InkStyle=surface.InkStyle with {Bubble=true,ShowTail=false});
-                Segment(FillIcon(ShapeFill.Solid,false,icon,bubble:true),"말풍선 · 말꼬리 있음",surface.InkStyle.Bubble && surface.InkStyle.ShowTail,()=>surface.InkStyle=surface.InkStyle with {Bubble=true,ShowTail=true});
+                Segment(LetterIcon(icon),"글자만",!surface.InkStyle.Bubble,()=>ChangeTextStyle(s=>s with {Bubble=false,ShowTail=false}));
+                Segment(FillIcon(ShapeFill.Solid,false,icon),"배경 있는 글자",surface.InkStyle.Bubble && !surface.InkStyle.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=false}));
+                Segment(FillIcon(ShapeFill.Solid,false,icon,bubble:true),"말풍선 · 말꼬리 있음",surface.InkStyle.Bubble && surface.InkStyle.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=true}));
                 var font=new ComboBox {Width=132,Margin=new Thickness(4,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="글꼴"};
                 System.Windows.Automation.AutomationProperties.SetName(font,"글꼴");
                 font.Items.Add($"기본 ({TextFonts.DefaultName})");foreach(var name in TextFonts.Installed)font.Items.Add(name);
                 var chosen=surface.InkStyle.FontFamily;font.SelectedIndex=chosen is null?0:Math.Max(0,font.Items.IndexOf(chosen));
-                font.SelectionChanged+=(_,_)=>{surface.InkStyle=surface.InkStyle with {FontFamily=font.SelectedIndex<=0?null:(string)font.SelectedItem};surface.ApplyStyle();};
+                font.SelectionChanged+=(_,_)=>{ChangeTextStyle(s=>s with {FontFamily=font.SelectedIndex<=0?null:(string)font.SelectedItem});surface.ApplyStyle();};
                 propertyRow.Children.Add(font);
+                Segment(LetterStyleIcon("B",FontWeights.Bold,FontStyles.Normal,false,icon),"굵게",surface.InkStyle.Bold,()=>ChangeTextStyle(s=>s with {Bold=!s.Bold}));
+                Segment(LetterStyleIcon("I",FontWeights.Normal,FontStyles.Italic,false,icon),"기울임",surface.InkStyle.Italic,()=>ChangeTextStyle(s=>s with {Italic=!s.Italic}));
+                Segment(LetterStyleIcon("U",FontWeights.Normal,FontStyles.Normal,true,icon),"밑줄",surface.InkStyle.Underline,()=>ChangeTextStyle(s=>s with {Underline=!s.Underline}));
+                foreach(var (label,align) in new[]{("왼쪽 정렬",TextAlign.Left),("가운데 정렬",TextAlign.Center),("오른쪽 정렬",TextAlign.Right)})
+                    Segment(AlignIcon(align,icon),label,surface.InkStyle.Align==align,()=>ChangeTextStyle(s=>s with {Align=align}));
                 if(a!=null){var edit=ToolButton(propertyDetails,"✎","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));edit.Height=32;}
             }
             if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Step || kind==AnnotationKind.Text && surface.InkStyle.Bubble) {
@@ -764,15 +769,46 @@ public sealed class EditorWindow : Window
     {
         if(!FinishTextEdit(true))return;if(textEditor!=null)return;surface.CancelGesture();selectionBeforeTextEdit=surface.Selected;editingText=a;newText=create;composingText=false;surface.Selected=create?null:a.Id;
         surface.SetTextEditing(create?null:a.Id);
-        textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=a.Text,MaxLength=8192,FontFamily=TextFonts.For(a.Appearance.FontFamily),AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
+        textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=create?TextPlaceholder:a.Text,MaxLength=8192,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
             Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=a.Appearance.Bubble?ImageRenderer.BrushOf(a.Color):Brushes.Transparent,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
         textLayer.Children.Add(textEditor);UpdateTextEditorLayout();
         textEditor.TextChanged+=(_,_)=>UpdateTextEditorLayout();
         TextCompositionManager.AddPreviewTextInputStartHandler(textEditor,(_,_)=>composingText=true);
         TextCompositionManager.AddPreviewTextInputHandler(textEditor,(_,_)=>composingText=false);
         textEditor.PreviewKeyDown+=(_,e)=>{if(composingText)return;if(e.Key==Key.Escape){FinishTextEdit(false);e.Handled=true;}else if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){FinishTextEdit(true);e.Handled=true;}};
-        textEditor.Focus();textEditor.CaretIndex=textEditor.Text.Length;SyncInspector();
+        // New text starts as selected placeholder: typing replaces it, leaving it alone inserts something visible.
+        textEditor.Focus();if(create)textEditor.SelectAll();else textEditor.CaretIndex=textEditor.Text.Length;SyncInspector();
         status.Text="이미지 위에 입력하세요 · Enter 줄바꿈 · Ctrl+Enter 완료 · Esc 취소";
+    }
+    private const string TextPlaceholder="텍스트";
+    /// <summary>Changes the text style for new text, the selected text, and text being typed right now.</summary>
+    private void ChangeTextStyle(Func<AnnotationStyle,AnnotationStyle> change)
+    {
+        surface.InkStyle=change(surface.InkStyle);
+        if(editingText is Annotation typing && textEditor!=null){editingText=typing with {Style=change(typing.Appearance)};UpdateTextEditorLayout();textEditor.Focus();}
+    }
+    private static Drawing LetterStyleIcon(string letter,FontWeight weight,FontStyle style,bool underline,ColorRgba ink)
+    {
+        var group=new DrawingGroup();var brush=new SolidColorBrush(Color.FromRgb(ink.R,ink.G,ink.B));brush.Freeze();
+        using(var dc=group.Open()) {
+            dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,24,18));
+            var text=new FormattedText(letter,System.Globalization.CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new Typeface(new FontFamily("Segoe UI"),style,weight,FontStretches.Normal),16,brush,1);
+            if(underline)text.SetTextDecorations(TextDecorations.Underline);
+            dc.DrawText(text,new Point(12-text.Width/2,9-text.Height/2));
+        }
+        return group;
+    }
+    private static Drawing AlignIcon(TextAlign align,ColorRgba ink)
+    {
+        var group=new DrawingGroup();var brush=new SolidColorBrush(Color.FromRgb(ink.R,ink.G,ink.B));brush.Freeze();
+        using(var dc=group.Open()) {
+            dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,24,18));
+            foreach(var (y,width) in new[]{(3d,16d),(8d,10d),(13d,16d)}) {
+                var x=align switch {TextAlign.Center=>12-width/2,TextAlign.Right=>20-width,_=>4d};
+                dc.DrawRoundedRectangle(brush,null,new Rect(x,y,width,2),1,1);
+            }
+        }
+        return group;
     }
     private void UpdateTextEditorLayout()
     {
@@ -780,7 +816,11 @@ public sealed class EditorWindow : Window
         var z=surface.Zoom;var preview=EditedText(a,textEditor.Text);surface.SetTextPreview(preview);
         var b=ImageRenderer.TextBounds(preview);
         EditorChrome.SetCornerRadius(textEditor,new CornerRadius(a.Appearance.Bubble?Math.Min(a.Appearance.CornerRadius,Math.Min(b.Width,b.Height)/2)*z+2:2));
-        textEditor.FontSize=Math.Max(14,a.Thickness*5)*z;textEditor.FontWeight=FontWeights.SemiBold;
+        textEditor.FontSize=Math.Max(14,a.Thickness*5)*z;textEditor.FontWeight=a.Appearance.Bold?FontWeights.SemiBold:FontWeights.Normal;
+        textEditor.FontFamily=TextFonts.For(a.Appearance.FontFamily);textEditor.FontStyle=a.Appearance.Italic?FontStyles.Italic:FontStyles.Normal;
+        textEditor.TextDecorations=a.Appearance.Underline?TextDecorations.Underline:null;
+        textEditor.TextAlignment=a.Appearance.Align switch {TextAlign.Center=>TextAlignment.Center,TextAlign.Right=>TextAlignment.Right,_=>TextAlignment.Left};
+        textEditor.Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color);textEditor.Background=a.Appearance.Bubble?ImageRenderer.BrushOf(a.Color):Brushes.Transparent;
         textEditor.Padding=a.Appearance.Bubble?new Thickness(10*z,8*z,10*z,8*z):new Thickness(0);
         textEditor.Width=b.Width*z+4;textEditor.Height=Math.Min(32768,b.Height)*z+4;
         textEditor.VerticalScrollBarVisibility=b.Height>32768?ScrollBarVisibility.Auto:ScrollBarVisibility.Hidden;

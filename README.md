@@ -21,7 +21,7 @@ Windows 11 x64용 로컬 화면 캡처·이미지 편집 앱입니다. 단축키
 | 단축키 | 작업 |
 | --- | --- |
 | Ctrl+Shift+1 | 영역 캡처 |
-| Ctrl+Shift+2 | 활성 창 캡처 |
+| Ctrl+Shift+2 | 창 캡처 (창 선택) |
 | Ctrl+Shift+3 | 현재 모니터 캡처 |
 | Ctrl+Shift+4 | 3초 후 캡처 |
 | Ctrl+Shift+5 | 최근 캡처 편집 |

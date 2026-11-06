@@ -55,8 +55,8 @@ public sealed record AppSettings
 
     /// <summary>Every command that can own a global shortcut, in display order. New commands start unassigned to avoid stealing keys from other apps.</summary>
     public static readonly IReadOnlyList<(string Command,string Name)> Commands=[
-        ("region","영역 캡처"),("window","활성 창 캡처"),("display","현재 화면 캡처"),("delayed","3초 후 화면 캡처"),
-        ("last","최근 캡처 편집"),("repeat","직전 영역 반복"),("desktop","모든 화면 캡처"),("pick-window","창 선택 캡처"),
+        ("region","영역 캡처"),("window","창 캡처"),("display","현재 화면 캡처"),("delayed","3초 후 화면 캡처"),
+        ("last","최근 캡처 편집"),("repeat","직전 영역 반복"),("desktop","모든 화면 캡처"),("pick-window","창 캡처 (추가 단축키)"),
         ("scroll","스크롤 캡처"),("ocr","텍스트·QR 바로 인식"),("home","Snaplet 열기")];
     public static List<HotkeyBinding> DefaultHotkeys()=>[
         new("region",Key.D1,ModifierKeys.Control|ModifierKeys.Shift),
