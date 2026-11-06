@@ -134,6 +134,8 @@ internal static class ImageRenderer
         var bytes=new byte[checked(image.PixelWidth*image.PixelHeight*4)];converted.CopyPixels(bytes,image.PixelWidth*4,0);
         return new(image.PixelWidth,image.PixelHeight,bytes);
     }
+    /// <summary>Tied to the object, so its blocks stay the same between redraws and differ from any other object's.</summary>
+    internal static int PixelateSeed(Annotation a)=>a.Id.GetHashCode()|1;
     internal static Geometry ArrowGeometry(Annotation a) => AnnotationPaths.Arrow(a);
     internal static Geometry ShapeGeometry(Annotation a)
     {
@@ -261,7 +263,7 @@ internal static class ImageRenderer
         int stride=checked(bounds.Width*4);var pixels=new byte[checked(stride*bounds.Height)];converted.CopyPixels(pixels,stride,0);
         var region = new RectD(0, 0, bounds.Width, bounds.Height);
         if (a.Kind == AnnotationKind.Blur) PixelEffects.Blur(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 2), 3, 60));
-        else if(a.Kind==AnnotationKind.Pixelate)PixelEffects.Pixelate(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 3), 5, 4096), a.Id.GetHashCode() | 1);
+        else if(a.Kind==AnnotationKind.Pixelate)PixelEffects.Pixelate(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 3), 5, 4096), PixelateSeed(a));
         var result = BitmapSource.Create(bounds.Width, bounds.Height, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
         result.Freeze();
         if (cache.Count >= 24 || cache.Values.Sum(b => (long)b.PixelWidth * b.PixelHeight) + (long)bounds.Width * bounds.Height > 4_000_000) cache.Clear();
@@ -286,7 +288,7 @@ internal static class ImageRenderer
         var converted=new FormatConvertedBitmap(snapshot,PixelFormats.Bgra32,null,0);var bytes=new byte[w*h*4];converted.CopyPixels(bytes,w*4,0);
         var region=new RectD(0,0,width,height);
         if(a.Kind==AnnotationKind.Blur)PixelEffects.Blur(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*2,3,60)*scale),1,60));
-        else PixelEffects.Pixelate(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*3,5,4096)*scale),1,4096),a.Id.GetHashCode()|1);
+        else PixelEffects.Pixelate(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*3,5,4096)*scale),1,4096),PixelateSeed(a));
         var bitmap=BitmapSource.Create(w,h,96,96,PixelFormats.Bgra32,null,bytes,w*4);bitmap.Freeze();
         BitmapSource result=bitmap;
         dc.DrawImage(result,rect);

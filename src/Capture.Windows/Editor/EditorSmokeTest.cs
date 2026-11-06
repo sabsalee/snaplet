@@ -57,12 +57,12 @@ public static class EditorSmokeTest
         foreach (var kind in new[] { AnnotationKind.Pixelate, AnnotationKind.Blur })
         {
             var effectDoc = new EditableDocument(width, height);
-            effectDoc.Add(new Annotation(Guid.NewGuid(), kind, new(4, 4), new(16, 16), red, 2));
+            var effectAnnotation = new Annotation(Guid.NewGuid(), kind, new(4, 4), new(16, 16), red, 2); effectDoc.Add(effectAnnotation);
             var effect = ImageRenderer.Render(source, effectDoc);
             var local = new byte[12 * 12 * 4];
             for (int y = 0; y < 12; y++) Array.Copy(raw, ((y + 4) * width + 4) * 4, local, y * 12 * 4, 12 * 4);
             if (kind == AnnotationKind.Blur) PixelEffects.Blur(local, 12, 12, new(0, 0, 12, 12), 4);
-            else PixelEffects.Pixelate(local, 12, 12, new(0, 0, 12, 12), 6);
+            else PixelEffects.Pixelate(local, 12, 12, new(0, 0, 12, 12), 6, ImageRenderer.PixelateSeed(effectAnnotation));
             var rendered = Bytes(effect);
             bool exact = true;
             for (int y = 0; y < 12; y++) for (int x = 0; x < 12; x++) for (int c = 0; c < 4; c++)
