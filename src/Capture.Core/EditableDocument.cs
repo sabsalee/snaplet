@@ -13,6 +13,19 @@ public sealed record AnnotationStyle(ArrowHead ArrowHead = ArrowHead.Filled, Sha
     bool Bubble = true, bool ShowTail = true, double Opacity = 1, bool Sketch = false, bool ShapeTail = false, double Magnification = 3, double Dim = .18, bool Elliptical = false,
     MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat, double CornerRadius = 8, double TailWidth = 24, RibbonStyle RibbonStyle = RibbonStyle.Wedge);
 
+/// <summary>Limits of the export size, as a factor of the framed image.</summary>
+public static class ExportSizing
+{
+    public const double MinScale = .1, MaxScale = 4;
+    /// <summary>The factor that gives <paramref name="targetPixels"/> along a side of <paramref name="basePixels"/>, or null when it is out of range.</summary>
+    public static double? ScaleFor(int targetPixels, double basePixels)
+    {
+        if (targetPixels < 1 || basePixels < 1) return null;
+        var scale = targetPixels / basePixels;
+        return scale is >= MinScale and <= MaxScale ? scale : null;
+    }
+}
+
 /// <summary>Background behind the exported image: gradient/solid/transparent fill, padding, rounded corners and a soft shadow.</summary>
 public enum BackdropFill { Gradient, Solid, Transparent }
 public sealed record Backdrop(bool Enabled = false, BackdropFill Fill = BackdropFill.Gradient, int Preset = 0, ColorRgba Color = default,
@@ -127,7 +140,7 @@ public sealed class EditableDocument
     /// <summary>Changes the export backdrop as one undoable step. Disabled backdrops keep their settings for the next time.</summary>
     public void SetExportScale(double scale)
     {
-        if (!double.IsFinite(scale) || scale < 0.1 || scale > 1) throw new ArgumentOutOfRangeException(nameof(scale), "Export scale must be between 0.1 and 1.");
+        if (!double.IsFinite(scale) || scale < ExportSizing.MinScale || scale > ExportSizing.MaxScale) throw new ArgumentOutOfRangeException(nameof(scale), "Export scale must be between 0.1 and 4.");
         if (scale != ExportScale) Commit(state with { ExportScale = scale });
     }
     public void SetBackdrop(Backdrop backdrop)

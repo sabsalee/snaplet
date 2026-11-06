@@ -93,7 +93,8 @@ public sealed class EditorWindow : Window
         hoverSwatch.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"BorderBrush");
         var hoverInfo=InfoBlock(hoverValue,"Tab 복사");hoverInfo.ToolTip="커서 아래 색 · Tab으로 HEX 복사 · I 스포이트·대비 검사";hoverInfo.MinWidth=96;info.Children.Add(hoverInfo);
         System.Windows.Automation.AutomationProperties.SetName(hoverInfo,"커서 아래 색");
-        var sizeInfo=InfoBlock(dimensions,"이미지 크기");sizeInfo.ToolTip="내보내기 크기 (배경·내보내기 배율 포함)";info.Children.Add(sizeInfo);
+        var sizeButton=new Button {Content=InfoBlock(dimensions,"이미지 크기"),ToolTip="내보내기 크기 (배경·내보내기 배율 포함) · 클릭하여 변경",Padding=new Thickness(6,2,6,2),MinHeight=40,Style=(Style)Application.Current.FindResource("EditorIconButton")};
+        System.Windows.Automation.AutomationProperties.SetName(sizeButton,"이미지 크기");info.Children.Add(sizeButton);sizeButton.Click+=(_,_)=>ShowSizePopup(sizeButton);
         var zoomButton=new Button {Content=InfoBlock(zoomText,"확대"),ToolTip="확대율 · 클릭하여 보기 옵션",Padding=new Thickness(6,2,6,2),Margin=new Thickness(2,0,0,0),MinHeight=40,Style=(Style)Application.Current.FindResource("EditorIconButton")};
         System.Windows.Automation.AutomationProperties.SetName(zoomButton,"확대율");info.Children.Add(zoomButton);
         zoomButton.Click+=(_,_)=>{
@@ -134,7 +135,7 @@ public sealed class EditorWindow : Window
             var menu=Menu();
             Item(menu,"캡처 추가 · Ctrl+Shift+A",()=>_=CaptureIntoDocumentAsync());
             Item(menu,"이미지 붙여넣기 · Ctrl+V",PasteImage);Item(menu,"이미지 파일 추가 · Ctrl+O",InsertImageFile);
-            Item(menu,"스포이트·대비 검사 · I",StartColorPick);
+            Item(menu,"스포이트·대비 검사 · I",StartColorPick);Item(menu,"측정자 · U",StartMeasure);
             var folded=toolButtons.Take(inlineTools).Where(x=>x.Button.Visibility==Visibility.Collapsed).ToList();
             if(folded.Count>0)menu.Items.Add(new Separator());
             foreach(var entry in folded){var kind=entry.Kind;Item(menu,entry.Button.ToolTip?.ToString() ?? ToolName(kind),()=>SetTool(kind));}
@@ -165,6 +166,11 @@ public sealed class EditorWindow : Window
             toastTimer.Stop();statusToast.Visibility=string.IsNullOrEmpty(status.Text)?Visibility.Collapsed:Visibility.Visible;if(statusToast.Visibility==Visibility.Visible)toastTimer.Start();
         });
         Closed+=(_,_)=>toastTimer.Stop();
+        surface.MeasureAt=MeasureSpan;
+        surface.MeasureCopyRequested+=span=>{
+            var size=$"{span.Right-span.Left}×{span.Bottom-span.Top}";
+            try{Clipboard.SetText(size);status.Text=size+" 복사됨";}catch(System.Runtime.InteropServices.ExternalException){status.Text=size+" · 다른 앱이 클립보드를 사용 중입니다";}
+        };
         surface.MouseMove+=(_,e)=>UpdateHoverColor(surface.PointerPosition(e.GetPosition(surface)));
         surface.MouseLeave+=(_,_)=>UpdateHoverColor(null);
         void OnPreference(object? sender,UserPreferenceChangedEventArgs e){if(e.Category is UserPreferenceCategory.General or UserPreferenceCategory.Color)Dispatcher.BeginInvoke(()=>{ApplyTheme(EditorTheme.SystemUsesDark());SyncInspector();});}
@@ -271,7 +277,7 @@ public sealed class EditorWindow : Window
         menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));Item(menu,"인쇄 · Ctrl+P",Print);
         Item(menu,"텍스트 추출",()=>{if(!FinishTextEdit(true))return;OcrRequested?.Invoke(ImageRenderer.Render(source,document));});
         var scaleMenu=new MenuItem {Header=$"내보내기 크기 · {document.ExportScale:P0}"};
-        foreach(var (label,value) in new[]{("100% (원본)",1d),("75%",.75),("50% (200% 화면을 1배로)",.5),("25%",.25)}) {
+        foreach(var (label,value) in new[]{("400%",4d),("200%",2d),("100% (원본)",1d),("75%",.75),("50% (200% 화면을 1배로)",.5),("33%",1/3d),("25%",.25)}) {
             var item=new MenuItem {Header=label,IsCheckable=true,IsChecked=Math.Abs(document.ExportScale-value)<1e-9};var v=value;
             item.Click+=(_,_)=>{if(!FinishTextEdit(true))return;document.SetExportScale(v);};scaleMenu.Items.Add(item);
         }
@@ -391,7 +397,7 @@ public sealed class EditorWindow : Window
     private double PresetScale=>Math.Max(1,VisualTreeHelper.GetDpi(this).DpiScaleX);
     internal void SetTool(AnnotationKind? kind)
     {
-        if(!FinishTextEdit(true))return;document.EndEdit();surface.CancelGesture();surface.ClearCrop();StopColorPick();
+        if(!FinishTextEdit(true))return;document.EndEdit();surface.CancelGesture();surface.ClearCrop();StopColorPick();surface.MeasureTool=false;
         if((surface.Selection?.Kind ?? surface.Tool) is AnnotationKind previous)toolStyles[previous]=(surface.Ink,surface.Thickness,surface.InkStyle);
         if(kind is AnnotationKind next) {
             var first=EditorPresets.For(next)[0];
@@ -409,6 +415,49 @@ public sealed class EditorWindow : Window
     private Popup? colorPopup;
     private ColorRgba pickForeground=new(0,0,0),pickBackground=new(255,255,255);
     private StackPanel? colorPanel;
+    private void StartMeasure()
+    {
+        SetTool(null);if(textEditor!=null)return;
+        surface.MeasureTool=true;surface.Cursor=Cursors.Cross;
+        status.Text="포인터 아래 같은 색 범위의 길이를 표시합니다 · 클릭: 크기 복사 · 저장 결과에 포함되지 않습니다 · Esc 종료";
+    }
+    /// <summary>Same-colour span through a point of the composited image, in image coordinates, with its right and bottom edges exclusive.</summary>
+    internal (int Left,int Right,int Top,int Bottom,int X,int Y)? MeasureSpan(PointD at)
+    {
+        pickCache??=ImageRenderer.Render(source,document);
+        int originX=(int)Math.Floor(document.Crop.X),originY=(int)Math.Floor(document.Crop.Y);
+        int x=(int)Math.Floor(at.X)-originX,y=(int)Math.Floor(at.Y)-originY,width=pickCache.PixelWidth,height=pickCache.PixelHeight;
+        if(x<0 || y<0 || x>=width || y>=height)return null;
+        var row=new byte[width*4];pickCache.CopyPixels(new Int32Rect(0,y,width,1),row,width*4,0);
+        var column=new byte[height*4];pickCache.CopyPixels(new Int32Rect(x,0,1,height),column,4,0);
+        var across=PixelProbe.Run(row,x,MeasureTolerance);var along=PixelProbe.Run(column,y,MeasureTolerance);
+        return (originX+x-across.Before,originX+x+across.After+1,originY+y-along.Before,originY+y+along.After+1,originX+x,originY+y);
+    }
+    private const int MeasureTolerance=12;
+    private void ShowSizePopup(Button anchor)
+    {
+        var pad=2*document.Backdrop.PaddingPixels;double baseWidth=document.Crop.Width+pad,baseHeight=document.Crop.Height+pad;
+        var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true};
+        var panel=new StackPanel {Width=250};popup.Child=PopupFrame(panel,10);
+        void Apply(double scale){if(!FinishTextEdit(true))return;document.SetExportScale(scale);popup.IsOpen=false;}
+        var presets=new WrapPanel();panel.Children.Add(presets);
+        foreach(var (label,value) in new[]{("25%",.25),("33%",1/3d),("50%",.5),("100%",1d),("200%",2d),("400%",4d)}) {
+            var choice=new Button {Content=label,Margin=new Thickness(2),Padding=new Thickness(8,4,8,4),Style=(Style)Application.Current.FindResource("EditorIconButton")};var scale=value;
+            if(Math.Abs(document.ExportScale-value)<1e-6)choice.SetResourceReference(BackgroundProperty,"SelectedToolBrush");
+            choice.Click+=(_,_)=>Apply(scale);presets.Children.Add(choice);
+        }
+        var row=new StackPanel {Orientation=Orientation.Horizontal,Margin=new Thickness(2,8,2,2)};panel.Children.Add(row);
+        TextBox Field(double side,string name){var box=new TextBox {Text=$"{Math.Round(side*document.ExportScale):0}",Width=70,VerticalContentAlignment=VerticalAlignment.Center,ToolTip=name+" 픽셀 · Enter 적용 · 비율 유지"};System.Windows.Automation.AutomationProperties.SetName(box,name+" 픽셀");return box;}
+        var widthBox=Field(baseWidth,"가로");var heightBox=Field(baseHeight,"세로");
+        void Bind(TextBox box,double side)=>box.KeyDown+=(_,e)=>{
+            if(e.Key!=Key.Enter)return;e.Handled=true;
+            if(int.TryParse(box.Text,out var target) && ExportSizing.ScaleFor(target,side) is double scale)Apply(scale);
+            else box.ToolTip=$"{Math.Ceiling(side*ExportSizing.MinScale):0}–{Math.Floor(side*ExportSizing.MaxScale):0} 픽셀 사이로 입력하세요.";
+        };
+        Bind(widthBox,baseWidth);Bind(heightBox,baseHeight);
+        row.Children.Add(widthBox);row.Children.Add(new TextBlock {Text=" × ",VerticalAlignment=VerticalAlignment.Center});row.Children.Add(heightBox);row.Children.Add(new TextBlock {Text=" px",VerticalAlignment=VerticalAlignment.Center});
+        popup.IsOpen=true;
+    }
     private void StartColorPick()
     {
         SetTool(null);if(textEditor!=null)return;
@@ -785,7 +834,7 @@ public sealed class EditorWindow : Window
     {
         RectD? target=surface.PendingCrop ?? surface.Selection?.Bounds;
         if(target is not RectD r || scroll.ViewportWidth<=1){status.Text="확대할 선택 영역이 없습니다. 자르기 범위나 객체를 먼저 선택하세요.";return;}
-        fitMode=false;surface.SetZoom(Math.Max(surface.Zoom,4));
+        fitMode=false;surface.SetZoom(Math.Max(surface.Zoom,16/VisualTreeHelper.GetDpi(surface).DpiScaleX));
         CenterOn(bottomRight?r.Right:r.X,bottomRight?r.Bottom:r.Y);
     }
     /// <summary>Z: jump to 200% under the pointer, and back to the fitted view.</summary>
@@ -832,7 +881,7 @@ public sealed class EditorWindow : Window
     internal void NudgeKeyUp(Key key){if(nudgeKeys.Count==1 && nudgeKeys.Contains(key))FinishNudge();else nudgeKeys.Remove(key);}
     private void FinishNudge(){if(nudgeKeys.Count==0)return;nudgeKeys.Clear();document.EndEdit();}
     private void UpdateStatus(){var pad=2*document.Backdrop.PaddingPixels;var k=document.ExportScale;
-        dimensions.Text=$"{Math.Round((document.Crop.Width+pad)*k):0}×{Math.Round((document.Crop.Height+pad)*k):0}"+(pad>0?" · 배경":"")+(k<1?$" · {k:P0}":"");}
+        dimensions.Text=$"{Math.Round((document.Crop.Width+pad)*k):0}×{Math.Round((document.Crop.Height+pad)*k):0}"+(pad>0?" · 배경":"")+(k!=1?$" · {k:P0}":"");}
     private void OnKey(object sender,KeyEventArgs e)
     {
         if(e.OriginalSource is TextBox || textEditor!=null || IsPropertyInput(e.OriginalSource as DependencyObject))return;
@@ -869,13 +918,13 @@ public sealed class EditorWindow : Window
                 try{Clipboard.SetText(hex);status.Text=hex+" 복사됨";}catch(System.Runtime.InteropServices.ExternalException){status.Text=hex+" · 다른 앱이 클립보드를 사용 중입니다";}
                 break;
             case Key.Delete:if(!EraseRegion())surface.DeleteSelected();break;
-            case Key.Escape:if(surface.Tool is null && !surface.CropTool && !surface.PickColorTool && surface.Selected is null && surface.PendingCrop is null)_=DismissWithEscapeAsync();else SetTool(null);break;
+            case Key.Escape:if(surface.Tool is null && !surface.CropTool && !surface.PickColorTool && !surface.MeasureTool && surface.Selected is null && surface.PendingCrop is null)_=DismissWithEscapeAsync();else SetTool(null);break;
             case Key.Enter:surface.ApplyCrop();break;
             case Key.V:SetTool(null);break;case Key.A:SetTool(AnnotationKind.Arrow);break;case Key.L:SetTool(AnnotationKind.Line);break;
             case Key.R:SetTool(AnnotationKind.Rectangle);break;case Key.O:SetTool(AnnotationKind.Ellipse);break;case Key.P:SetTool(AnnotationKind.Pen);break;
             case Key.T:SetTool(AnnotationKind.Text);break;case Key.N:SetTool(AnnotationKind.Step);break;case Key.H:SetTool(AnnotationKind.Highlight);break;
             case Key.G:SetTool(AnnotationKind.Magnifier);break;case Key.S:SetTool(AnnotationKind.Spotlight);break;case Key.E:SetTool(AnnotationKind.Erase);break;
-            case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;case Key.I:StartColorPick();break;
+            case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;case Key.I:StartColorPick();break;case Key.U:StartMeasure();break;
             case Key.Z:QuickZoom();break;case Key.Q:ZoomToCorner(false);break;case Key.W:ZoomToCorner(true);break;
             case Key.Left:case Key.Right:case Key.Up:case Key.Down:NudgeKeyDown(e.Key,shift);break;
             default:return;

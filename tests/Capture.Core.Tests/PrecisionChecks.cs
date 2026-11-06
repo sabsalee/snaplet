@@ -121,6 +121,11 @@ internal static class BackdropChecks
         doc.Undo(); check(doc.ExportScale == 1, "Export scale is undoable.");
         bool scaleRejected = false; try { doc.SetExportScale(0); } catch (ArgumentException) { scaleRejected = true; }
         check(scaleRejected, "Export scale below 0.1 rejected.");
+        doc.SetExportScale(4); check(doc.ExportScale == 4, "Export can enlarge up to four times."); doc.Undo();
+        bool enlargeRejected = false; try { doc.SetExportScale(4.5); } catch (ArgumentException) { enlargeRejected = true; }
+        check(enlargeRejected, "Export scale above four rejected.");
+        check(ExportSizing.ScaleFor(480, 960) == .5 && ExportSizing.ScaleFor(1920, 960) == 2, "Typed pixels become an export factor.");
+        check(ExportSizing.ScaleFor(0, 960) is null && ExportSizing.ScaleFor(50, 960) is null && ExportSizing.ScaleFor(5000, 960) is null, "Typed pixels out of range are refused.");
     }
 }
 

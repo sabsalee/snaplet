@@ -29,6 +29,7 @@ internal static class BackdropSmokeTest
         doc.SetBackdrop(doc.Backdrop with {Fill=BackdropFill.Solid,Color=new ColorRgba(255,255,255),CornerRadius=0});
         var square=BackdropRenderer.Export(content,doc);Check(Pixel(square,40,40).B==220,"zero radius keeps square corners");
         Check(Pixel(square,10,10) is {R:255,G:255,B:255},"solid backdrop uses its colour");
+        doc.SetExportScale(2);Check(BackdropRenderer.Export(content,doc).PixelWidth==(200+2*40)*2,"export scale doubles the framed output");doc.Undo();
         doc.SetExportScale(.5);Check(BackdropRenderer.Export(content,doc).PixelWidth==(200+2*40)/2,"export scale halves the framed output");doc.Undo();
         doc.Undo();doc.Undo();doc.Undo();Check(!doc.Backdrop.Enabled,"backdrop changes undo back to the plain image");
         // Eyedropper samples the composited image and computes contrast between the two picks.
