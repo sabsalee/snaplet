@@ -11,7 +11,7 @@ public static class PixelEffects
             int i = (y * width + x) * 4; bgra[i] = color.B; bgra[i + 1] = color.G; bgra[i + 2] = color.R; bgra[i + 3] = color.A;
         }
     }
-    /// <param name="seed">Nonzero adds a small per-block colour offset derived from it, so identical text no longer produces identical blocks that can be matched against guesses.</param>
+    /// <param name="seed">Nonzero adds a small per-block brightness offset derived from it, so identical text no longer produces identical blocks that can be matched against guesses.</param>
     public static void Pixelate(Span<byte> bgra, int width, int height, RectD region, int blockSize = 12, int seed = 0)
     {
         if (blockSize < 1 || blockSize > 4096) throw new ArgumentOutOfRangeException(nameof(blockSize));
@@ -36,8 +36,10 @@ public static class PixelEffects
         {
             uint h = (uint)seed ^ (uint)x * 73856093u ^ (uint)y * 19349663u;
             h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15; h *= 0x2545f491u; h ^= h >> 13;
-            byte Shift(byte value, int bits) => (byte)Math.Clamp(value + (int)(h >> bits & 31) - 15, 0, 255);
-            return new(Shift(color.R, 0), Shift(color.G, 8), Shift(color.B, 16), color.A);
+            // The same offset on every channel changes brightness only, so gray text stays gray.
+            int offset = (int)(h & 31) - 15;
+            byte Shift(byte value) => (byte)Math.Clamp(value + offset, 0, 255);
+            return new(Shift(color.R), Shift(color.G), Shift(color.B), color.A);
         }
     }
     public static void Blur(Span<byte> bgra, int width, int height, RectD region, int radius = 10)

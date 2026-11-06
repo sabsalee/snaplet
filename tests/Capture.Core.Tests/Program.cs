@@ -102,6 +102,7 @@ Check(seededA.SequenceEqual(seededAgain), "A seed gives the same blocks every ti
 Check(!seededA.SequenceEqual(seededB) && !seededA.SequenceEqual(flatGray), "Different seeds give different blocks.");
 var seededMax = seededA.Where((_, i) => i % 4 != 3).Max(); var seededMin = seededA.Where((_, i) => i % 4 != 3).Min();
 Check(seededMax <= 135 && seededMin >= 105, "The seeded offset stays small.");
+Check(Enumerable.Range(0, 64).All(i => seededA[i * 4] == seededA[i * 4 + 1] && seededA[i * 4 + 1] == seededA[i * 4 + 2]), "The seeded offset keeps gray pixels gray.");
 var arBounds = new RectD(0, 0, 100, 100);
 Check(AspectMath.FromDrag(new(10, 10), new(50, 20), 2, arBounds) == new RectD(10, 10, 40, 20), "Dragging keeps the crop ratio.");
 Check(AspectMath.FromDrag(new(50, 50), new(10, 40), 1, arBounds) == new RectD(10, 10, 40, 40), "Dragging up and left keeps the fixed corner.");
