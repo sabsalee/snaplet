@@ -20,6 +20,7 @@ internal sealed class SettingsWindow : Window
     private readonly UpdateService updates;
     private readonly Action? restartUpdate;
     private readonly TextBox folder,fileName;
+    private readonly ComboBox textFont;
     private readonly ContentControl page=new();
     private readonly TextBlock error=Ui.Label("",11,Ui.Brush("WarningBrush"));
     private readonly Dictionary<string,Button> navigation=[];
@@ -37,6 +38,9 @@ internal sealed class SettingsWindow : Window
         windowStyle=new ComboBox{MinWidth=150,VerticalAlignment=VerticalAlignment.Center,ItemsSource=new[]{"그대로","투명 여백 + 그림자","그라데이션 배경"},SelectedIndex=(int)settings.WindowStyle};AutomationProperties.SetName(windowStyle,"창 캡처 모양");
         escape=new ComboBox{MinWidth=150,VerticalAlignment=VerticalAlignment.Center,ItemsSource=new[]{"아무것도 안 함","이미지 복사","이미지 저장"},SelectedIndex=(int)settings.EscapeAction};AutomationProperties.SetName(escape,"Esc로 편집창을 닫을 때");
         folder=new TextBox{Text=settings.SaveFolder,MinWidth=100,TextWrapping=TextWrapping.Wrap};AutomationProperties.SetName(folder,"저장 폴더 경로");
+        textFont=new ComboBox{MinWidth=190,VerticalAlignment=VerticalAlignment.Center};AutomationProperties.SetName(textFont,"기본 글꼴");
+        textFont.Items.Add(Capture.Windows.Editor.TextFonts.Preferred);foreach(var name in Capture.Windows.Editor.TextFonts.Installed.Where(n=>!n.Equals(Capture.Windows.Editor.TextFonts.Preferred,StringComparison.OrdinalIgnoreCase)))textFont.Items.Add(name);
+        textFont.SelectedItem=string.IsNullOrWhiteSpace(settings.DefaultTextFont)?Capture.Windows.Editor.TextFonts.Preferred:settings.DefaultTextFont;if(textFont.SelectedIndex<0)textFont.SelectedIndex=0;
         fileName=new TextBox{Text=settings.FileNameTemplate,MinWidth=230,VerticalAlignment=VerticalAlignment.Center};AutomationProperties.SetName(fileName,"저장 파일 이름 규칙");
         var root=new DockPanel{Background=Ui.Page};Content=root;
         var footer=new DockPanel{Margin=new Thickness(22,14,22,18)};DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
@@ -63,6 +67,8 @@ internal sealed class SettingsWindow : Window
     private UIElement CapturePage()
     {
         var p=Section("캡처 후 동작","필요한 작업만 켜 두세요. 각각 독립적으로 동작합니다.");
+        var fontNote=Capture.Windows.Editor.TextFonts.IsInstalled(Capture.Windows.Editor.TextFonts.Preferred)?"글자 도구의 기본 글꼴입니다.":"글자 도구의 기본 글꼴입니다. Noto Sans KR이 설치되어 있지 않으면 맑은 고딕으로 표시합니다.";
+        p.Children.Add(Row("기본 글꼴",fontNote,textFont));
         p.Children.Add(Row("캡처 후 표시","작은 팝업은 마우스 포인터 옆에 편집·복사·저장·고정 버튼을 띄우고, 포커스를 가져가지 않아 바로 다른 앱에 붙여넣을 수 있습니다.",afterCapture));
         p.Children.Add(Row("클립보드에 자동 복사","캡처가 끝나면 다른 앱에 바로 붙여넣을 수 있습니다.",copy));
         p.Children.Add(Row("파일로 자동 저장","캡처 원본을 저장 페이지에서 정한 폴더에 남깁니다.",save));
@@ -164,7 +170,7 @@ internal sealed class SettingsWindow : Window
         try {
             if(!Path.IsPathFullyQualified(folder.Text))throw new InvalidOperationException("저장 폴더를 전체 경로로 입력해 주세요.");
             if(keys.Where(k=>k.Assigned).GroupBy(k=>(k.Key,k.Modifiers)).Any(g=>g.Count()>1))throw new InvalidOperationException("같은 단축키를 두 작업에 지정할 수 없습니다.");
-            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,AfterCapture=(AfterCaptureAction)Math.Max(0,afterCapture.SelectedIndex),CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,FileNameTemplate=fileName.Text,LaunchAtLogin=launchAtLogin.IsChecked==true,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,KeepHistoryOnDisk=keepHistory.IsChecked==true,EnableDeepLinks=deepLinks.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
+            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,AfterCapture=(AfterCaptureAction)Math.Max(0,afterCapture.SelectedIndex),CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,FileNameTemplate=fileName.Text,DefaultTextFont=(string?)textFont.SelectedItem??"",LaunchAtLogin=launchAtLogin.IsChecked==true,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,KeepHistoryOnDisk=keepHistory.IsChecked==true,EnableDeepLinks=deepLinks.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
         }catch(Exception ex){error.Text=ex.Message;}
     }
 }

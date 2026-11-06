@@ -23,6 +23,7 @@ public sealed class EditorWindow : Window
     private readonly Grid stage=new();
     private readonly Canvas textLayer=new();
     private readonly Border backdropFrame=new();
+    private Button? backdropButton;
     private readonly Border backdropShadow=new() {Background=Brushes.Black};
     private readonly StackPanel propertyRow=new() {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
     private readonly WrapPanel propertyDetails=new() {MaxWidth=470,Margin=new Thickness(2,4,2,2)};
@@ -87,6 +88,7 @@ public sealed class EditorWindow : Window
         ToolButton(actions,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
         Divider(actions);
         FileDragButton(actions);
+        backdropButton=ToolButton(actions,"backdrop","배경 꾸미기 · 여백·그라데이션·그림자·둥근 모서리",()=>{});backdropButton.Click+=(_,_)=>ShowBackdrop(backdropButton);
         Divider(actions);
         var info=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,8,0)};DockPanel.SetDock(info,Dock.Right);toolbar.Children.Add(info);
         var hoverValue=new StackPanel {Orientation=Orientation.Horizontal};hoverValue.Children.Add(hoverSwatch);hoverValue.Children.Add(hoverHex);
@@ -108,7 +110,7 @@ public sealed class EditorWindow : Window
         var toolStrip=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
         toolbar.Children.Add(new ScrollViewer {Content=toolStrip,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
         void Tool(string glyph,string tip,AnnotationKind? kind) {var b=ToolButton(toolStrip,glyph,tip,()=>SetTool(kind));toolButtons.Add((kind,b));}
-        Tool("↖","선택 · V",null);Tool("➜","화살표 · A",AnnotationKind.Arrow);Tool("T","텍스트 / 말풍선 · T",AnnotationKind.Text);
+        Tool("↖","선택 · V",null);Tool("➜","화살표 · A",AnnotationKind.Arrow);Tool("T","글자 · T",AnnotationKind.Text);
         Tool("▢","사각형 · R",AnnotationKind.Rectangle);Tool("▧","모자이크 가림 · M",AnnotationKind.Pixelate);Tool("✎","펜 · P",AnnotationKind.Pen);
         foreach(var kind in MoreTools)Tool(ToolGlyph(kind),ToolTipOf(kind),kind);
         var inlineTools=toolButtons.Count;
@@ -146,6 +148,8 @@ public sealed class EditorWindow : Window
         stage.HorizontalAlignment=HorizontalAlignment.Left;stage.VerticalAlignment=VerticalAlignment.Top;
         backdropShadow.HorizontalAlignment=HorizontalAlignment.Left;backdropShadow.VerticalAlignment=VerticalAlignment.Top;backdropShadow.IsHitTestVisible=false;
         var frameGrid=new Grid();frameGrid.Children.Add(backdropShadow);frameGrid.Children.Add(stage);backdropFrame.Child=frameGrid;
+        // A ScrollViewer stretches its content: without these the backdrop fills the whole view and the image sits in its top-left corner.
+        backdropFrame.HorizontalAlignment=HorizontalAlignment.Center;backdropFrame.VerticalAlignment=VerticalAlignment.Center;
         scroll=new ScrollViewer {Content=backdropFrame,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
         // Floating, icon-only property panel at the top right below the toolbar; it overlays the canvas instead of shifting it.
         var panel=new StackPanel();panel.Children.Add(propertyRow);panel.Children.Add(propertyDetails);
@@ -247,7 +251,11 @@ public sealed class EditorWindow : Window
     /// <summary>Drag the edited image out as a PNG file, like the file handle in the reference toolbar.</summary>
     private void FileDragButton(Panel parent)
     {
-        var button=ToolButton(parent,"🗎","파일로 드래그 · 다른 앱이나 폴더에 놓기",()=>status.Text="이 버튼을 끌어 다른 앱이나 폴더에 PNG 파일로 놓으세요.");
+        var button=ToolButton(parent,"file","끌어서 파일로 놓기 · 다른 앱이나 폴더에 PNG로 전달",()=>status.Text="이 손잡이를 끌어 다른 앱이나 폴더에 PNG 파일로 놓으세요.");
+        var handle=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
+        var glyph=button.Content as UIElement;button.Content=handle;
+        handle.Children.Add(Ui.Grip());if(glyph!=null)handle.Children.Add(glyph);handle.Children.Add(Ui.Grip());
+        button.Cursor=Cursors.SizeAll;
         Point? pressed=null;
         button.PreviewMouseLeftButtonDown+=(_,e)=>pressed=e.GetPosition(button);
         button.PreviewMouseLeftButtonUp+=(_,_)=>pressed=null;
@@ -313,11 +321,16 @@ public sealed class EditorWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(moreToolSlot,ToolTipOf(kind).Split('·')[0].Trim());
     }
 
+    /// <summary>Test hook: the backdrop preview's size, which must equal the image plus the padding on each side.</summary>
+    internal Size BackdropFrameSize=>new(backdropFrame.ActualWidth,backdropFrame.ActualHeight);
+    internal double SurfaceZoom=>surface.Zoom;
+    internal void SetBackdropForTest(Backdrop backdrop)=>document.SetBackdrop(backdrop);
     private void SyncStage(){stage.Width=surface.Width;stage.Height=surface.Height;SyncBackdrop();}
     /// <summary>Live backdrop preview around the canvas, scaled with zoom. Export uses <see cref="BackdropRenderer"/> with the same values.</summary>
     private void SyncBackdrop()
     {
         var b=document.Backdrop;var z=surface.Zoom;
+        if(backdropButton!=null){if(b.Enabled)backdropButton.SetResourceReference(BackgroundProperty,"SelectedToolBrush");else backdropButton.ClearValue(BackgroundProperty);}
         if(!b.Enabled){backdropFrame.Padding=new Thickness(0);backdropFrame.Background=null;backdropShadow.Visibility=Visibility.Collapsed;surface.Clip=null;return;}
         backdropFrame.Padding=new Thickness(b.PaddingPixels*z);
         backdropFrame.Background=b.Fill==BackdropFill.Transparent?CheckerBrush():BackdropRenderer.Fill(b);
@@ -325,7 +338,7 @@ public sealed class EditorWindow : Window
         surface.Clip=radius>0?new RectangleGeometry(new Rect(0,0,surface.Width,surface.Height),radius,radius):null;
         backdropShadow.Visibility=b.Shadow>0?Visibility.Visible:Visibility.Collapsed;
         backdropShadow.Width=surface.Width;backdropShadow.Height=surface.Height;backdropShadow.CornerRadius=new CornerRadius(radius);
-        backdropShadow.Margin=new Thickness(0,BackdropRenderer.ShadowOffset(b)*z,0,0);backdropShadow.Opacity=BackdropRenderer.ShadowOpacity(b);
+        backdropShadow.RenderTransform=new TranslateTransform(0,BackdropRenderer.ShadowOffset(b)*z);backdropShadow.Opacity=BackdropRenderer.ShadowOpacity(b);
         backdropShadow.Effect=new System.Windows.Media.Effects.BlurEffect{Radius=BackdropRenderer.ShadowBlur(b)*z};
     }
     private static Brush? checker;
@@ -610,8 +623,15 @@ public sealed class EditorWindow : Window
             if(kind==AnnotationKind.Rectangle || kind==AnnotationKind.Text && surface.InkStyle.Bubble)
                 ValueSlider("모서리 둥글기",0,48,surface.InkStyle.CornerRadius,value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
             if(kind==AnnotationKind.Text) {
-                Segment(FillIcon(ShapeFill.Solid,false,icon,bubble:true),"말풍선",surface.InkStyle.Bubble,()=>surface.InkStyle=surface.InkStyle with {Bubble=true});
-                Segment(LetterIcon(icon),"일반 글자",!surface.InkStyle.Bubble,()=>surface.InkStyle=surface.InkStyle with {Bubble=false});
+                Segment(LetterIcon(icon),"글자만",!surface.InkStyle.Bubble,()=>surface.InkStyle=surface.InkStyle with {Bubble=false,ShowTail=false});
+                Segment(FillIcon(ShapeFill.Solid,false,icon),"배경 있는 글자",surface.InkStyle.Bubble && !surface.InkStyle.ShowTail,()=>surface.InkStyle=surface.InkStyle with {Bubble=true,ShowTail=false});
+                Segment(FillIcon(ShapeFill.Solid,false,icon,bubble:true),"말풍선 · 말꼬리 있음",surface.InkStyle.Bubble && surface.InkStyle.ShowTail,()=>surface.InkStyle=surface.InkStyle with {Bubble=true,ShowTail=true});
+                var font=new ComboBox {Width=132,Margin=new Thickness(4,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="글꼴"};
+                System.Windows.Automation.AutomationProperties.SetName(font,"글꼴");
+                font.Items.Add($"기본 ({TextFonts.DefaultName})");foreach(var name in TextFonts.Installed)font.Items.Add(name);
+                var chosen=surface.InkStyle.FontFamily;font.SelectedIndex=chosen is null?0:Math.Max(0,font.Items.IndexOf(chosen));
+                font.SelectionChanged+=(_,_)=>{surface.InkStyle=surface.InkStyle with {FontFamily=font.SelectedIndex<=0?null:(string)font.SelectedItem};surface.ApplyStyle();};
+                propertyRow.Children.Add(font);
                 if(a!=null){var edit=ToolButton(propertyDetails,"✎","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));edit.Height=32;}
             }
             if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Step || kind==AnnotationKind.Text && surface.InkStyle.Bubble) {
@@ -744,7 +764,7 @@ public sealed class EditorWindow : Window
     {
         if(!FinishTextEdit(true))return;if(textEditor!=null)return;surface.CancelGesture();selectionBeforeTextEdit=surface.Selected;editingText=a;newText=create;composingText=false;surface.Selected=create?null:a.Id;
         surface.SetTextEditing(create?null:a.Id);
-        textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=a.Text,MaxLength=8192,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
+        textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=a.Text,MaxLength=8192,FontFamily=TextFonts.For(a.Appearance.FontFamily),AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
             Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=a.Appearance.Bubble?ImageRenderer.BrushOf(a.Color):Brushes.Transparent,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
         textLayer.Children.Add(textEditor);UpdateTextEditorLayout();
         textEditor.TextChanged+=(_,_)=>UpdateTextEditorLayout();
@@ -970,7 +990,7 @@ public sealed class EditorWindow : Window
     }
     public void AddCapturedImage(BitmapSource image)
     {
-        if(!FinishTextEdit(true))return;surface.CancelGesture();surface.InsertImage(image);status.Text="이미지를 추가했습니다 · 핸들로 크기 조절 · Ctrl+Z 취소";
+        if(!FinishTextEdit(true))return;surface.CancelGesture();surface.InsertImage(image);status.Text="이미지를 추가했습니다 · 큰 이미지는 캡처 크기에 맞춰 줄입니다 · 핸들로 크기 조절 · Ctrl+Z 취소";
     }
     private void PasteImage()
     {

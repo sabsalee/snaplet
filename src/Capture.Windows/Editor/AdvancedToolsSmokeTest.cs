@@ -109,20 +109,21 @@ internal static class AdvancedToolsSmokeTest
             var larger = Sheet(160, 120, new(38, 190, 115));
             window.AddCapturedImage(larger);
             check(insertionDoc.Annotations.Count == 1 && insertionDoc.Annotations[0].Kind == AnnotationKind.Image, "capture insertion creates an editable image object in the same document");
-            check(insertionDoc.Canvas == new RectD(-20, -10, 160, 120) && insertionDoc.Crop == insertionDoc.Canvas, "larger inserted capture expands the canvas into negative source coordinates");
+            check(insertionDoc.Canvas == new RectD(0, 0, 120, 100) && insertionDoc.Crop == insertionDoc.Canvas, "larger inserted capture leaves the canvas alone");
+            check(insertionDoc.Annotations[0].Bounds == new RectD(0, 5, 120, 90), "larger inserted capture shrinks to fit, centered, keeping its aspect");
             var expanded = ImageRenderer.Render(white, insertionDoc);
-            check(expanded.PixelWidth == 160 && expanded.PixelHeight == 120 && Pixel(expanded, 5, 5).G == 190, "expanded image export preserves native inserted pixel dimensions and origin");
+            check(expanded.PixelWidth == 120 && expanded.PixelHeight == 100 && Pixel(expanded, 5, 50).G == 190, "export keeps the capture's size with the fitted image inside it");
             insertionDoc.Undo();
-            check(insertionDoc.Annotations.Count == 0 && insertionDoc.Canvas == new RectD(0, 0, 120, 100), "one undo removes both the inserted capture and its canvas expansion");
+            check(insertionDoc.Annotations.Count == 0 && insertionDoc.Canvas == new RectD(0, 0, 120, 100), "one undo removes the inserted capture");
             insertionDoc.Redo();
-            check(Bytes(ImageRenderer.Render(white, insertionDoc)).SequenceEqual(Bytes(expanded)), "redo restores inserted pixels and expanded canvas exactly");
+            check(Bytes(ImageRenderer.Render(white, insertionDoc)).SequenceEqual(Bytes(expanded)), "redo restores inserted pixels exactly");
             var duplicateSurface=new EditorSurface(white,insertionDoc) {Selected=insertionDoc.Annotations[0].Id};
             duplicateSurface.DuplicateSelected();
-            check(insertionDoc.Canvas.Right==156 && insertionDoc.Canvas.Bottom==126,"duplicating an edge image expands the canvas for its offset");
-            insertionDoc.Undo();check(insertionDoc.Annotations.Count==1 && insertionDoc.Canvas==new RectD(-20,-10,160,120),"duplicate canvas expansion undoes together with the image object");
+            check(insertionDoc.Canvas==new RectD(0,0,120,100),"duplicating an edge image does not grow the canvas");
+            insertionDoc.Undo();check(insertionDoc.Annotations.Count==1,"one undo removes the duplicate image");
             insertionDoc.Add(new(Guid.NewGuid(), AnnotationKind.Solid, new(10, 10), new(30, 30), red));
             window.AddCapturedImage(Sheet(160, 120, new(25, 80, 230)));
-            check(Pixel(ImageRenderer.Render(white, insertionDoc), 40, 30).R == red.R, "new inserted captures remain below existing vector annotations");
+            check(Pixel(ImageRenderer.Render(white, insertionDoc), 20, 20).R == red.R, "new inserted captures remain below existing vector annotations");
         }
         finally { window.CloseForExit(); }
         var textDoc=new EditableDocument(120,100);var area=new Annotation(Guid.NewGuid(),AnnotationKind.Erase,new(25,25),new(90,75),red);textDoc.Add(area);
@@ -187,7 +188,7 @@ internal static class AdvancedToolsSmokeTest
                 p.DrawLine(new Pen(ImageRenderer.BrushOf(blue), 3), new(270, 70), new(280, 80));
                 p.DrawLine(new Pen(ImageRenderer.BrushOf(blue), 3), new(270, 90), new(280, 80));
             });
-            Card(0, 2, "Paste Image / Add Capture", "Movable image objects · native pixels · growing canvas", p =>
+            Card(0, 2, "Paste Image / Add Capture", "Movable image objects · fits the capture", p =>
             {
                 var sheet = Sheet(530, 165); var doc = new EditableDocument(530, 165);
                 doc.Add(new(Guid.NewGuid(), AnnotationKind.Image, new(18, 15), new(250, 150), blue, Image: ImageRenderer.RasterOf(grid)));
