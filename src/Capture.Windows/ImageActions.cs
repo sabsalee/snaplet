@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using Capture.Core;
 
 namespace Capture.Windows;
 internal static class ImageActions
@@ -22,7 +23,22 @@ internal static class ImageActions
             catch(ExternalException) when(attempt<4) {await Task.Delay(50*(attempt+1));}
         }
     }
-    public static string DefaultName()=>"Snaplet-"+DateTime.Now.ToString("yyyyMMdd-HHmmss-fff")+"-"+Guid.NewGuid().ToString("N")[..4]+".png";
+    /// <summary>Current file name template; the app sets it from settings.</summary>
+    public static string NameTemplate {get;set;}=FileNameTemplate.Default;
+    public static string DefaultName()=>FileNameTemplate.Render(NameTemplate,DateTime.Now,Guid.NewGuid().ToString("N")[..4])+".png";
+    /// <summary>Where an image lands on a page: centered, shrunk to fit, never enlarged. Sizes in device-independent units.</summary>
+    internal static Rect PrintBounds(double width,double height,double pageWidth,double pageHeight) {
+        var scale=Math.Min(1,Math.Min(pageWidth/Math.Max(1,width),pageHeight/Math.Max(1,height)));
+        return new((pageWidth-width*scale)/2,(pageHeight-height*scale)/2,width*scale,height*scale);
+    }
+    public static void Print(BitmapSource image,Window owner) {
+        var dialog=new System.Windows.Controls.PrintDialog();
+        if(dialog.ShowDialog()!=true)return;
+        var width=image.PixelWidth*96/Math.Max(1,image.DpiX);var height=image.PixelHeight*96/Math.Max(1,image.DpiY);
+        var visual=new DrawingVisual();
+        using(var dc=visual.RenderOpen())dc.DrawImage(image,PrintBounds(width,height,dialog.PrintableAreaWidth,dialog.PrintableAreaHeight));
+        dialog.PrintVisual(visual,"Snaplet");
+    }
     public static string? SaveDialog(BitmapSource image,Window? owner=null) {
         var dialog=new SaveFileDialog { FileName=DefaultName(),Filter="PNG 이미지|*.png|JPEG 이미지|*.jpg",DefaultExt=".png",AddExtension=true };
         if((owner is null?dialog.ShowDialog():dialog.ShowDialog(owner))!=true)return null;

@@ -135,6 +135,13 @@ public static class EditorSmokeTest
             ClickTool("화살표 · A");
             Check(editingSurface.Thickness==7 && editingSurface.Ink==new ColorRgba(35,90,210) && editingSurface.InkStyle.ArrowHead==ArrowHead.Open,"switching tools restores that tool's color size and style");
             editingSurface.Selected=pointer.Id;
+            window.ZoomToCorner(true);Check(editingSurface.Zoom>=4,"corner zoom looks closely at the selected object");
+            window.QuickZoom();Check(editingSurface.Zoom<4,"quick zoom returns to the fitted view");
+            var quick=editingSurface.Zoom;window.QuickZoom();Check(editingSurface.Zoom!=quick || Math.Abs(quick-2)<.001,"quick zoom jumps to 200%");window.QuickZoom();
+            var page=ImageActions.PrintBounds(2000,1000,800,1000);
+            Check(Math.Abs(page.Width-800)<.001 && Math.Abs(page.Height-400)<.001 && Math.Abs(page.Y-300)<.001,"printing shrinks a wide image to the page and centers it");
+            var small=ImageActions.PrintBounds(100,50,800,1000);
+            Check(small.Width==100 && small.Height==50 && small.X==350,"printing never enlarges a small image");
             var beforeNumber=rich.Annotations.Single(a=>a.Id==pointer.Id).Text;
             foreach(var digit in new[]{"4","2"}) {
                 var composition=new TextComposition(InputManager.Current,editingSurface,digit);

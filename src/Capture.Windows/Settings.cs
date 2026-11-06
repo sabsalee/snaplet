@@ -47,6 +47,8 @@ public sealed record AppSettings
     public bool TrayNoticeShown {get;init;}
     public WindowCaptureStyle WindowStyle {get;init;}=WindowCaptureStyle.Plain;
     public string SaveFolder {get;init;}=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Snaplet");
+    /// <summary>File name template for saved images; see <see cref="Capture.Core.FileNameTemplate"/>.</summary>
+    public string FileNameTemplate {get;init;}=Capture.Core.FileNameTemplate.Default;
     public List<HotkeyBinding> Hotkeys {get;init;}=DefaultHotkeys();
 
     /// <summary>Every command that can own a global shortcut, in display order. New commands start unassigned to avoid stealing keys from other apps.</summary>
@@ -119,7 +121,7 @@ internal static class SettingsStore
         var windowStyle=Enum.IsDefined(stored.WindowStyle)?stored.WindowStyle:WindowCaptureStyle.Plain;
         // Files without SchemaVersion deserialize with the current one, so the legacy field itself marks an old file.
         var after=stored.ShowPreview==false?AfterCaptureAction.None:Enum.IsDefined(stored.AfterCapture)?stored.AfterCapture:AfterCaptureAction.Popup;
-        return stored with{SchemaVersion=AppSettings.CurrentSchema,Hotkeys=hotkeys,SaveFolder=folder,EscapeAction=escape,WindowStyle=windowStyle,AfterCapture=after,ShowPreview=null};
+        return stored with{SchemaVersion=AppSettings.CurrentSchema,Hotkeys=hotkeys,SaveFolder=folder,FileNameTemplate=string.IsNullOrWhiteSpace(stored.FileNameTemplate)?Capture.Core.FileNameTemplate.Default:stored.FileNameTemplate,EscapeAction=escape,WindowStyle=windowStyle,AfterCapture=after,ShowPreview=null};
     }
 
     public static void Save(AppSettings settings) {
