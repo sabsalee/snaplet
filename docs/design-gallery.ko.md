@@ -50,7 +50,7 @@ Windows CI의 실제 WPF 렌더러에서 합성 데이터로 생성한 화면입
 
 ## 추가 편집 도구
 
-![돋보기·Spotlight·형광펜·Erase·이미지 구성](screenshots/advanced-tools.png)
+![돋보기·Spotlight·형광펜·이미지 구성](screenshots/advanced-tools.png)
 
 [추가 도구 사용법](advanced-tools.ko.md)
 

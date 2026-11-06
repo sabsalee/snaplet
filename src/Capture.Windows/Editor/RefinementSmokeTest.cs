@@ -124,7 +124,7 @@ internal static class RefinementSmokeTest
         }
         var source=BitmapSource.Create(width,height,96,96,PixelFormats.Bgra32,null,bytes,width*4);source.Freeze();
         var timings=new List<object>();
-        foreach(var kind in new[]{AnnotationKind.Pixelate,AnnotationKind.Blur,AnnotationKind.Erase}) {
+        foreach(var kind in new[]{AnnotationKind.Pixelate,AnnotationKind.Blur}) {
             var effect=new Annotation(Guid.NewGuid(),kind,new(80,80),new(820,520),new(240,65,70),6);
             var document=new EditableDocument(width,height);document.Add(effect);
             var exactBefore=Pixels(ImageRenderer.Render(source,document));

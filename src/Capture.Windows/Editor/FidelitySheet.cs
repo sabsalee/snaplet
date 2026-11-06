@@ -89,7 +89,6 @@ internal static class FidelitySheet
         Scene("s7-effects",d=>{
             d.Add(A(AnnotationKind.Blur,80,380,300,560,red));
             d.Add(A(AnnotationKind.Pixelate,340,380,560,560,red));
-            d.Add(A(AnnotationKind.Erase,600,380,880,560,red));
             d.Add(new Annotation(Guid.NewGuid(),AnnotationKind.Magnifier,new(560,90),new(800,250),EditorPresets.For(AnnotationKind.Magnifier)[0].Color,EditorPresets.For(AnnotationKind.Magnifier)[0].Size,SampleRegion:new RectD(400,100,80,53),Style:EditorPresets.For(AnnotationKind.Magnifier)[0].Style));
         });
         Scene("s7-spotlight",d=>d.Add(A(AnnotationKind.Spotlight,520,60,900,280,EditorPresets.For(AnnotationKind.Spotlight)[0])));

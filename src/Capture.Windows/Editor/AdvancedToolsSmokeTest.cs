@@ -81,21 +81,10 @@ internal static class AdvancedToolsSmokeTest
         var textPixels = Enumerable.Repeat((byte)255, 120 * 100 * 4).ToArray();
         for (int y = 35; y < 60; y++) for (int x = 35; x < 70; x++)
             if ((x / 4) % 2 == 0 || y > 55) Set(textPixels, 120, x, y, new(15, 20, 25));
-        var textSheet = Bitmap(textPixels, 120, 100); var eraseDoc = new EditableDocument(120, 100);
-        eraseDoc.Add(new(Guid.NewGuid(), AnnotationKind.Erase, new(30, 30), new(75, 65), red));
-        var erased = ImageRenderer.Render(textSheet, eraseDoc);
-        check(Pixel(erased, 40, 40) == (255, 255, 255, 255) && Pixel(erased, 50, 58) == (255, 255, 255, 255), "erase renderer reconstructs a white background over screenshot text");
-        check(Pixel(erased, 20, 20) == Pixel(textSheet, 20, 20), "erase renderer preserves pixels outside its selection");
-        eraseDoc.Undo(); check(Pixel(ImageRenderer.Render(textSheet, eraseDoc), 40, 40).R == 15, "undo erase restores original text pixels");
-        eraseDoc.Redo(); check(Pixel(ImageRenderer.Render(textSheet, eraseDoc), 40, 40).R == 255, "redo reapplies erase without mutating the original source");
-        check(Pixel(textSheet, 40, 40).R == 15, "erase never changes the captured bitmap asset");
-        var fullErase = new EditableDocument(120, 100); fullErase.Add(new(Guid.NewGuid(), AnnotationKind.Erase, new(0, 0), new(120, 100), red));
-        check(Bytes(ImageRenderer.Render(textSheet, fullErase)).SequenceEqual(Bytes(textSheet)), "entire-image erase retains content when no surrounding background exists");
-        var compositedErase = new EditableDocument(120, 100);
-        compositedErase.Add(new(Guid.NewGuid(), AnnotationKind.Image, new(0, 0), new(120, 100), red, Image: ImageRenderer.RasterOf(textSheet)));
-        compositedErase.Add(eraseDoc.Annotations[0]);
-        check(Pixel(ImageRenderer.Render(white, compositedErase), 40, 40).R == 255, "erase samples the composited pasted image background");
-        var compositedBlur = new EditableDocument(120, 100); compositedBlur.Add(compositedErase.Annotations[0]);
+        var textSheet = Bitmap(textPixels, 120, 100); 
+        var compositedImage = new EditableDocument(120, 100);
+        compositedImage.Add(new(Guid.NewGuid(), AnnotationKind.Image, new(0, 0), new(120, 100), red, Image: ImageRenderer.RasterOf(textSheet)));
+        var compositedBlur = new EditableDocument(120, 100); compositedBlur.Add(compositedImage.Annotations[0]);
         compositedBlur.Add(new(Guid.NewGuid(), AnnotationKind.Blur, new(30, 30), new(75, 65), red, 5));
         var blurredPixel = Pixel(ImageRenderer.Render(white, compositedBlur), 40, 40);
         check(blurredPixel.R > 20 && blurredPixel.R < 245, "blur processes pasted screenshot pixels instead of the white base capture");
@@ -126,11 +115,11 @@ internal static class AdvancedToolsSmokeTest
             check(Pixel(ImageRenderer.Render(white, insertionDoc), 20, 20).R == red.R, "new inserted captures remain below existing vector annotations");
         }
         finally { window.CloseForExit(); }
-        var textDoc=new EditableDocument(120,100);var area=new Annotation(Guid.NewGuid(),AnnotationKind.Erase,new(25,25),new(90,75),red);textDoc.Add(area);
+        var textDoc=new EditableDocument(120,100);var area=new Annotation(Guid.NewGuid(),AnnotationKind.Blur,new(25,25),new(90,75),red);textDoc.Add(area);
         var textWindow=new EditorWindow(textSheet,textDoc);
         try {
             var selected=textDoc.Annotations[0];textWindow.ApplyTextRegions(selected,selected.Bounds,new[]{new Rect(8,8,12,26),new Rect(28,8,16,26)});
-            check(textDoc.Annotations.Count==2 && textDoc.Annotations.All(a=>a.Kind==AnnotationKind.Erase && a.Bounds.Width<area.Bounds.Width),"OCR text-only conversion keeps effects within detected word rectangles");
+            check(textDoc.Annotations.Count==2 && textDoc.Annotations.All(a=>a.Kind==AnnotationKind.Blur && a.Bounds.Width<area.Bounds.Width),"OCR text-only conversion keeps effects within detected word rectangles");
             textDoc.Undo();check(textDoc.Annotations.Count==1 && textDoc.Annotations[0].Id==area.Id,"one undo restores the original area effect after text-only conversion");
             textWindow.ApplyTextRegions(textDoc.Annotations[0],area.Bounds,Array.Empty<Rect>());
             check(textDoc.Annotations.Count==1 && textDoc.Annotations[0].Id==area.Id,"empty text detection leaves the existing effect unchanged");
@@ -178,15 +167,6 @@ internal static class AdvancedToolsSmokeTest
                 for (int i = 0; i < 3; i++) doc.Add(new(Guid.NewGuid(), AnnotationKind.Highlight, new(30, 30 + i * 45), new(230, 30 + i * 45), new(255, 184, 32), 5, Style: new(MarkerCap: (MarkerCap)i)));
                 doc.Add(new(Guid.NewGuid(), AnnotationKind.Highlight, new(290, 120), new(490, 120), new(58, 189, 153), 6, Points: new[] { new PointD(290, 120), new PointD(340, 40), new PointD(395, 105), new PointD(445, 35), new PointD(490, 120) }, Style: new(HighlightShape: MarkerShape.Freehand, MarkerCap: MarkerCap.Round)));
                 p.DrawImage(ImageRenderer.Render(sheet, doc), new Rect(0, 0, 530, 165));
-            });
-            Card(1, 1, "Erase", "Local background reconstruction · undo keeps the source", p =>
-            {
-                p.DrawImage(textSheet, new Rect(20, 10, 190, 150));
-                var doc = new EditableDocument(120, 100); doc.Add(new(Guid.NewGuid(), AnnotationKind.Erase, new(30, 30), new(75, 65), red));
-                p.DrawImage(ImageRenderer.Render(textSheet, doc), new Rect(315, 10, 190, 150));
-                p.DrawLine(new Pen(ImageRenderer.BrushOf(blue), 3), new(236, 80), new(280, 80));
-                p.DrawLine(new Pen(ImageRenderer.BrushOf(blue), 3), new(270, 70), new(280, 80));
-                p.DrawLine(new Pen(ImageRenderer.BrushOf(blue), 3), new(270, 90), new(280, 80));
             });
             Card(0, 2, "Paste Image / Add Capture", "Movable image objects · fits the capture", p =>
             {

@@ -64,7 +64,7 @@ public sealed class EditorWindow : Window
     public string? EscapeSaveFolder {get;set;}
     // Secondary tools, shown inline while the toolbar has room. Once it runs out they fold behind ··· from the end,
     // and the last one chosen there takes the slot before ··· like the reference app.
-    private static readonly AnnotationKind[] MoreTools=[AnnotationKind.Blur,AnnotationKind.Erase,AnnotationKind.Highlight,AnnotationKind.Spotlight,AnnotationKind.Step,AnnotationKind.Ellipse,AnnotationKind.Line,AnnotationKind.Magnifier,AnnotationKind.Solid];
+    private static readonly AnnotationKind[] MoreTools=[AnnotationKind.Blur,AnnotationKind.Highlight,AnnotationKind.Spotlight,AnnotationKind.Step,AnnotationKind.Ellipse,AnnotationKind.Line,AnnotationKind.Magnifier,AnnotationKind.Solid];
 
     public EditorWindow(BitmapSource image,EditableDocument? existingDocument=null,bool closeOnDismiss=false)
     {
@@ -305,9 +305,9 @@ public sealed class EditorWindow : Window
         hoverHex.Text=hoverColor is ColorRgba c?PixelProbe.Hex(c):"—";
         hoverSwatch.Fill=hoverColor is ColorRgba fill?new SolidColorBrush(Color.FromRgb(fill.R,fill.G,fill.B)):Brushes.Transparent;
     }
-    private static string ToolGlyph(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"blur",AnnotationKind.Erase=>"erase",AnnotationKind.Highlight=>"highlight",AnnotationKind.Spotlight=>"spotlight",
+    private static string ToolGlyph(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"blur",AnnotationKind.Highlight=>"highlight",AnnotationKind.Spotlight=>"spotlight",
         AnnotationKind.Step=>"①",AnnotationKind.Ellipse=>"○",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"■"};
-    private static string ToolTipOf(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"흐림 · B",AnnotationKind.Erase=>"Erase · E",AnnotationKind.Highlight=>"형광펜 · H",AnnotationKind.Spotlight=>"Spotlight · S",
+    private static string ToolTipOf(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"흐림 · B",AnnotationKind.Highlight=>"형광펜 · H",AnnotationKind.Spotlight=>"Spotlight · S",
         AnnotationKind.Step=>"번호 / 포인터 · N",AnnotationKind.Ellipse=>"타원 · O",AnnotationKind.Line=>"선 · L",AnnotationKind.Magnifier=>"돋보기 · G",_=>"불투명 가림"};
     /// <summary>Test hook: lays the toolbar out for a given width (NaN: its real width), independent of how wide the test machine's screen lets the window grow.</summary>
     internal void LayoutToolbar(double toolbarWidth)=>layoutTools(toolbarWidth);
@@ -556,13 +556,13 @@ public sealed class EditorWindow : Window
                 System.Windows.Automation.AutomationProperties.SetName(presets,"스타일 프리셋");
                 presets.Click+=(_,_)=>ShowPresets(presets,kind.Value);propertyDetails.Children.Add(presets);
             }
-            if(kind is not (AnnotationKind.Image or AnnotationKind.Erase or AnnotationKind.Blur or AnnotationKind.Pixelate)) {
+            if(kind is not (AnnotationKind.Image or AnnotationKind.Blur or AnnotationKind.Pixelate)) {
                 var dot=new System.Windows.Shapes.Ellipse {Width=18,Height=18,Fill=ImageRenderer.BrushOf(surface.Ink with {A=255}),StrokeThickness=1};dot.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"HandleBorderBrush");
                 var color=new Button {Content=dot,ToolTip="색상 / 직접 HEX 입력",Width=32,Height=32,Padding=new Thickness(0),Margin=new Thickness(1,0,1,0),Style=(Style)Application.Current.FindResource("EditorIconButton")};
                 System.Windows.Automation.AutomationProperties.SetName(color,"색상 / 직접 HEX 입력");
                 color.Click+=(_,_)=>ShowColors(color);propertyRow.Children.Add(color);
             }
-            if(kind is not (AnnotationKind.Image or AnnotationKind.Erase)) {
+            if(kind is not AnnotationKind.Image) {
                 var slider=new Slider {Style=(Style)Application.Current.FindResource("WedgeSlider"),Minimum=1,Maximum=20,Value=surface.Thickness,Margin=new Thickness(4,0,6,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="크기 / 굵기 / 효과 강도"};
                 propertyRow.Children.Add(slider);
                 System.Windows.Automation.AutomationProperties.SetName(slider,"크기 / 굵기 / 효과 강도");
@@ -589,7 +589,7 @@ public sealed class EditorWindow : Window
                 Choice(new[]{"마커 선","자유 그리기","사각 영역"},(int)surface.InkStyle.HighlightShape,index=>surface.InkStyle=surface.InkStyle with {HighlightShape=(MarkerShape)index});
                 Choice(new[]{"평평한 마감","둥근 마감","손그림 마감"},(int)surface.InkStyle.MarkerCap,index=>surface.InkStyle=surface.InkStyle with {MarkerCap=(MarkerCap)index});
             }
-            if(a!=null && kind is AnnotationKind.Erase or AnnotationKind.Blur or AnnotationKind.Pixelate) {
+            if(a!=null && kind is AnnotationKind.Blur or AnnotationKind.Pixelate) {
                 var textOnly=new Button {Content="텍스트만 처리",ToolTip="OCR로 찾은 글자 영역만 처리합니다",Margin=new Thickness(5),Padding=new Thickness(8,4,8,4)};
                 textOnly.Click+=async(_,_)=>{textOnly.IsEnabled=false;try{await ProcessTextOnlyAsync(a);}finally{textOnly.IsEnabled=true;}};propertyDetails.Children.Add(textOnly);
             }
@@ -751,7 +751,7 @@ public sealed class EditorWindow : Window
         panel.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){popup.IsOpen=false;anchor.Focus();e.Handled=true;}};
         popup.IsOpen=true;
     }
-    private static string ToolName(AnnotationKind? kind)=>kind switch {AnnotationKind.Magnifier=>"돋보기",AnnotationKind.Spotlight=>"Spotlight",AnnotationKind.Image=>"추가 이미지",AnnotationKind.Erase=>"Erase",AnnotationKind.Arrow=>"화살표",AnnotationKind.Text=>"텍스트",AnnotationKind.Step=>"번호",AnnotationKind.Rectangle=>"사각형",AnnotationKind.Ellipse=>"타원",AnnotationKind.Pen=>"펜",AnnotationKind.Line=>"선",AnnotationKind.Pixelate=>"모자이크",AnnotationKind.Blur=>"흐림",AnnotationKind.Highlight=>"형광펜",_=>"가림"};
+    private static string ToolName(AnnotationKind? kind)=>kind switch {AnnotationKind.Magnifier=>"돋보기",AnnotationKind.Spotlight=>"Spotlight",AnnotationKind.Image=>"추가 이미지",AnnotationKind.Arrow=>"화살표",AnnotationKind.Text=>"텍스트",AnnotationKind.Step=>"번호",AnnotationKind.Rectangle=>"사각형",AnnotationKind.Ellipse=>"타원",AnnotationKind.Pen=>"펜",AnnotationKind.Line=>"선",AnnotationKind.Pixelate=>"모자이크",AnnotationKind.Blur=>"흐림",AnnotationKind.Highlight=>"형광펜",_=>"가림"};
     private void ShowColors(Button anchor)
     {
         var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true};
@@ -871,14 +871,12 @@ public sealed class EditorWindow : Window
         surface.SetZoom(Math.Min(1,Math.Min(Math.Max(1,scroll.ViewportWidth-60)/(document.Crop.Width+pad),Math.Max(1,scroll.ViewportHeight-60)/(document.Crop.Height+pad))));SyncStage();UpdateStatus();
     }
     private bool FitCrop(){if(!surface.FitCropToContent())status.Text="가장자리에 단색 여백이 없습니다.";return true;}
-    private void UpdateCropStatus(){if(surface.PendingCrop is RectD c)status.Text=$"{(surface.CropTool?"자르기":"범위")} {c.Width:0}×{c.Height:0} · 방향키 이동 · Alt+방향키 크기 · [ ] 확장/축소 · A 내용에 맞춤 · Enter 자르기"+(surface.CropTool?"":" · Delete 지우기");}
-    /// <summary>Delete on a range box replaces it with an Erase object, like the reference app's raster erase.</summary>
-    internal bool EraseRegion()
+    private void UpdateCropStatus(){if(surface.PendingCrop is RectD c)status.Text=$"{(surface.CropTool?"자르기":"범위")} {c.Width:0}×{c.Height:0} · 방향키 이동 · Alt+방향키 크기 · [ ] 확장/축소 · A 내용에 맞춤 · Enter 자르기"+(surface.CropTool?"":" · Delete 범위 취소");}
+    /// <summary>Delete on a range box only dismisses the box; it never changes the image.</summary>
+    private bool DismissRegion()
     {
         if(!surface.RegionActive)return false;
-        var style=toolStyles.GetValueOrDefault(AnnotationKind.Erase,(Color:new ColorRgba(240,65,70,255),Size:4d*PresetScale,Style:new AnnotationStyle()));
-        if(!surface.ApplyRegionEffect(AnnotationKind.Erase,style.Color,style.Size,style.Style))return false;
-        status.Text="범위를 지웠습니다 · 속성에서 채움 방식 변경 · Ctrl+Z 취소";return true;
+        surface.ClearCrop();status.Text="범위를 취소했습니다.";return true;
     }
     /// <summary>Ctrl+2: zoom so the pending crop or the selected object fills the view.</summary>
     private void ZoomToSelection()
@@ -977,13 +975,13 @@ public sealed class EditorWindow : Window
                 var hex=PixelProbe.Hex(hovered);
                 try{Clipboard.SetText(hex);status.Text=hex+" 복사됨";}catch(System.Runtime.InteropServices.ExternalException){status.Text=hex+" · 다른 앱이 클립보드를 사용 중입니다";}
                 break;
-            case Key.Delete:if(!EraseRegion())surface.DeleteSelected();break;
+            case Key.Delete:if(!DismissRegion())surface.DeleteSelected();break;
             case Key.Escape:if(surface.Tool is null && !surface.CropTool && !surface.PickColorTool && !surface.MeasureTool && surface.Selected is null && surface.PendingCrop is null)_=DismissWithEscapeAsync();else SetTool(null);break;
             case Key.Enter:surface.ApplyCrop();break;
             case Key.V:SetTool(null);break;case Key.A:SetTool(AnnotationKind.Arrow);break;case Key.L:SetTool(AnnotationKind.Line);break;
             case Key.R:SetTool(AnnotationKind.Rectangle);break;case Key.O:SetTool(AnnotationKind.Ellipse);break;case Key.P:SetTool(AnnotationKind.Pen);break;
             case Key.T:SetTool(AnnotationKind.Text);break;case Key.N:SetTool(AnnotationKind.Step);break;case Key.H:SetTool(AnnotationKind.Highlight);break;
-            case Key.G:SetTool(AnnotationKind.Magnifier);break;case Key.S:SetTool(AnnotationKind.Spotlight);break;case Key.E:SetTool(AnnotationKind.Erase);break;
+            case Key.G:SetTool(AnnotationKind.Magnifier);break;case Key.S:SetTool(AnnotationKind.Spotlight);break;
             case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;case Key.I:StartColorPick();break;case Key.U:StartMeasure();break;
             case Key.Z:QuickZoom();break;case Key.Q:ZoomToCorner(false);break;case Key.W:ZoomToCorner(true);break;
             case Key.Left:case Key.Right:case Key.Up:case Key.Down:NudgeKeyDown(e.Key,shift);break;
