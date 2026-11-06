@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 
 namespace Capture.Core;
 
-public enum AnnotationKind { Arrow, Line, Rectangle, Ellipse, Pen, Text, Step, Highlight, Pixelate, Blur, Solid, Magnifier, Spotlight, Image, Erase }
+public enum AnnotationKind { Arrow, Line, Rectangle, Ellipse, Pen, Text, Step, Highlight, Pixelate, Blur, Solid, Magnifier, Spotlight, Image }
 public enum MarkerShape { Line, Freehand, Rectangle }
 public enum MarkerCap { Flat, Round, Sketch }
 public enum ArrowHead { Filled, Open, Simple, Double }

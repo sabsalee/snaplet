@@ -114,7 +114,6 @@ internal static class ImageRenderer
             case AnnotationKind.Solid: dc.DrawRectangle(brush, null, rect); break;
             case AnnotationKind.Pixelate:
             case AnnotationKind.Blur:
-            case AnnotationKind.Erase:
                 DrawEffect(dc, source, a, rect,underlay,context,interactiveEffect); break;
         }
         dc.Pop();
@@ -245,27 +244,16 @@ internal static class ImageRenderer
         var cache = effectCaches.GetOrCreateValue(source);
         var key = (a.Kind, bounds, a.Thickness,context);
         if (cache.TryGetValue(key, out var cached)) { dc.DrawImage(cached, new Rect(bounds.X, bounds.Y, bounds.Width, bounds.Height)); return; }
-        // Include the surrounding ring for Erase; sample the actual preceding layers, including pasted images.
-        var padding=a.Kind==AnnotationKind.Erase?3:0;
-        var observed=underlay?.Bounds ?? new Rect(0,0,source.PixelWidth,source.PixelHeight);
-        var left=Math.Min(bounds.X,Math.Max(bounds.X-padding,(int)Math.Floor(observed.Left)));
-        var top=Math.Min(bounds.Y,Math.Max(bounds.Y-padding,(int)Math.Floor(observed.Top)));
-        var right=Math.Max(bounds.X+bounds.Width,Math.Min(bounds.X+bounds.Width+padding,(int)Math.Ceiling(observed.Right)));
-        var bottom=Math.Max(bounds.Y+bounds.Height,Math.Min(bounds.Y+bounds.Height+padding,(int)Math.Ceiling(observed.Bottom)));
-        var expanded=new Int32Rect(left,top,right-left,bottom-top);
-        var offsetX=bounds.X-expanded.X;var offsetY=bounds.Y-expanded.Y;
-        if((long)expanded.Width*expanded.Height>64_000_000)throw new InvalidOperationException("효과 영역이 너무 큽니다.");
+        // Sample the actual preceding layers, including pasted images.
+        if((long)bounds.Width*bounds.Height>64_000_000)throw new InvalidOperationException("효과 영역이 너무 큽니다.");
         var visual=new DrawingVisual();using(var painter=visual.RenderOpen()) {
-            painter.PushTransform(new TranslateTransform(-expanded.X,-expanded.Y));
+            painter.PushTransform(new TranslateTransform(-bounds.X,-bounds.Y));
             if(underlay!=null)painter.DrawDrawing(underlay);else painter.DrawImage(source,new Rect(0,0,source.PixelWidth,source.PixelHeight));
             painter.Pop();
         }
-        var snapshot=new RenderTargetBitmap(expanded.Width,expanded.Height,96,96,PixelFormats.Pbgra32);snapshot.Render(visual);
+        var snapshot=new RenderTargetBitmap(bounds.Width,bounds.Height,96,96,PixelFormats.Pbgra32);snapshot.Render(visual);
         var converted=new FormatConvertedBitmap(snapshot,PixelFormats.Bgra32,null,0);
-        var full=new byte[checked(expanded.Width*expanded.Height*4)];converted.CopyPixels(full,expanded.Width*4,0);
-        if(a.Kind==AnnotationKind.Erase)PixelEffects.Erase(full,expanded.Width,expanded.Height,new(offsetX,offsetY,bounds.Width,bounds.Height));
-        int stride=checked(bounds.Width*4);var pixels=new byte[checked(stride*bounds.Height)];
-        for(int y=0;y<bounds.Height;y++)Array.Copy(full,((y+offsetY)*expanded.Width+offsetX)*4,pixels,y*stride,stride);
+        int stride=checked(bounds.Width*4);var pixels=new byte[checked(stride*bounds.Height)];converted.CopyPixels(pixels,stride,0);
         var region = new RectD(0, 0, bounds.Width, bounds.Height);
         if (a.Kind == AnnotationKind.Blur) PixelEffects.Blur(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 2), 3, 60));
         else if(a.Kind==AnnotationKind.Pixelate)PixelEffects.Pixelate(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 3), 5, 4096));
@@ -282,22 +270,20 @@ internal static class ImageRenderer
         if(rect.Width<1 || rect.Height<1)return;
         var scale=Math.Min(1,Math.Sqrt(160_000/(rect.Width*rect.Height)));
         var width=Math.Max(1,(int)Math.Ceiling(rect.Width*scale));var height=Math.Max(1,(int)Math.Ceiling(rect.Height*scale));
-        var ring=a.Kind==AnnotationKind.Erase?3:0;
         var visual=new DrawingVisual();using(var painter=visual.RenderOpen()) {
-            painter.PushTransform(new TranslateTransform(ring,ring));painter.PushTransform(new ScaleTransform(scale,scale));
+            painter.PushTransform(new ScaleTransform(scale,scale));
             painter.PushTransform(new TranslateTransform(-rect.X,-rect.Y));
             if(underlay!=null)painter.DrawDrawing(underlay);else painter.DrawImage(source,new Rect(0,0,source.PixelWidth,source.PixelHeight));
-            painter.Pop();painter.Pop();painter.Pop();
+            painter.Pop();painter.Pop();
         }
-        var w=width+ring*2;var h=height+ring*2;
+        var w=width;var h=height;
         var snapshot=new RenderTargetBitmap(w,h,96,96,PixelFormats.Pbgra32);snapshot.Render(visual);
         var converted=new FormatConvertedBitmap(snapshot,PixelFormats.Bgra32,null,0);var bytes=new byte[w*h*4];converted.CopyPixels(bytes,w*4,0);
-        var region=new RectD(ring,ring,width,height);
-        if(a.Kind==AnnotationKind.Erase)PixelEffects.Erase(bytes,w,h,region);
-        else if(a.Kind==AnnotationKind.Blur)PixelEffects.Blur(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*2,3,60)*scale),1,60));
+        var region=new RectD(0,0,width,height);
+        if(a.Kind==AnnotationKind.Blur)PixelEffects.Blur(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*2,3,60)*scale),1,60));
         else PixelEffects.Pixelate(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*3,5,4096)*scale),1,4096));
         var bitmap=BitmapSource.Create(w,h,96,96,PixelFormats.Bgra32,null,bytes,w*4);bitmap.Freeze();
-        BitmapSource result=ring==0?bitmap:new CroppedBitmap(bitmap,new Int32Rect(ring,ring,width,height));
+        BitmapSource result=bitmap;
         dc.DrawImage(result,rect);
     }
 

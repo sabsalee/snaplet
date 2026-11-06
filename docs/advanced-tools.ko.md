@@ -4,7 +4,7 @@
 
 ![Windows에서 실제 렌더링한 추가 편집 도구](screenshots/advanced-tools.png)
 
-속성 패널 화면: [돋보기](screenshots/advanced-inspector-magnifier.png) · [Spotlight](screenshots/advanced-inspector-spotlight.png) · [형광펜](screenshots/advanced-inspector-highlight.png) · [Erase](screenshots/advanced-inspector-erase.png) · [추가 이미지](screenshots/advanced-inspector-image.png)
+속성 패널 화면: [돋보기](screenshots/advanced-inspector-magnifier.png) · [Spotlight](screenshots/advanced-inspector-spotlight.png) · [형광펜](screenshots/advanced-inspector-highlight.png) · [추가 이미지](screenshots/advanced-inspector-image.png)
 
 ## 돋보기 · G
 
@@ -29,13 +29,9 @@
 
 원본에서 두꺼운 선과 마감 전환을 직접 확인했고, 자유 그리기·사각 모드는 함께 제공하는 추가 선택지다. 마감의 세부 수식은 독립 구현이다.
 
-## Erase · E
+## 텍스트만 처리
 
-없앨 내용 주변을 포함해 사각 영역을 드래그한다. 영역 밖 배경을 샘플링해 색과 완만한 그라데이션을 추정하고 그 배경으로 내부를 복원한다. 단색으로 덮는 도구와 다르며, 입력 이미지와 이전 합성 내용은 그대로 보관한다. 이동·크기 변경·Undo/Redo를 지원한다.
-
-단색 UI 배경·완만한 그라데이션에서 사용한다. 사진 질감이나 복잡한 무늬를 생성하는 도구는 아니다. 줄무늬·표·체커처럼 영역의 두 변 이상에서 부드러운 배경이 맞지 않으면 가장자리 무늬를 영역 안으로 이어 채운다. 주변 배경을 관찰할 수 없는 전체 이미지 선택은 원본을 유지한다.
-
-흐림·모자이크·Erase를 선택하면 **텍스트만 처리** 버튼이 나타난다. 로컬 한글·영문 OCR로 찾은 단어의 사각 영역에만 효과를 적용한다. 한 번에 최대 200개 영역이며 작은 범위를 권장한다. 인식 결과에 따라 글자를 놓치거나 주변 요소를 포함할 수 있다. 처리 중 문서를 변경하거나 다른 객체를 선택하면 오래된 결과를 취소한다. 변환 전체는 Undo 한 번으로 취소한다.
+흐림·모자이크를 선택하면 **텍스트만 처리** 버튼이 나타난다. 로컬 한글·영문 OCR로 찾은 단어의 사각 영역에만 효과를 적용한다. 한 번에 최대 200개 영역이며 작은 범위를 권장한다. 인식 결과에 따라 글자를 놓치거나 주변 요소를 포함할 수 있다. 처리 중 문서를 변경하거나 다른 객체를 선택하면 오래된 결과를 취소한다. 변환 전체는 Undo 한 번으로 취소한다.
 
 원본은 삽입 이미지의 픽셀 효과에 Rasterize가 필요한 경우가 있지만, Snaplet은 추가 이미지에도 효과를 바로 적용한다.
 

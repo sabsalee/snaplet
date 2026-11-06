@@ -77,7 +77,7 @@ internal sealed class EditorSurface : FrameworkElement
     {
         var x=position.X/Zoom+Document.Crop.X;var y=position.Y/Zoom+Document.Crop.Y;
         var clipped=gesture is Gesture.None or Gesture.Create or Gesture.CropNew or Gesture.CropMove or Gesture.CropResize
-            || gesture==Gesture.Resize && original?.Kind is AnnotationKind.Pixelate or AnnotationKind.Blur or AnnotationKind.Erase;
+            || gesture==Gesture.Resize && original?.Kind is AnnotationKind.Pixelate or AnnotationKind.Blur;
         return clipped?new(Math.Clamp(x,Document.Crop.X,Document.Crop.Right),Math.Clamp(y,Document.Crop.Y,Document.Crop.Bottom))
             :new(Math.Clamp(x,-32768,32768),Math.Clamp(y,-32768,32768));
     }
@@ -87,7 +87,7 @@ internal sealed class EditorSurface : FrameworkElement
         dc.PushTransform(new ScaleTransform(Zoom,Zoom));dc.PushTransform(new TranslateTransform(-Document.Crop.X,-Document.Crop.Y));
         var preview=Document.Annotations.Where(a=>a.Id!=editingTextId).Select(a=>a.Id==draft?.Id?PreviewAnnotation(draft):a).ToList();
         if(draft!=null && !preview.Any(a=>a.Id==draft.Id))preview.Add(PreviewAnnotation(draft));
-        var effectDraft=draft?.Kind is AnnotationKind.Pixelate or AnnotationKind.Blur or AnnotationKind.Erase;
+        var effectDraft=draft?.Kind is AnnotationKind.Pixelate or AnnotationKind.Blur;
         ImageRenderer.Paint(dc,source,preview,ImageRenderer.RectOf(Document.Crop),effectDraft?draft!.Id:null);
         if(TextPreview is Annotation typing && typing.Appearance.Bubble) {
             var body=ImageRenderer.TextBounds(typing);
@@ -266,7 +266,7 @@ internal sealed class EditorSurface : FrameworkElement
             gesture=hit.Kind==AnnotationKind.Magnifier && AdvancedDrawing.SampleBounds(hit).Contains(start) && !hit.Bounds.Contains(start)?Gesture.SampleMove:Gesture.Move;CaptureMouse();InvalidateVisual();return;
         }
         if(Tool is not AnnotationKind kind) {
-            // Dragging on empty canvas in select mode draws a range box: Enter crops, Delete erases.
+            // Dragging on empty canvas in select mode draws a range box: Enter crops, Delete removes the box.
             Selected=null;SelectionChanged?.Invoke();gesture=Gesture.CropNew;CaptureMouse();InvalidateVisual();return;
         }
         var a=new Annotation(Guid.NewGuid(),kind,start,start,Ink,Thickness,Style:InkStyle);
@@ -352,7 +352,7 @@ internal sealed class EditorSurface : FrameworkElement
         SetPointerHint(near is Handle control?control.Index switch {
             -3=>"곡률 · 드래그해 화살표를 휘세요",-4=>"말꼬리 · 파란 원을 드래그해 방향과 길이를 바꾸세요",
             -6=>"모서리 · 민트색 마름모를 드래그해 둥글기를 바꾸세요",-5=>"원본 영역 이동",_=>"크기 조절 · Shift 비율 유지"
-        }:textInsertion?"클릭 글자 편집 · V 선택·이동":editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":insideRegion?"범위 이동 · Enter 자르기 · Delete 지우기 · Esc 취소":"객체 선택 · 빈 곳을 드래그해 범위 지정");
+        }:textInsertion?"클릭 글자 편집 · V 선택·이동":editable?hit!.Kind==AnnotationKind.Text?"드래그 이동 · 더블클릭 글자 편집":"드래그 이동 · Alt+드래그 복제 · Delete 삭제":Tool==AnnotationKind.Text?"클릭해 글자 입력 · 더블클릭으로 기존 글자 편집":Tool!=null?"드래그해 그리기 · Esc 선택 모드":insideRegion?"범위 이동 · Enter 자르기 · Delete 범위 취소":"객체 선택 · 빈 곳을 드래그해 범위 지정");
         if(previousHover!=hovered || previousControl!=hoveredControl)InvalidateVisual();
     }
     private void SetPointerHint(string value) {if(PointerHint==value)return;PointerHint=value;PointerHintChanged?.Invoke(value);}
@@ -534,13 +534,6 @@ internal sealed class EditorSurface : FrameworkElement
         PendingCrop=null;CropTool=false;InvalidateVisual();return true;
     }
     internal void ClearCrop() {PendingCrop=null;CropTool=false;InvalidateVisual();}
-    /// <summary>Turns the range box into an effect object (Delete → Erase) and selects it so its options appear.</summary>
-    internal bool ApplyRegionEffect(AnnotationKind kind,ColorRgba color,double thickness,AnnotationStyle style)
-    {
-        if(PendingCrop is not RectD r || r.Width<1 || r.Height<1)return false;
-        var a=new Annotation(Guid.NewGuid(),kind,new(r.X,r.Y),new(r.Right,r.Bottom),color,thickness,Style:style);
-        PendingCrop=null;CropTool=false;CommitAnnotation(a,true);Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();return true;
-    }
     private static PixelRect ToPixels(RectD r)=>new((int)Math.Floor(r.X),(int)Math.Floor(r.Y),(int)Math.Ceiling(r.Right)-(int)Math.Floor(r.X),(int)Math.Ceiling(r.Bottom)-(int)Math.Floor(r.Y));
     private static RectD FromPixels(PixelRect r)=>new(r.X,r.Y,r.Width,r.Height);
     /// <summary>Keyboard precision for the pending crop: move, or resize the right/bottom edges, by whole image pixels.</summary>

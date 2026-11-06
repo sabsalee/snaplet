@@ -94,83 +94,6 @@ Throws(() => PixelEffects.Pixelate(new byte[8], 2, 1, new(0, 0, 2, 1), 0), "Reje
 var outside = Pixels(2, 2); var outsideBefore = outside.ToArray();
 PixelEffects.Blur(outside, 2, 2, new(-20, -20, 1, 1)); Check(outside.SequenceEqual(outsideBefore), "Outside effects are no-op.");
 
-// Erase reconstructs the surrounding screenshot background; it is not a colored rectangle.
-byte[] Background(int w, int h, bool gradient = false, byte alpha = 255)
-{
-    var data = new byte[w * h * 4];
-    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++)
-    {
-        int i = (y * w + x) * 4;
-        data[i] = (byte)(gradient ? 40 + x * 3 + y : 231);
-        data[i + 1] = (byte)(gradient ? 70 + x + y * 2 : 235);
-        data[i + 2] = (byte)(gradient ? 90 + x * 2 + y * 3 : 241);
-        data[i + 3] = alpha;
-    }
-    return data;
-}
-var cleanBackground = Background(25, 19);
-var erasedText = cleanBackground.ToArray();
-PixelEffects.Solid(erasedText, 25, 19, new(8, 6, 5, 7), new(12, 15, 18));
-PixelEffects.Erase(erasedText, 25, 19, new(6, 4, 10, 11));
-Check(erasedText.SequenceEqual(cleanBackground), "Erase removes a dark object without changing a uniform screenshot background.");
-var cleanGradient = Background(25, 19, true);
-foreach (var eraseRect in new[] { new RectD(6, 4, 10, 11), new RectD(-2, -3, 14, 15), new RectD(0, 4, 25, 8) })
-{
-    var dirtyGradient = cleanGradient.ToArray();
-    PixelEffects.Solid(dirtyGradient, 25, 19, eraseRect, new(255, 0, 80));
-    PixelEffects.Erase(dirtyGradient, 25, 19, eraseRect);
-    Check(dirtyGradient.SequenceEqual(cleanGradient), "Erase recovers a two-axis gradient, including image-edge and full-width selections.");
-}
-var translucentBackground = Background(25, 19, true, 96);
-var dirtyTranslucent = translucentBackground.ToArray();
-PixelEffects.Solid(dirtyTranslucent, 25, 19, new(6, 4, 10, 11), new(255, 0, 0, 255));
-PixelEffects.Erase(dirtyTranslucent, 25, 19, new(6, 4, 10, 11));
-Check(dirtyTranslucent.SequenceEqual(translucentBackground), "Erase preserves straight-alpha gradient colors and the surrounding transparency.");
-var hiddenColors = new byte[25 * 19 * 4];
-for (int i = 0; i < hiddenColors.Length; i += 4) { hiddenColors[i] = 255; hiddenColors[i + 2] = 255; }
-PixelEffects.Solid(hiddenColors, 25, 19, new(6, 4, 10, 11), new(2, 3, 4));
-PixelEffects.Erase(hiddenColors, 25, 19, new(6, 4, 10, 11));
-Check(hiddenColors.AsSpan((4 * 25 + 6) * 4, 4).SequenceEqual(new byte[4]), "Invisible border RGB cannot contaminate an erased transparent area.");
-var dirtyBorder = cleanBackground.ToArray();
-PixelEffects.Solid(dirtyBorder, 25, 19, new(8, 6, 5, 7), new(12, 15, 18));
-PixelEffects.Solid(dirtyBorder, 25, 19, new(8, 3, 2, 1), new(0, 0, 0));
-var borderBefore = dirtyBorder.ToArray();
-PixelEffects.Erase(dirtyBorder, 25, 19, new(6, 4, 10, 11));
-bool borderUnchanged = true, interiorClean = true;
-for (int y = 0; y < 19; y++) for (int x = 0; x < 25; x++)
-{
-    int i = (y * 25 + x) * 4;
-    if (x >= 6 && x < 16 && y >= 4 && y < 15) interiorClean &= dirtyBorder.AsSpan(i, 4).SequenceEqual(cleanBackground.AsSpan(i, 4));
-    else borderUnchanged &= dirtyBorder.AsSpan(i, 4).SequenceEqual(borderBefore.AsSpan(i, 4));
-}
-Check(interiorClean, "Sparse foreground crossing the sampled border does not tint the replacement background.");
-Check(borderUnchanged, "Erase never modifies its sampled border or any outside pixel.");
-var eraseDeterministic = borderBefore.ToArray(); PixelEffects.Erase(eraseDeterministic, 25, 19, new(6, 4, 10, 11));
-Check(eraseDeterministic.SequenceEqual(dirtyBorder), "Repeated erase of the same input is deterministic.");
-// Patterned surroundings continue across the region rather than averaging into a flat smear.
-byte[] Pattern(int w, int h, Func<int, int, bool> dark)
-{
-    var pixels = new byte[w * h * 4];
-    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++)
-    {
-        byte v = dark(x, y) ? (byte)40 : (byte)240;
-        pixels[(y * w + x) * 4] = v; pixels[(y * w + x) * 4 + 1] = v; pixels[(y * w + x) * 4 + 2] = v; pixels[(y * w + x) * 4 + 3] = 255;
-    }
-    return pixels;
-}
-byte Gray(byte[] pixels, int w, int x, int y) => pixels[(y * w + x) * 4];
-var rows = Pattern(60, 40, (_, y) => y / 4 % 2 == 0);
-PixelEffects.Erase(rows, 60, 40, new(20, 8, 20, 24));
-Check(Gray(rows, 60, 30, 8) == 40 && Gray(rows, 60, 30, 12) == 240 && Gray(rows, 60, 30, 16) == 40, "Erase continues horizontal rows from the side edges.");
-var stripes = Pattern(60, 40, (x, _) => x / 4 % 2 == 0);
-PixelEffects.Erase(stripes, 60, 40, new(22, 8, 20, 24));
-Check(Gray(stripes, 60, 24, 20) == 40 && Gray(stripes, 60, 28, 20) == 240, "Erase continues vertical stripes from the top edge.");
-var checker = Pattern(60, 40, (x, y) => (x / 4 + y / 4) % 2 == 0);
-PixelEffects.Erase(checker, 60, 40, new(21, 9, 20, 23));
-Check(Gray(checker, 60, 24, 30) == Gray(checker, 60, 24, 8) && Gray(checker, 60, 28, 30) == Gray(checker, 60, 28, 8), "Erase on a checker continues the top edge downward.");
-var edgeChecker = Pattern(60, 40, (x, y) => (x / 4 + y / 4) % 2 == 0);
-PixelEffects.Erase(edgeChecker, 60, 40, new(21, 0, 20, 32));
-Check(Gray(edgeChecker, 60, 30, 5) == Gray(edgeChecker, 60, 20, 5) && Gray(edgeChecker, 60, 30, 9) == Gray(edgeChecker, 60, 20, 9), "Erase at the top of the image continues the side edges, whose pair is complete.");
 Check(new AnnotationStyle().Dim == .18, "A new spotlight dims lightly.");
 var stamp = new DateTime(2026, 3, 4, 5, 6, 7, 8);
 Check(FileNameTemplate.Render(FileNameTemplate.Default, stamp, "ab12") == "Snaplet-20260304-050607-008-ab12", "Default file name keeps its date, milliseconds and random part.");
@@ -180,18 +103,6 @@ Check(FileNameTemplate.Render("...", stamp, "ab12").StartsWith("Snaplet-2026"), 
 Check(FileNameTemplate.Render("100%% %q %", stamp, "x") == "100% %q %", "Literal percent signs and unknown tokens are kept.");
 Check(FileNameTemplate.Render("con", stamp, "x") == "_con" && FileNameTemplate.Render("NUL.backup", stamp, "x") == "_NUL.backup", "Reserved device names cannot be produced.");
 Check(FileNameTemplate.Render(new string('a', 300), stamp, "x").Length == 120, "Very long names are shortened.");
-var narrowErase = Background(1, 12, true); var narrowExpected = narrowErase.ToArray();
-PixelEffects.Solid(narrowErase, 1, 12, new(0, 3, 1, 6), new(0, 0, 0));
-PixelEffects.Erase(narrowErase, 1, 12, new(0, 3, 1, 6));
-Check(narrowErase.SequenceEqual(narrowExpected), "Single-column images use the available gradient axis without singular-fit failure.");
-var unobservable = Pixels(2, 2); var unobservableBefore = unobservable.ToArray();
-PixelEffects.Erase(unobservable, 2, 2, new(0, 0, 2, 2));
-Check(unobservable.SequenceEqual(unobservableBefore), "An entire-image erase leaves pixels intact when there is no surrounding background evidence.");
-PixelEffects.Erase(unobservable, 2, 2, new(10, 10, 2, 2));
-Check(unobservable.SequenceEqual(unobservableBefore), "Erase outside the image is a no-op.");
-Throws(() => PixelEffects.Erase(new byte[7], 2, 1, new(0, 0, 1, 1)), "Erase rejects malformed BGRA buffers.");
-Throws(() => PixelEffects.Erase(new byte[4], 1, 1, new(double.NaN, 0, 1, 1)), "Erase rejects nonfinite selections.");
-
 const int width = 32, height = 80, scroll = 17;
 var full = Pixels(width, height + scroll);
 var previous = full.AsSpan(0, width * height * 4).ToArray();

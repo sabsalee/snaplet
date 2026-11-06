@@ -25,14 +25,14 @@ internal static class AdvancedInspectorSmokeTest
             red, Style: new(Dim: .35));
         var highlighter = new Annotation(Guid.NewGuid(), AnnotationKind.Highlight, new(80, 330), new(310, 350),
             new(255, 227, 63), 7, Style: new(HighlightShape: MarkerShape.Line, MarkerCap: MarkerCap.Round));
-        var erase = new Annotation(Guid.NewGuid(), AnnotationKind.Erase, new(750, 100), new(900, 160), red);
-        foreach (var annotation in new[] { image, magnifier, spotlight, highlighter, erase }) document.Add(annotation);
+        var blur = new Annotation(Guid.NewGuid(), AnnotationKind.Blur, new(750, 100), new(900, 160), red);
+        foreach (var annotation in new[] { image, magnifier, spotlight, highlighter, blur }) document.Add(annotation);
         var window = new EditorWindow(source, document);
         try
         {
             window.Show(); window.InspectorExpanded = true; window.UpdateLayout();
             var surface = Descendants(window).OfType<EditorSurface>().Single();
-            foreach (var annotation in new[] { magnifier, spotlight, highlighter, erase, image })
+            foreach (var annotation in new[] { magnifier, spotlight, highlighter, blur, image })
             {
                 surface.Selected = annotation.Id;
                 surface.ChangeSelected(a => a);
@@ -60,9 +60,9 @@ internal static class AdvancedInspectorSmokeTest
                         check(HasChoice("평평한 마감") && HasChoice("둥근 마감") && HasChoice("손그림 마감"),
                             "highlighter inspector makes marker finishing styles discoverable");
                         break;
-                    case AnnotationKind.Erase:
+                    case AnnotationKind.Blur:
                         check(descendants.OfType<Button>().Any(c => c.IsVisible && c.IsEnabled && Equals(c.Content, "텍스트만 처리")),
-                            "erase inspector offers the OCR text-only operation without starting OCR");
+                            "blur inspector offers the OCR text-only operation without starting OCR");
                         break;
                     case AnnotationKind.Image:
                         var keyboardSlider=SliderNamed("이미지 불투명도")!;
@@ -79,9 +79,7 @@ internal static class AdvancedInspectorSmokeTest
                         break;
                 }
                 var root = (FrameworkElement)window.Content;
-                check((annotation.Kind==AnnotationKind.Erase
-                    ? descendants.OfType<Button>().Any(c=>Equals(c.Content,"텍스트만 처리") && c.ActualWidth>0 && IsInside(root,c))
-                    : sliders.Length>0) && sliders.All(c => c.ActualWidth > 0 && c.ActualHeight > 0 &&
+                check(sliders.Length>0 && sliders.All(c => c.ActualWidth > 0 && c.ActualHeight > 0 &&
                     IsInside(root, c)), annotation.Kind + " inspector controls are laid out inside the visible editor content");
                 int width = (int)Math.Ceiling(root.ActualWidth), height = (int)Math.Ceiling(root.ActualHeight);
                 check(width > 600 && height > 350, annotation.Kind + " inspector snapshot has usable editor dimensions");
