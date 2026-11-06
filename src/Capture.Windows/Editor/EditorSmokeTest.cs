@@ -135,8 +135,11 @@ public static class EditorSmokeTest
             ClickTool("화살표 · A");
             Check(editingSurface.Thickness==7 && editingSurface.Ink==new ColorRgba(35,90,210) && editingSurface.InkStyle.ArrowHead==ArrowHead.Open,"switching tools restores that tool's color size and style");
             editingSurface.Selected=pointer.Id;
-            window.ZoomToCorner(true);Check(editingSurface.Zoom>=4,"corner zoom looks closely at the selected object");
-            window.QuickZoom();Check(editingSurface.Zoom<4,"quick zoom returns to the fitted view");
+            window.ZoomToCorner(true);Check(editingSurface.Zoom>=8,"corner zoom looks closely at the selected object");
+            var span=window.MeasureSpan(new(5,5));
+            Check(span is {} s && s.Left<=5 && s.Right>5 && s.Top<=5 && s.Bottom>5,"ruler span contains the measured pixel");
+            Check(window.MeasureSpan(new(-5,-5)) is null,"ruler ignores points outside the image");
+            window.QuickZoom();Check(editingSurface.Zoom<8,"quick zoom returns to the fitted view");
             var quick=editingSurface.Zoom;window.QuickZoom();Check(editingSurface.Zoom!=quick || Math.Abs(quick-2)<.001,"quick zoom jumps to 200%");window.QuickZoom();
             var page=ImageActions.PrintBounds(2000,1000,800,1000);
             Check(Math.Abs(page.Width-800)<.001 && Math.Abs(page.Height-400)<.001 && Math.Abs(page.Y-300)<.001,"printing shrinks a wide image to the page and centers it");

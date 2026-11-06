@@ -15,6 +15,12 @@ internal sealed class EditorSurface : FrameworkElement
     internal bool CropTool;
     /// <summary>Eyedropper mode: clicks report image points instead of drawing or selecting.</summary>
     internal bool PickColorTool;
+    /// <summary>View-only ruler: shows the same-colour span through the pointer. Never part of the export.</summary>
+    internal bool MeasureTool {get=>measureTool;set{measureTool=value;measured=null;InvalidateVisual();}}
+    private bool measureTool;
+    internal Func<PointD,(int Left,int Right,int Top,int Bottom,int X,int Y)?>? MeasureAt;
+    internal event Action<(int Left,int Right,int Top,int Bottom,int X,int Y)>? MeasureCopyRequested;
+    private (int Left,int Right,int Top,int Bottom,int X,int Y)? measured;
     internal event Action<PointD,ModifierKeys>? ColorPickRequested;
     internal bool SnapToObjects=true;
     private double? guideX,guideY;
@@ -30,7 +36,7 @@ internal sealed class EditorSurface : FrameworkElement
     internal Guid? Selected;
     internal RectD? PendingCrop;
     /// <summary>A pending range box exists that the pointer can move and resize: the crop tool, or a drag on empty canvas in select mode.</summary>
-    internal bool RegionActive=>PendingCrop is not null && (CropTool || Tool is null && !PickColorTool);
+    internal bool RegionActive=>PendingCrop is not null && (CropTool || Tool is null && !PickColorTool && !MeasureTool);
     private bool IsRegionGesture=>gesture is Gesture.CropNew or Gesture.CropMove or Gesture.CropResize;
     internal event Action? SelectionChanged;
     internal event Action<string>? OperationFailed;
@@ -64,7 +70,7 @@ internal sealed class EditorSurface : FrameworkElement
         Document.Changed+=(_,_)=>{if(Selected is Guid id && !Document.Annotations.Any(a=>a.Id==id))Selected=null;UpdateSize();InvalidateVisual();};
         UpdateSize();
     }
-    internal void SetZoom(double zoom) {Zoom=Math.Clamp(zoom,.05,8);UpdateSize();InvalidateVisual();}
+    internal void SetZoom(double zoom) {Zoom=Math.Clamp(zoom,.05,16);UpdateSize();InvalidateVisual();}
     private void UpdateSize() {Width=Document.Crop.Width*Zoom;Height=Document.Crop.Height*Zoom;}
     private PointD ImagePoint(MouseEventArgs e)=>PointerPosition(e.GetPosition(this));
     internal PointD PointerPosition(Point position)
@@ -104,7 +110,23 @@ internal sealed class EditorSurface : FrameworkElement
         var guidePen=new Pen(new SolidColorBrush(Color.FromArgb(210,50,140,255)),1/Zoom) {DashStyle=DashStyles.Dash};
         if(guideX is double gx)dc.DrawLine(guidePen,new(gx,Document.Crop.Y),new(gx,Document.Crop.Bottom));
         if(guideY is double gy)dc.DrawLine(guidePen,new(Document.Crop.X,gy),new(Document.Crop.Right,gy));
+        if(MeasureTool && measured is {} span)DrawMeasure(dc,span);
         dc.Pop();dc.Pop();dc.Pop();
+    }
+    private void DrawMeasure(DrawingContext dc,(int Left,int Right,int Top,int Bottom,int X,int Y) span)
+    {
+        var pen=new Pen(SelectionInk,1.5/Zoom);double cx=span.X+.5,cy=span.Y+.5;
+        dc.DrawLine(pen,new(span.Left,cy),new(span.Right,cy));dc.DrawLine(pen,new(cx,span.Top),new(cx,span.Bottom));
+        var tick=4/Zoom;
+        dc.DrawLine(pen,new(span.Left,cy-tick),new(span.Left,cy+tick));dc.DrawLine(pen,new(span.Right,cy-tick),new(span.Right,cy+tick));
+        dc.DrawLine(pen,new(cx-tick,span.Top),new(cx+tick,span.Top));dc.DrawLine(pen,new(cx-tick,span.Bottom),new(cx+tick,span.Bottom));
+        var text=new FormattedText($"{span.Right-span.Left} × {span.Bottom-span.Top}",System.Globalization.CultureInfo.InvariantCulture,FlowDirection.LeftToRight,
+            new Typeface("Segoe UI"),11/Zoom,Brushes.White,VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        double padX=6/Zoom,padY=2/Zoom,gap=8/Zoom,w=text.Width+2*padX,h=text.Height+2*padY;
+        var x=Math.Clamp(cx+gap,Document.Crop.X,Math.Max(Document.Crop.X,Document.Crop.Right-w));
+        var y=Math.Clamp(cy+gap,Document.Crop.Y,Math.Max(Document.Crop.Y,Document.Crop.Bottom-h));
+        dc.DrawRoundedRectangle(RegionLabelFill,null,new Rect(x,y,w,h),4/Zoom,4/Zoom);
+        dc.DrawText(text,new Point(x+padX,y+padY));
     }
     private static readonly Brush RegionLabelFill=CreateFrozen(new SolidColorBrush(Color.FromArgb(200,20,22,26)));
     private static Brush CreateFrozen(Brush brush){brush.Freeze();return brush;}
@@ -206,6 +228,7 @@ internal sealed class EditorSurface : FrameworkElement
     {
         base.OnMouseLeftButtonDown(e);Focus();
         if(PickColorTool){ColorPickRequested?.Invoke(ImagePoint(e),Keyboard.Modifiers);e.Handled=true;return;}
+        if(MeasureTool){if(MeasureAt?.Invoke(ImagePoint(e)) is {} span)MeasureCopyRequested?.Invoke(span);e.Handled=true;return;}
         BeginPointer(ImagePoint(e),Keyboard.Modifiers,e.ClickCount);
     }
     internal void BeginPointer(PointD position,ModifierKeys modifiers=ModifierKeys.None,int clickCount=1)
@@ -306,11 +329,12 @@ internal sealed class EditorSurface : FrameworkElement
     }
     protected override void OnMouseLeave(MouseEventArgs e)
     {
-        base.OnMouseLeave(e);hovered=null;hoveredControl=null;SetPointerHint("");if(!IsDragging)InvalidateVisual();
+        base.OnMouseLeave(e);hovered=null;hoveredControl=null;measured=null;SetPointerHint("");if(!IsDragging)InvalidateVisual();
     }
     internal void UpdateHover(PointD position)
     {
         current=position;var previousHover=hovered;var previousControl=hoveredControl;
+        if(MeasureTool){measured=MeasureAt?.Invoke(position);Cursor=Cursors.Cross;InvalidateVisual();return;}
         var region=RegionActive?PendingCrop:null;
         var near=region is RectD crop?NearHandle(BoxHandles(ImageRenderer.RectOf(crop)),position):Selection is Annotation selected?NearHandle(Handles(selected),position):null;
         var insideRegion=region is RectD box && box.Contains(position);
