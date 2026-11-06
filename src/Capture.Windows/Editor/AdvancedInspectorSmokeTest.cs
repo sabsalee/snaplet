@@ -45,7 +45,7 @@ internal static class AdvancedInspectorSmokeTest
                 switch (annotation.Kind)
                 {
                     case AnnotationKind.Magnifier:
-                        check(HasChoice("사각 렌즈") && HasChoice("원형 렌즈"), "magnifier inspector exposes rectangular and oval lens choices");
+                        check(HasChoice("사각 렌즈") && HasChoice("곡선 렌즈"), "magnifier inspector exposes rectangular and curved lens choices");
                         check(SliderNamed("확대 배율") is { ActualWidth: > 0 } zoom && zoom.Value == 3 && zoom.Maximum >= 8,
                             "magnifier inspector exposes its current zoom separately from border thickness");
                         break;

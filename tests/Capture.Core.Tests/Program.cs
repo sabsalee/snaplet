@@ -145,6 +145,31 @@ Check(interiorClean, "Sparse foreground crossing the sampled border does not tin
 Check(borderUnchanged, "Erase never modifies its sampled border or any outside pixel.");
 var eraseDeterministic = borderBefore.ToArray(); PixelEffects.Erase(eraseDeterministic, 25, 19, new(6, 4, 10, 11));
 Check(eraseDeterministic.SequenceEqual(dirtyBorder), "Repeated erase of the same input is deterministic.");
+// Patterned surroundings continue across the region rather than averaging into a flat smear.
+byte[] Pattern(int w, int h, Func<int, int, bool> dark)
+{
+    var pixels = new byte[w * h * 4];
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++)
+    {
+        byte v = dark(x, y) ? (byte)40 : (byte)240;
+        pixels[(y * w + x) * 4] = v; pixels[(y * w + x) * 4 + 1] = v; pixels[(y * w + x) * 4 + 2] = v; pixels[(y * w + x) * 4 + 3] = 255;
+    }
+    return pixels;
+}
+byte Gray(byte[] pixels, int w, int x, int y) => pixels[(y * w + x) * 4];
+var rows = Pattern(60, 40, (_, y) => y / 4 % 2 == 0);
+PixelEffects.Erase(rows, 60, 40, new(20, 8, 20, 24));
+Check(Gray(rows, 60, 30, 8) == 40 && Gray(rows, 60, 30, 12) == 240 && Gray(rows, 60, 30, 16) == 40, "Erase continues horizontal rows from the side edges.");
+var stripes = Pattern(60, 40, (x, _) => x / 4 % 2 == 0);
+PixelEffects.Erase(stripes, 60, 40, new(22, 8, 20, 24));
+Check(Gray(stripes, 60, 24, 20) == 40 && Gray(stripes, 60, 28, 20) == 240, "Erase continues vertical stripes from the top edge.");
+var checker = Pattern(60, 40, (x, y) => (x / 4 + y / 4) % 2 == 0);
+PixelEffects.Erase(checker, 60, 40, new(21, 9, 20, 23));
+Check(Gray(checker, 60, 24, 30) == Gray(checker, 60, 24, 8) && Gray(checker, 60, 28, 30) == Gray(checker, 60, 28, 8), "Erase on a checker continues the top edge downward.");
+var edgeChecker = Pattern(60, 40, (x, y) => (x / 4 + y / 4) % 2 == 0);
+PixelEffects.Erase(edgeChecker, 60, 40, new(21, 0, 20, 32));
+Check(Gray(edgeChecker, 60, 30, 5) == Gray(edgeChecker, 60, 20, 5) && Gray(edgeChecker, 60, 30, 9) == Gray(edgeChecker, 60, 20, 9), "Erase at the top of the image continues the side edges, whose pair is complete.");
+Check(new AnnotationStyle().Dim == .18, "A new spotlight dims lightly.");
 var narrowErase = Background(1, 12, true); var narrowExpected = narrowErase.ToArray();
 PixelEffects.Solid(narrowErase, 1, 12, new(0, 3, 1, 6), new(0, 0, 0));
 PixelEffects.Erase(narrowErase, 1, 12, new(0, 3, 1, 6));

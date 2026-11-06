@@ -45,6 +45,8 @@ public static class PixelEffects
     /// surrounding pixels. Fits an alpha-aware color plane with bounded, outlier-resistant
     /// sampling. Intended for screenshot text/UI on uniform or gradient backgrounds, not
     /// photographic texture reconstruction. If no outside pixels exist, leaves the image alone.
+    /// When no smooth background fits (stripes, table rows, checkers), continues the edge pixels
+    /// across the region instead, along the axis whose opposite edges agree best.
     /// Work is O(region area + perimeter), with at most 4096 background samples.
     /// </summary>
     public static void Erase(Span<byte> bgra, int width, int height, RectD region)
@@ -56,23 +58,25 @@ public static class PixelEffects
         if (perimeter == 0) return; // There is no evidence for a replacement background.
         int count = (int)Math.Min(4096, perimeter);
         var samples = new double[count, 6]; // normalized x/y, premultiplied B/G/R, alpha
+        var sides = new int[count]; // 0 top, 1 bottom, 2 left, 3 right
         double scale = Math.Max(r.W, r.H), centerX = r.X + (r.W - 1) / 2.0, centerY = r.Y + (r.H - 1) / 2.0;
         for (int sample = 0; sample < count; sample++)
         {
             long offset = sample * perimeter / count;
-            int x, y;
-            if (r.Y > 0 && offset < r.W) { x = r.X + (int)offset; y = r.Y - 1; }
+            int x, y, side;
+            if (r.Y > 0 && offset < r.W) { x = r.X + (int)offset; y = r.Y - 1; side = 0; }
             else
             {
                 if (r.Y > 0) offset -= r.W;
-                if (r.Y + r.H < height && offset < r.W) { x = r.X + (int)offset; y = r.Y + r.H; }
+                if (r.Y + r.H < height && offset < r.W) { x = r.X + (int)offset; y = r.Y + r.H; side = 1; }
                 else
                 {
                     if (r.Y + r.H < height) offset -= r.W;
-                    if (r.X > 0 && offset < r.H) { x = r.X - 1; y = r.Y + (int)offset; }
-                    else { if (r.X > 0) offset -= r.H; x = r.X + r.W; y = r.Y + (int)offset; }
+                    if (r.X > 0 && offset < r.H) { x = r.X - 1; y = r.Y + (int)offset; side = 2; }
+                    else { if (r.X > 0) offset -= r.H; x = r.X + r.W; y = r.Y + (int)offset; side = 3; }
                 }
             }
+            sides[sample] = side;
             int i = (y * width + x) * 4;
             double alpha = bgra[i + 3];
             samples[sample, 0] = (x - centerX) / scale; samples[sample, 1] = (y - centerY) / scale;
@@ -94,6 +98,18 @@ public static class PixelEffects
             double threshold = Math.Max(3, ordered[count / 2] * 2.5);
             for (int i = 0; i < count; i++) accepted[i] = errors[i] <= threshold;
         }
+        var residuals = new double[count];
+        for (int i = 0; i < count; i++)
+            for (int channel = 0; channel < 4; channel++)
+                residuals[i] = Math.Max(residuals[i], Math.Abs(samples[i, channel + 2] - (plane[channel, 0]
+                    + plane[channel, 1] * samples[i, 0] + plane[channel, 2] * samples[i, 1])));
+        // An object crossing one edge is an outlier; two edges that miss the fit mean the background itself is a pattern.
+        int patterned = Enumerable.Range(0, 4).Count(side =>
+        {
+            var errors = Enumerable.Range(0, count).Where(i => sides[i] == side).Select(i => residuals[i]).Order().ToArray();
+            return errors.Length > 0 && errors[errors.Length / 2] > PatternResidual;
+        });
+        if (patterned >= 2) { ExtendEdges(bgra, width, height, r); return; }
         for (int y = r.Y; y < r.Y + r.H; y++) for (int x = r.X; x < r.X + r.W; x++)
         {
             double nx = (x - centerX) / scale, ny = (y - centerY) / scale;
@@ -105,6 +121,38 @@ public static class PixelEffects
                 bgra[i + channel] = alpha < .5 ? (byte)0 : (byte)Math.Clamp(Math.Round(premultiplied * 255 / alpha), 0, 255);
             }
             bgra[i + 3] = (byte)Math.Round(alpha);
+        }
+    }
+    /// <summary>Median error on one edge above which that edge does not fit a smooth background.</summary>
+    private const double PatternResidual = 24;
+
+    private static void ExtendEdges(Span<byte> bgra, int width, int height, (int X, int Y, int W, int H) r)
+    {
+        bool top = r.Y > 0, bottom = r.Y + r.H < height, left = r.X > 0, right = r.X + r.W < width;
+        double Mismatch(Span<byte> pixels, int firstA, int firstB, int step, int count)
+        {
+            long total = 0;
+            for (int i = 0; i < count; i++)
+                for (int channel = 0; channel < 4; channel++)
+                    total += Math.Abs(pixels[(firstA + i * step) * 4 + channel] - pixels[(firstB + i * step) * 4 + channel]);
+            return total / (double)count;
+        }
+        double across = top && bottom ? Mismatch(bgra, (r.Y - 1) * width + r.X, (r.Y + r.H) * width + r.X, 1, r.W) : double.MaxValue;
+        double along = left && right ? Mismatch(bgra, r.Y * width + r.X - 1, r.Y * width + r.X + r.W, width, r.H) : double.MaxValue;
+        // A near tie continues columns downward.
+        bool columns = (top || bottom) && (!(left || right) || across <= along * 1.05);
+        if (columns)
+        {
+            int sourceRow = top ? r.Y - 1 : r.Y + r.H;
+            var edge = bgra.Slice((sourceRow * width + r.X) * 4, r.W * 4);
+            for (int y = r.Y; y < r.Y + r.H; y++) edge.CopyTo(bgra.Slice((y * width + r.X) * 4, r.W * 4));
+            return;
+        }
+        int sourceColumn = left ? r.X - 1 : r.X + r.W;
+        for (int y = r.Y; y < r.Y + r.H; y++)
+        {
+            var pixel = bgra.Slice((y * width + sourceColumn) * 4, 4);
+            for (int x = r.X; x < r.X + r.W; x++) pixel.CopyTo(bgra.Slice((y * width + x) * 4, 4));
         }
     }
     private static void FitBackgroundPlane(double[,] samples, bool[] accepted, double[,] plane)
