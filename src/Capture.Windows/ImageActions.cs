@@ -7,8 +7,14 @@ using Microsoft.Win32;
 using Capture.Core;
 
 namespace Capture.Windows;
+internal enum ImageTurn {Left,Right,FlipHorizontal,FlipVertical}
 internal static class ImageActions
 {
+    internal static BitmapSource Turn(BitmapSource image,ImageTurn turn)
+    {
+        Transform transform=turn switch {ImageTurn.Left=>new RotateTransform(270),ImageTurn.Right=>new RotateTransform(90),ImageTurn.FlipHorizontal=>new ScaleTransform(-1,1),_=>new ScaleTransform(1,-1)};
+        var result=new TransformedBitmap(image,transform);result.Freeze();return result;
+    }
     private static long clipboardRequest;
     public static long ReserveClipboard()=>Interlocked.Increment(ref clipboardRequest);
     public static async Task<bool> CopyAsync(BitmapSource image,Func<bool>? stillCurrent=null,long? reservedRequest=null) {

@@ -92,7 +92,12 @@ internal static class ImageRenderer
                         ? new CombinedGeometry(GeometryCombineMode.Union, bodyGeometry, TailGeometry(a)) : bodyGeometry);
                 }
                 var label=TextLayout(a,bubble?Contrast(a.Color):brush);
-                dc.DrawText(label,new(body.X+(bubble?10:0),body.Y+(bubble?8:0)));
+                var textOrigin=new Point(body.X+(bubble?10:0),body.Y+(bubble?8:0));
+                if(a.Appearance.Outlined && !bubble) {
+                    var letters=label.BuildGeometry(textOrigin);
+                    dc.DrawGeometry(null,new Pen(Contrast(a.Color),Math.Max(2,a.Thickness*.9)){LineJoin=PenLineJoin.Round},letters);
+                    dc.DrawGeometry(brush,null,letters);
+                } else dc.DrawText(label,textOrigin);
                 break;
             case AnnotationKind.Step:
                 var radius=AnnotationGeometry.CounterRadius(a);
@@ -256,7 +261,7 @@ internal static class ImageRenderer
         int stride=checked(bounds.Width*4);var pixels=new byte[checked(stride*bounds.Height)];converted.CopyPixels(pixels,stride,0);
         var region = new RectD(0, 0, bounds.Width, bounds.Height);
         if (a.Kind == AnnotationKind.Blur) PixelEffects.Blur(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 2), 3, 60));
-        else if(a.Kind==AnnotationKind.Pixelate)PixelEffects.Pixelate(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 3), 5, 4096));
+        else if(a.Kind==AnnotationKind.Pixelate)PixelEffects.Pixelate(pixels, bounds.Width, bounds.Height, region, Math.Clamp((int)(a.Thickness * 3), 5, 4096), a.Id.GetHashCode() | 1);
         var result = BitmapSource.Create(bounds.Width, bounds.Height, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
         result.Freeze();
         if (cache.Count >= 24 || cache.Values.Sum(b => (long)b.PixelWidth * b.PixelHeight) + (long)bounds.Width * bounds.Height > 4_000_000) cache.Clear();
@@ -281,7 +286,7 @@ internal static class ImageRenderer
         var converted=new FormatConvertedBitmap(snapshot,PixelFormats.Bgra32,null,0);var bytes=new byte[w*h*4];converted.CopyPixels(bytes,w*4,0);
         var region=new RectD(0,0,width,height);
         if(a.Kind==AnnotationKind.Blur)PixelEffects.Blur(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*2,3,60)*scale),1,60));
-        else PixelEffects.Pixelate(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*3,5,4096)*scale),1,4096));
+        else PixelEffects.Pixelate(bytes,w,h,region,Math.Clamp((int)Math.Round(Math.Clamp(a.Thickness*3,5,4096)*scale),1,4096),a.Id.GetHashCode()|1);
         var bitmap=BitmapSource.Create(w,h,96,96,PixelFormats.Bgra32,null,bytes,w*4);bitmap.Freeze();
         BitmapSource result=bitmap;
         dc.DrawImage(result,rect);

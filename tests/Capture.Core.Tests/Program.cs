@@ -94,6 +94,21 @@ Throws(() => PixelEffects.Pixelate(new byte[8], 2, 1, new(0, 0, 2, 1), 0), "Reje
 var outside = Pixels(2, 2); var outsideBefore = outside.ToArray();
 PixelEffects.Blur(outside, 2, 2, new(-20, -20, 1, 1)); Check(outside.SequenceEqual(outsideBefore), "Outside effects are no-op.");
 
+var flatGray = new byte[8 * 8 * 4]; for (int i = 0; i < flatGray.Length; i += 4) { flatGray[i] = flatGray[i + 1] = flatGray[i + 2] = 120; flatGray[i + 3] = 255; }
+var seededA = flatGray.ToArray(); var seededB = flatGray.ToArray(); var seededAgain = flatGray.ToArray(); var plainBlocks = flatGray.ToArray();
+PixelEffects.Pixelate(seededA, 8, 8, new(0, 0, 8, 8), 4, 11); PixelEffects.Pixelate(seededAgain, 8, 8, new(0, 0, 8, 8), 4, 11); PixelEffects.Pixelate(seededB, 8, 8, new(0, 0, 8, 8), 4, 97); PixelEffects.Pixelate(plainBlocks, 8, 8, new(0, 0, 8, 8), 4);
+Check(plainBlocks.SequenceEqual(flatGray), "Pixelate without a seed stays exact.");
+Check(seededA.SequenceEqual(seededAgain), "A seed gives the same blocks every time, so preview and export agree.");
+Check(!seededA.SequenceEqual(seededB) && !seededA.SequenceEqual(flatGray), "Different seeds give different blocks.");
+var seededMax = seededA.Where((_, i) => i % 4 != 3).Max(); var seededMin = seededA.Where((_, i) => i % 4 != 3).Min();
+Check(seededMax <= 135 && seededMin >= 105, "The seeded offset stays small.");
+var arBounds = new RectD(0, 0, 100, 100);
+Check(AspectMath.FromDrag(new(10, 10), new(50, 20), 2, arBounds) == new RectD(10, 10, 40, 20), "Dragging keeps the crop ratio.");
+Check(AspectMath.FromDrag(new(50, 50), new(10, 40), 1, arBounds) == new RectD(10, 10, 40, 40), "Dragging up and left keeps the fixed corner.");
+Check(AspectMath.FromDrag(new(90, 10), new(100, 100), 1, arBounds) == new RectD(90, 10, 10, 10), "The crop ratio holds at the bounds.");
+Check(AspectMath.Resize(new(10, 10, 40, 20), new(10, 10, 60, 20), 2, arBounds) == new RectD(10, 10, 60, 30), "Widening also grows the height.");
+Check(AspectMath.Resize(new(10, 10, 40, 20), new(10, 10, 40, 30), 2, arBounds) == new RectD(10, 10, 60, 30), "A height-only drag also grows the width.");
+Check(AspectMath.Resize(new(40, 40, 40, 20), new(20, 40, 60, 20), 2, arBounds).Right == 80, "Dragging the left edge keeps the right edge.");
 Check(new AnnotationStyle().Dim == .18, "A new spotlight dims lightly.");
 var stamp = new DateTime(2026, 3, 4, 5, 6, 7, 8);
 Check(FileNameTemplate.Render(FileNameTemplate.Default, stamp, "ab12") == "Snaplet-20260304-050607-008-ab12", "Default file name keeps its date, milliseconds and random part.");

@@ -364,12 +364,12 @@ internal sealed class EditorSurface : FrameworkElement
         if(gesture==Gesture.None)return;
         current=position;pointerModifiers=modifiers;
         if(gesture is Gesture.Move or Gesture.SampleMove or Gesture.Corner && AnnotationGeometry.Distance(start,current)<3/Zoom && draft is null)return;
-        if(gesture==Gesture.CropNew)PendingCrop=RectD.FromPoints(start,Constrained(start,current));
+        if(gesture==Gesture.CropNew)PendingCrop=CropAspect is double drawRatio?AspectMath.FromDrag(start,current,drawRatio,Document.Canvas):RectD.FromPoints(start,Constrained(start,current));
         else if(gesture==Gesture.CropMove) {
             var x=Math.Clamp(cropBefore.X+current.X-start.X,Document.Crop.X,Document.Crop.Right-cropBefore.Width);
             var y=Math.Clamp(cropBefore.Y+current.Y-start.Y,Document.Crop.Y,Document.Crop.Bottom-cropBefore.Height);
             PendingCrop=cropBefore with {X=x,Y=y};
-        } else if(gesture==Gesture.CropResize)PendingCrop=Resize(cropBefore,current,handle);
+        } else if(gesture==Gesture.CropResize)PendingCrop=CropAspect is double sizeRatio?AspectMath.Resize(cropBefore,Resize(cropBefore,current,handle),sizeRatio,Document.Canvas):Resize(cropBefore,current,handle);
         else if(original is Annotation a) {
             draft=gesture switch {
                 Gesture.Move=>SnapMove(a.Move(current.X-start.X,current.Y-start.Y)),
@@ -532,6 +532,13 @@ internal sealed class EditorSurface : FrameworkElement
         if(PendingCrop is not RectD c || c.Width<1 || c.Height<1)return false;
         Document.CropTo(new(Math.Floor(c.X),Math.Floor(c.Y),Math.Ceiling(c.Right)-Math.Floor(c.X),Math.Ceiling(c.Bottom)-Math.Floor(c.Y)));
         PendingCrop=null;CropTool=false;InvalidateVisual();return true;
+    }
+    /// <summary>Fixed width-to-height ratio for the crop and range box; null means free.</summary>
+    internal double? CropAspect {get;private set;}
+    internal void SetCropAspect(double? ratio)
+    {
+        CropAspect=ratio;
+        if(ratio is double r && PendingCrop is RectD box){PendingCrop=AspectMath.Resize(box,box,r,Document.Canvas);InvalidateVisual();}
     }
     internal void ClearCrop() {PendingCrop=null;CropTool=false;InvalidateVisual();}
     private static PixelRect ToPixels(RectD r)=>new((int)Math.Floor(r.X),(int)Math.Floor(r.Y),(int)Math.Ceiling(r.Right)-(int)Math.Floor(r.X),(int)Math.Ceiling(r.Bottom)-(int)Math.Floor(r.Y));

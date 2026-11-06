@@ -50,6 +50,8 @@ public sealed record AppSettings
     /// <summary>File name template for saved images; see <see cref="Capture.Core.FileNameTemplate"/>.</summary>
     /// <summary>Default font of the text tool; blank uses Noto Sans KR when installed.</summary>
     public string DefaultTextFont {get;init;}="";
+    /// <summary>Colours saved from the editor's colour popup, as #AARRGGBB.</summary>
+    public List<string> SavedColors {get;init;}=[];
     public string FileNameTemplate {get;init;}=Capture.Core.FileNameTemplate.Default;
     public List<HotkeyBinding> Hotkeys {get;init;}=DefaultHotkeys();
 

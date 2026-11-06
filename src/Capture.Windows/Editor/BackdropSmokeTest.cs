@@ -43,6 +43,10 @@ internal static class BackdropSmokeTest
             Check(state.Active && state.Foreground==new ColorRgba(0,0,0) && state.Background==new ColorRgba(255,255,255),"eyedropper picks foreground and Shift background from the image");
             Check(Math.Abs(ColorMath.WcagRatio(state.Foreground,state.Background)-21)<1e-9,"picked colours give the 21:1 WCAG maximum");
             Check(editor.SampleColor(new PointD(500,500)) is null,"sampling outside the image is ignored");
+            var turned=ImageActions.Turn(splitImage,ImageTurn.Right);
+            Check(turned.PixelWidth==80 && turned.PixelHeight==200,"rotating swaps the image's width and height");
+            var flipped=ImageActions.Turn(splitImage,ImageTurn.FlipHorizontal);var firstPixel=new byte[4];new FormatConvertedBitmap(flipped,PixelFormats.Bgra32,null,0).CopyPixels(new Int32Rect(0,0,1,1),firstPixel,4,0);
+            Check(flipped.PixelWidth==200 && firstPixel[2]==255,"flipping mirrors the image");
             editor.SetBackdropForTest(new Backdrop(Enabled:true,Preset:2,Padding:40,Shadow:.5));editor.UpdateLayout();
             var frame=editor.BackdropFrameSize;var zoom=editor.SurfaceZoom;
             Check(Math.Abs(frame.Width-(200+80)*zoom)<1 && Math.Abs(frame.Height-(80+80)*zoom)<1,"backdrop preview hugs the image with equal padding instead of filling the view");
