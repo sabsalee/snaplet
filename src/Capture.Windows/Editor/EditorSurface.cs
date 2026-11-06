@@ -459,8 +459,11 @@ internal sealed class EditorSurface : FrameworkElement
         var bytes=Document.Annotations.Where(a=>a.Image!=null).Select(a=>a.Image!).Distinct().Sum(a=>(long)a.Width*a.Height*4);
         if(bytes+(long)image.PixelWidth*image.PixelHeight*4>256_000_000)throw new InvalidOperationException("문서 이미지 한도 256MB를 초과합니다.");
         var asset=ImageRenderer.RasterOf(image);var crop=Document.Crop;
-        var x=crop.X+(crop.Width-image.PixelWidth)/2;var y=crop.Y+(crop.Height-image.PixelHeight)/2;
-        var a=new Annotation(Guid.NewGuid(),AnnotationKind.Image,new(x,y),new(x+image.PixelWidth,y+image.PixelHeight),new(255,255,255),Image:asset);
+        // A larger image shrinks to fit, so adding one never leaves transparent margins around the capture. The asset keeps its full resolution.
+        var fit=Math.Min(1,Math.Min(crop.Width/image.PixelWidth,crop.Height/image.PixelHeight));
+        double width=image.PixelWidth*fit,height=image.PixelHeight*fit;
+        var x=crop.X+(crop.Width-width)/2;var y=crop.Y+(crop.Height-height)/2;
+        var a=new Annotation(Guid.NewGuid(),AnnotationKind.Image,new(x,y),new(x+width,y+height),new(255,255,255),Image:asset);
         CommitAnnotation(a,true);Tool=null;Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();
     }
     internal void CommitText(Annotation a,bool add)=>CommitAnnotation(a,add);
@@ -468,7 +471,7 @@ internal sealed class EditorSurface : FrameworkElement
     {
         var owns=!Document.IsEditing;if(owns)Document.BeginEdit();
         try {
-            if(a.Kind is AnnotationKind.Image or AnnotationKind.Magnifier or AnnotationKind.Text) {
+            if(a.Kind is AnnotationKind.Magnifier or AnnotationKind.Text) {
                 var b=ImageRenderer.BoundsOf(a);
                 if(a.Kind==AnnotationKind.Text && !ImageRenderer.TailGeometry(a).Bounds.IsEmpty)b.Union(ImageRenderer.TailGeometry(a).Bounds);
                 Document.ExpandToInclude(new(b.X,b.Y,b.Width,b.Height));

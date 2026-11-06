@@ -11,7 +11,7 @@ public enum RibbonStyle { Wedge, Round, Chevron, Band }
 public enum ShapeFill { Outline, Translucent, Solid, Hatched }
 public sealed record AnnotationStyle(ArrowHead ArrowHead = ArrowHead.Filled, ShapeFill Fill = ShapeFill.Outline,
     bool Bubble = true, bool ShowTail = true, double Opacity = 1, bool Sketch = false, bool ShapeTail = false, double Magnification = 3, double Dim = .18, bool Elliptical = false,
-    MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat, double CornerRadius = 8, double TailWidth = 24, RibbonStyle RibbonStyle = RibbonStyle.Wedge);
+    MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat, double CornerRadius = 8, double TailWidth = 24, RibbonStyle RibbonStyle = RibbonStyle.Wedge, string? FontFamily = null);
 
 /// <summary>Limits of the export size, as a factor of the framed image.</summary>
 public static class ExportSizing

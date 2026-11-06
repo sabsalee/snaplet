@@ -41,10 +41,7 @@ internal sealed class PreviewWindow : Window
         thumbnail.MouseLeftButtonDown+=(_,e)=>down=e.GetPosition(thumbnail);
         thumbnail.MouseMove+=(_,e)=>{
             if(down is not Point start || busy || e.LeftButton!=MouseButtonState.Pressed || (e.GetPosition(thumbnail)-start).Length<8)return;
-            down=null;Run(()=>{
-                var path=Path.Combine(SettingsStore.DirectoryPath,"Drag",Guid.NewGuid()+".png");Directory.CreateDirectory(Path.GetDirectoryName(path)!);ImageActions.Save(image,path);
-                DragDrop.DoDragDrop(thumbnail,new DataObject(DataFormats.FileDrop,new[]{path}),DragDropEffects.Copy);message.Text="파일을 전달했습니다.";
-            });
+            down=null;DragFile(thumbnail);
         };
         thumbnail.MouseMove+=(_,e)=>{if(pinMoveStart is not Native.POINT p || e.RightButton!=MouseButtonState.Pressed)return;Native.GetCursorPos(out var at);Native.SetWindowPos(new WindowInteropHelper(this).Handle,0,pinMoveBounds.Left+at.X-p.X,pinMoveBounds.Top+at.Y-p.Y,0,0,0x1|0x4|0x10);};
         thumbnail.MouseRightButtonUp+=(_,e)=>{if(pinMoveStart==null)return;pinMoveStart=null;thumbnail.ReleaseMouseCapture();e.Handled=true;};
@@ -63,6 +60,25 @@ internal sealed class PreviewWindow : Window
         MouseWheel+=(_,e)=>{if(!Pinned)return;if(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)){SetPinOpacity(PinOpacity+(e.Delta>0?.1:-.1));e.Handled=true;return;}Width=Math.Clamp(Width+(e.Delta>0?32:-32),180,900);Height=PinHeight(Width);e.Handled=true;};
         MouseEnter+=(_,_)=>SetPinChrome(true);MouseLeave+=(_,_)=>SetPinChrome(false);
         Closed+=(_,_)=>outside.Stop();
+    }
+    private void DragFile(DependencyObject from)=>Run(()=>{
+        var path=Path.Combine(SettingsStore.DirectoryPath,"Drag",Guid.NewGuid()+".png");Directory.CreateDirectory(Path.GetDirectoryName(path)!);ImageActions.Save(image,path);
+        DragDrop.DoDragDrop(from,new DataObject(DataFormats.FileDrop,new[]{path}),DragDropEffects.Copy);message.Text="파일을 전달했습니다.";
+    });
+    /// <summary>A visible handle for dragging the capture out as a PNG file.</summary>
+    private FrameworkElement FileHandle()
+    {
+        var icon=new StackPanel {Orientation=Orientation.Horizontal};icon.Children.Add(Ui.Grip());icon.Children.Add(Ui.Icon("file",16));icon.Children.Add(Ui.Grip());
+        var handle=new Button {Content=icon,ToolTip="끌어서 파일로 놓기",Height=30,Padding=new Thickness(2),Cursor=Cursors.SizeAll,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Foreground=Ui.Text,Style=(Style)Application.Current.FindResource("EditorIconButton")};
+        System.Windows.Automation.AutomationProperties.SetName(handle,"끌어서 파일로 놓기");
+        Point? start=null;
+        handle.PreviewMouseLeftButtonDown+=(_,e)=>start=e.GetPosition(handle);
+        handle.PreviewMouseLeftButtonUp+=(_,_)=>start=null;
+        handle.PreviewMouseMove+=(_,e)=>{
+            if(start is not Point s || e.LeftButton!=MouseButtonState.Pressed || (e.GetPosition(handle)-s).Length<4)return;
+            start=null;e.Handled=true;DragFile(handle);
+        };
+        return handle;
     }
     private double PinHeight(double width)=>Math.Clamp(width*image.PixelHeight/image.PixelWidth,120,900);
     private void Build()
@@ -96,19 +112,23 @@ internal sealed class PreviewWindow : Window
             // Drag a pinned image with the right mouse button; left drag keeps file transfer.
             thumbnail.MouseRightButtonDown-=MovePinned;thumbnail.MouseRightButtonDown+=MovePinned;
         } else if(nearPointer) {
-            // Thumbnail, size and a row of small actions; it never takes focus, so Ctrl+V into another app keeps working.
+            // Image with a close corner, one row of actions and a drag handle, and a line that names the hovered action.
+            // It never takes focus, so Ctrl+V into another app keeps working.
             SizeToContent=SizeToContent.Height;Width=212;Height=double.NaN;pinHeader=pinTools=null;
             var root=new StackPanel();
-            thumbnail.Height=Math.Clamp(196d*image.PixelHeight/image.PixelWidth,48,120);imageContainer.CornerRadius=new CornerRadius(5);root.Children.Add(imageContainer);
-            var caption=new DockPanel{Margin=new Thickness(1,6,0,2)};
-            var dimensions=Ui.Label($"{image.PixelWidth:N0} × {image.PixelHeight:N0}",10,Ui.Muted);caption.Children.Add(dimensions);
-            if(settings.CopyAfterCapture){var copied=Ui.Label("복사됨 ✓",10,Ui.Accent,FontWeights.SemiBold);DockPanel.SetDock(copied,Dock.Right);caption.Children.Insert(0,copied);}
-            caption.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};root.Children.Add(caption);
-            var row=new StackPanel{Orientation=Orientation.Horizontal};root.Children.Add(row);
-            foreach(Button b in new[]{(Button)FindTool(tools,"편집"),FindTool(tools,"이미지 복사"),FindTool(tools,"이미지 저장"),FindTool(tools,"텍스트 추출"),pin,close}) {
-                ((Panel)b.Parent).Children.Remove(b);b.Width=b.Height=30;b.Padding=new Thickness(6);b.Margin=new Thickness(0,0,2,0);row.Children.Add(b);
+            thumbnail.Height=Math.Clamp(196d*image.PixelHeight/image.PixelWidth,48,120);imageContainer.CornerRadius=new CornerRadius(5);
+            var frame=new Grid();frame.Children.Add(imageContainer);root.Children.Add(frame);
+            ((Panel)close.Parent).Children.Remove(close);close.Width=close.Height=22;close.Padding=new Thickness(4);close.Margin=new Thickness(3);close.Foreground=Brushes.White;close.Background=new SolidColorBrush(Color.FromArgb(150,20,22,26));close.HorizontalAlignment=HorizontalAlignment.Right;close.VerticalAlignment=VerticalAlignment.Top;frame.Children.Add(close);
+            var row=new DockPanel{LastChildFill=false,Margin=new Thickness(0,6,0,0)};root.Children.Add(row);
+            var handle=FileHandle();DockPanel.SetDock(handle,Dock.Right);row.Children.Add(handle);
+            var idle=$"{image.PixelWidth:N0} × {image.PixelHeight:N0}"+(settings.CopyAfterCapture?" · 복사됨 ✓":"");
+            foreach(Button b in new[]{(Button)FindTool(tools,"이미지 복사"),FindTool(tools,"이미지 저장"),FindTool(tools,"편집"),FindTool(tools,"텍스트 추출"),pin}) {
+                ((Panel)b.Parent).Children.Remove(b);b.Width=b.Height=28;b.Padding=new Thickness(5);b.Margin=new Thickness(0,0,1,0);DockPanel.SetDock(b,Dock.Left);row.Children.Add(b);
+                var name=System.Windows.Automation.AutomationProperties.GetName(b);
+                b.MouseEnter+=(_,_)=>message.Text=name;b.MouseLeave+=(_,_)=>message.Text=idle;
             }
-            message.Text="";message.Margin=new Thickness(1,3,0,0);root.Children.Add(message);
+            message.Text=idle;message.Margin=new Thickness(1,4,0,0);root.Children.Add(message);
+            message.MouseLeftButtonDown+=(_,_)=>DragMove();
             Content=Ui.CardOf(root,7);
         } else {
             SizeToContent=SizeToContent.Height;Width=334;Height=double.NaN;pinHeader=pinTools=null;

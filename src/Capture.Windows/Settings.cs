@@ -48,6 +48,8 @@ public sealed record AppSettings
     public WindowCaptureStyle WindowStyle {get;init;}=WindowCaptureStyle.Plain;
     public string SaveFolder {get;init;}=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),"Snaplet");
     /// <summary>File name template for saved images; see <see cref="Capture.Core.FileNameTemplate"/>.</summary>
+    /// <summary>Default font of the text tool; blank uses Noto Sans KR when installed.</summary>
+    public string DefaultTextFont {get;init;}="";
     public string FileNameTemplate {get;init;}=Capture.Core.FileNameTemplate.Default;
     public List<HotkeyBinding> Hotkeys {get;init;}=DefaultHotkeys();
 

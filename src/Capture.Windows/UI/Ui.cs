@@ -72,6 +72,15 @@ internal static class Ui
         var canvas=new System.Windows.Controls.Canvas {Width=24,Height=24};canvas.Children.Add(path);
         return new Viewbox {Width=size,Height=size,Child=canvas,Stretch=Stretch.Uniform};
     }
+    /// <summary>Two columns of dots that say "this can be dragged", inheriting the owner's foreground.</summary>
+    internal static FrameworkElement Grip()
+    {
+        var dots=new GeometryGroup();
+        for(int row=0;row<3;row++)for(int column=0;column<2;column++)dots.Children.Add(new EllipseGeometry(new Point(1.25+column*3.75,3+row*5),1.1,1.1));
+        var path=new Path {Data=dots,Width=7,Height=14,Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center,Opacity=.65};
+        path.SetBinding(Path.FillProperty,new Binding("Foreground"){RelativeSource=new RelativeSource(RelativeSourceMode.FindAncestor,typeof(Control),1),FallbackValue=Text});
+        return path;
+    }
     internal static DockPanel Header(string title,string subtitle)
     {
         var row=new DockPanel{Margin=new Thickness(0,0,0,22)};var labels=new StackPanel();labels.Children.Add(Label(title,24,weight:FontWeights.SemiBold));labels.Children.Add(new TextBlock{Text=subtitle,Foreground=Muted,Margin=new Thickness(0,7,0,0),TextWrapping=TextWrapping.Wrap});row.Children.Add(labels);return row;
