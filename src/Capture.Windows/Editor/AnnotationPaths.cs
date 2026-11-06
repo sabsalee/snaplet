@@ -18,59 +18,7 @@ internal static class AnnotationPaths
         return Unit(derivative.LengthSquared > .000001 ? derivative : P(a.End) - P(a.Start));
     }
 
-    internal static Geometry Arrow(Annotation a)
-    {
-        if (a.Appearance.ArrowHead == ArrowHead.Filled) return RibbonArrow(a);
-        const int samples = 64;
-        var distances = new double[samples + 1];
-        for (int i = 1; i <= samples; i++) distances[i] = distances[i - 1] + (Curve(a, (double)i / samples) - Curve(a, (double)(i - 1) / samples)).Length;
-        var length = distances[^1];
-        if (length < .5) return new EllipseGeometry(P(a.Start), a.Thickness / 2, a.Thickness / 2);
-        var doubleHead = a.Appearance.ArrowHead == ArrowHead.Double;
-        // Broad filled arrows deliberately have a different silhouette from a stroked line arrow.
-        var headLength = Math.Min(Math.Max(14, a.Thickness * 8.5), length * (doubleHead ? .34 : .43));
-        var headWidth = Math.Min(a.Thickness * 3.1, headLength * .54);
-        var shaftWidth = Math.Min(a.Thickness * 1.4, headWidth * .55);
-        double AtDistance(double distance)
-        {
-            int i = Array.FindIndex(distances, x => x >= distance);
-            if (i <= 0) return 0;
-            return ((i - 1) + (distance - distances[i - 1]) / Math.Max(.000001, distances[i] - distances[i - 1])) / samples;
-        }
-        var startT = doubleHead ? AtDistance(headLength) : 0;
-        var endT = AtDistance(length - headLength);
-        var vertices = new List<Point>();
-        var cornerRadii = new List<double>();
-        void Add(Point p, double rounding) { vertices.Add(p); cornerRadii.Add(rounding); }
-        var start = Curve(a, startT); var end = Curve(a, endT);
-        var startNormal = new Vector(-Tangent(a, startT).Y, Tangent(a, startT).X);
-        var endNormal = new Vector(-Tangent(a, endT).Y, Tangent(a, endT).X);
-        if (doubleHead)
-        {
-            Add(P(a.Start), Math.Min(.6, a.Thickness * .14));
-            Add(Offset(start, startNormal, headWidth), a.Thickness * .35);
-        }
-        // A subtly tapered, softly squared tail follows the same bend as the head.
-        for (int i = 0; i <= 32; i++)
-        {
-            double t = startT + (endT - startT) * i / 32;
-            var tangent = Tangent(a, t); var normal = new Vector(-tangent.Y, tangent.X);
-            double width = shaftWidth * (doubleHead ? 1 : .68 + .32 * i / 32);
-            Add(Offset(Curve(a, t), normal, width), i is 0 or 32 ? a.Thickness * .35 : 0);
-        }
-        Add(Offset(end, endNormal, headWidth), a.Thickness * .4);
-        Add(P(a.End), Math.Min(.6, a.Thickness * .14));
-        Add(Offset(end, endNormal, -headWidth), a.Thickness * .4);
-        for (int i = 32; i >= 0; i--)
-        {
-            double t = startT + (endT - startT) * i / 32;
-            var tangent = Tangent(a, t); var normal = new Vector(-tangent.Y, tangent.X);
-            double width = shaftWidth * (doubleHead ? 1 : .68 + .32 * i / 32);
-            Add(Offset(Curve(a, t), normal, -width), i is 0 or 32 ? a.Thickness * .35 : 0);
-        }
-        if (doubleHead) Add(Offset(start, startNormal, -headWidth), a.Thickness * .35);
-        return RoundedPolygon(vertices, cornerRadii);
-    }
+    internal static Geometry Arrow(Annotation a) => RibbonArrow(a);
 
     private static Geometry RibbonArrow(Annotation a)
     {
@@ -97,8 +45,73 @@ internal static class AnnotationPaths
         }
         var vertices = new List<Point>(); var rounding = new List<double>();
         void Add(Point p, double radius = 0) { vertices.Add(p); rounding.Add(radius); }
-        var neck = length - headLength - .9 * headScale;
         const int steps = 24;
+        void Body(double sign, double from, double to, double fromHalf, double toHalf, bool towardHead)
+        {
+            for (int i = 0; i <= steps; i++)
+            {
+                var j = towardHead ? i : steps - i;
+                Add(Side(from + (to - from) * j / steps, fromHalf + (toHalf - fromHalf) * j / steps, sign));
+            }
+        }
+        // A round tail is a half circle that follows the path's start.
+        void RoundCap(double radius, double sign, bool towardHead)
+        {
+            const int arc = 6;
+            for (int i = towardHead ? 0 : arc - 1; towardHead ? i < arc : i >= 1; i += towardHead ? 1 : -1)
+            {
+                var angle = i * Math.PI / 2 / arc;
+                Add(Side(radius * (1 - Math.Cos(angle)), radius * Math.Sin(angle), sign));
+            }
+        }
+        // Proportions below are measured from reference output; each outline is drawn here from those ratios alone.
+        switch (a.Appearance.RibbonStyle)
+        {
+            case RibbonStyle.Round:
+            {
+                double head = 36.5 * headScale, half = 20.5 * headScale, throat = 7 * headScale, tail = 6 * tailScale;
+                void Flank(double sign, bool towardTip)
+                {
+                    var outline = new[] { (head, throat, .6), (head + 1.2 * headScale, half, 1.5), (head * .45, half * .6, 6) };
+                    foreach (var (back, width, radius) in towardTip ? outline : Enumerable.Reverse(outline))
+                        Add(Side(length - back, width, sign), radius * headScale);
+                }
+                RoundCap(tail, 1, true);
+                Body(1, tail, length - head, tail, throat, true);
+                Flank(1, true);
+                Add(P(a.End), .8 * headScale);
+                Flank(-1, false);
+                Body(-1, tail, length - head, tail, throat, false);
+                RoundCap(tail, -1, false);
+                return RoundedPolygon(vertices, rounding);
+            }
+            case RibbonStyle.Chevron:
+            {
+                double notch = 16 * headScale, throat = 6 * headScale, tail = 6 * tailScale;
+                RoundCap(tail, 1, true);
+                Body(1, tail, length - notch, tail, throat, true);
+                Add(Side(length - 29 * headScale, 17 * headScale, 1), .8 * headScale);
+                Add(Side(length - 22 * headScale, 21.5 * headScale, 1), 1.2 * headScale);
+                Add(P(a.End), .8 * headScale);
+                Add(Side(length - 22 * headScale, 21.5 * headScale, -1), 1.2 * headScale);
+                Add(Side(length - 29 * headScale, 17 * headScale, -1), .8 * headScale);
+                Body(-1, tail, length - notch, tail, throat, false);
+                RoundCap(tail, -1, false);
+                return RoundedPolygon(vertices, rounding);
+            }
+            case RibbonStyle.Band:
+            {
+                double head = 22 * headScale, half = 15 * headScale, tail = 15 * tailScale;
+                Add(Side(3.3 * tailScale, 0, 1));
+                Add(Side(0, tail, 1), tailScale);
+                Body(1, tailScale, length - head, tail, half, true);
+                Add(P(a.End), .8 * headScale);
+                Body(-1, tailScale, length - head, tail, half, false);
+                Add(Side(0, tail, -1), tailScale);
+                return RoundedPolygon(vertices, rounding);
+            }
+        }
+        var neck = length - headLength - .9 * headScale;
         for (int i = 0; i <= steps; i++)
             Add(Side(neck * i / steps, tailHalf + (neckHalf - tailHalf) * i / steps, 1), i == 0 ? 1.6 * tailScale : 0);
         Add(Side(length - headLength, innerHalf, 1), .6 * headScale);

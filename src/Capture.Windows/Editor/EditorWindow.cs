@@ -531,10 +531,16 @@ public sealed class EditorWindow : Window
                 textOnly.Click+=async(_,_)=>{textOnly.IsEnabled=false;try{await ProcessTextOnlyAsync(a);}finally{textOnly.IsEnabled=true;}};propertyDetails.Children.Add(textOnly);
             }
             if(kind==AnnotationKind.Arrow) {
-                foreach(var (label,head) in new[]{("리본 화살표",ArrowHead.Filled),("열린 곡선 화살표",ArrowHead.Open),("가는 화살표",ArrowHead.Simple),("양방향",ArrowHead.Double)}) {
+                foreach(var (label,head) in new[]{("리본 화살표",ArrowHead.Filled),("열린 화살표",ArrowHead.Open),("가는 화살표",ArrowHead.Simple),("양방향",ArrowHead.Double)}) {
                     var style=surface.InkStyle with {ArrowHead=head};var group=new DrawingGroup();
                     using(var dc=group.Open())ImageRenderer.PaintAnnotation(dc,source,new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),AnnotationKind.Arrow,new(3,14),new(35,14),icon,1.6,Style:style));
                     Segment(group,label,head==surface.InkStyle.ArrowHead,()=>surface.InkStyle=style);
+                }
+                if(surface.InkStyle.ArrowHead==ArrowHead.Filled) {
+                    // One button steps through the filled silhouettes; its icon shows the current one.
+                    var group=new DrawingGroup();
+                    using(var dc=group.Open())ImageRenderer.PaintAnnotation(dc,source,new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),AnnotationKind.Arrow,new(3,14),new(35,14),icon,1.6,Style:surface.InkStyle));
+                    Segment(group,"화살표 모양 바꾸기",false,()=>surface.InkStyle=surface.InkStyle with {RibbonStyle=(RibbonStyle)(((int)surface.InkStyle.RibbonStyle+1)%Enum.GetValues<RibbonStyle>().Length)});
                 }
                 if(a!=null){var reverse=ToolButton(propertyDetails,"⇄","시작점과 끝점 반전",()=>surface.ChangeSelected(x=>x with {Start=x.End,End=x.Start}));reverse.Height=32;}
             }

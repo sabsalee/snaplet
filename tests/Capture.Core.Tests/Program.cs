@@ -28,6 +28,8 @@ Check(moved.Points![1] == new PointD(-1, 13), "Move pen geometry.");
 document.Replace(moved); document.Undo(); Check(document.Annotations[0].Points![1] == new PointD(4, 7), "Undo replacement.");
 document.Add(Item()); Check(!document.CanRedo, "New edit invalidates redo branch.");
 Throws(() => document.Add(Item() with { Thickness = double.NaN }), "Invalid style rejected.");
+Throws(() => document.Add(Item() with { Style = new(RibbonStyle: (RibbonStyle)99) }), "Unknown arrow silhouette rejected.");
+Check(new AnnotationStyle().RibbonStyle == RibbonStyle.Wedge, "New arrows start with the wedge silhouette.");
 Throws(() => document.Add(document.Annotations[0]), "Duplicate IDs rejected.");
 document.Delete(document.Annotations[0].Id); document.Undo(); Check(document.Annotations.Count == 2, "Delete undo restores annotations.");
 document.Replace(document.Annotations[0]); Check(document.CanRedo, "Equivalent replacement preserves redo.");

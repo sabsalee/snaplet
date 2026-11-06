@@ -6,10 +6,12 @@ public enum AnnotationKind { Arrow, Line, Rectangle, Ellipse, Pen, Text, Step, H
 public enum MarkerShape { Line, Freehand, Rectangle }
 public enum MarkerCap { Flat, Round, Sketch }
 public enum ArrowHead { Filled, Open, Simple, Double }
+/// <summary>Silhouette of a filled arrow; only meaningful with <see cref="ArrowHead.Filled"/>.</summary>
+public enum RibbonStyle { Wedge, Round, Chevron, Band }
 public enum ShapeFill { Outline, Translucent, Solid, Hatched }
 public sealed record AnnotationStyle(ArrowHead ArrowHead = ArrowHead.Filled, ShapeFill Fill = ShapeFill.Outline,
     bool Bubble = true, bool ShowTail = true, double Opacity = 1, bool Sketch = false, bool ShapeTail = false, double Magnification = 3, double Dim = .6, bool Elliptical = false,
-    MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat, double CornerRadius = 8, double TailWidth = 24);
+    MarkerShape HighlightShape = MarkerShape.Line, MarkerCap MarkerCap = MarkerCap.Flat, double CornerRadius = 8, double TailWidth = 24, RibbonStyle RibbonStyle = RibbonStyle.Wedge);
 
 /// <summary>Background behind the exported image: gradient/solid/transparent fill, padding, rounded corners and a soft shadow.</summary>
 public enum BackdropFill { Gradient, Solid, Transparent }
@@ -174,7 +176,7 @@ public sealed class EditableDocument
             !double.IsFinite(value.Appearance.TailWidth) || value.Appearance.TailWidth is < 8 or > 64 ||
             !double.IsFinite(value.Appearance.Dim) || value.Appearance.Dim is < 0 or > 1 ||
             !Enum.IsDefined(value.Appearance.HighlightShape) || !Enum.IsDefined(value.Appearance.MarkerCap) ||
-            !Enum.IsDefined(value.Appearance.ArrowHead) || !Enum.IsDefined(value.Appearance.Fill) || !double.IsFinite(value.Appearance.Opacity) || value.Appearance.Opacity is < 0 or > 1)
+            !Enum.IsDefined(value.Appearance.ArrowHead) || !Enum.IsDefined(value.Appearance.RibbonStyle) || !Enum.IsDefined(value.Appearance.Fill) || !double.IsFinite(value.Appearance.Opacity) || value.Appearance.Opacity is < 0 or > 1)
             throw new ArgumentException("Annotation contains invalid geometry, style, or ID.", nameof(value));
         return value with { Points = value.Points is null ? null : Array.AsReadOnly(value.Points.ToArray()) };
     }

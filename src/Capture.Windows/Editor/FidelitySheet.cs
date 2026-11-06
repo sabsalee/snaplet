@@ -53,11 +53,13 @@ internal static class FidelitySheet
         Scene("s1-arrow-filled-red",d=>d.Add(A(AnnotationKind.Arrow,155,148,680,245,red,style:new AnnotationStyle(ArrowHead:ArrowHead.Filled))));
         // S2: every arrow preset, one per row across the boxes and checker.
         Scene("s2-arrow-presets",d=>{for(int i=0;i<arrows.Count;i++)d.Add(A(AnnotationKind.Arrow,100,90+i*130,460+i*40,140+i*130,arrows[i]));});
+        // S2b: the filled silhouettes at the default size, placed like the reference comparison image.
+        Scene("s2b-arrow-styles",d=>{var styles=Enum.GetValues<RibbonStyle>();for(int i=0;i<styles.Length;i++)d.Add(A(AnnotationKind.Arrow,100,90+i*130,460+i*40,140+i*130,arrows[0],style:arrows[0].Style with {RibbonStyle=styles[i]}));});
         // S3: every head style at the same colour/size, plus a bent arrow.
         Scene("s3-arrow-heads",d=>{
             var heads=new[]{ArrowHead.Filled,ArrowHead.Open,ArrowHead.Simple,ArrowHead.Double};
-            for(int i=0;i<heads.Length;i++)d.Add(A(AnnotationKind.Arrow,100,100+i*120,420,100+i*120,red,style:new AnnotationStyle(ArrowHead:heads[i])));
-            d.Add(A(AnnotationKind.Arrow,560,120,860,500,red,control:new PointD(860,160),style:new AnnotationStyle(ArrowHead:ArrowHead.Filled)));
+            for(int i=0;i<heads.Length;i++)d.Add(A(AnnotationKind.Arrow,100,100+i*120,420,100+i*120,arrows[0],style:new AnnotationStyle(ArrowHead:heads[i])));
+            d.Add(A(AnnotationKind.Arrow,560,120,860,500,arrows[0],control:new PointD(860,160),style:new AnnotationStyle(ArrowHead:ArrowHead.Filled)));
         });
         // S4: rectangle/ellipse presets and fills.
         Scene("s4-shapes",d=>{
