@@ -98,6 +98,7 @@ public sealed class EditorWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(zoomButton,"확대율");info.Children.Add(zoomButton);
         zoomButton.Click+=(_,_)=>{
             var menu=Menu();Item(menu,"화면 맞춤 · Ctrl+0",()=>{fitMode=true;Fit();});Item(menu,"100% · Ctrl+1",SetActualSize);Item(menu,"선택 영역 확대 · Ctrl+2",ZoomToSelection);
+            Item(menu,"빠른 확대 · Z",QuickZoom);Item(menu,"선택 왼쪽 위 확대 · Q",()=>ZoomToCorner(false));Item(menu,"선택 오른쪽 아래 확대 · W",()=>ZoomToCorner(true));
             Item(menu,"확대 · Ctrl++",()=>ChangeZoom(1.25));Item(menu,"축소 · Ctrl+-",()=>ChangeZoom(.8));
             zoomButton.ContextMenu=menu;menu.PlacementTarget=zoomButton;menu.IsOpen=true;
         };
@@ -267,7 +268,7 @@ public sealed class EditorWindow : Window
         var snapping=new MenuItem {Header="객체 가장자리·중심에 맞추기 · Ctrl 일시 해제",IsCheckable=true,IsChecked=surface.SnapToObjects};
         snapping.Click+=(_,_)=>surface.SnapToObjects=snapping.IsChecked;menu.Items.Add(snapping);
         Item(menu,"선택 객체 복제 · Ctrl+D",surface.DuplicateSelected);Item(menu,"선택 객체 삭제 · Delete",surface.DeleteSelected);
-        menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));
+        menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));Item(menu,"인쇄 · Ctrl+P",Print);
         Item(menu,"텍스트 추출",()=>{if(!FinishTextEdit(true))return;OcrRequested?.Invoke(ImageRenderer.Render(source,document));});
         var scaleMenu=new MenuItem {Header=$"내보내기 크기 · {document.ExportScale:P0}"};
         foreach(var (label,value) in new[]{("100% (원본)",1d),("75%",.75),("50% (200% 화면을 1배로)",.5),("25%",.25)}) {
@@ -776,11 +777,38 @@ public sealed class EditorWindow : Window
         RectD? target=surface.PendingCrop ?? surface.Selection?.Bounds;
         if(target is not RectD r || r.Width<1 || r.Height<1 || scroll.ViewportWidth<=1){status.Text="확대할 선택 영역이 없습니다. 자르기 범위나 객체를 먼저 선택하세요.";return;}
         fitMode=false;
-        surface.SetZoom(Math.Min((scroll.ViewportWidth-60)/r.Width,(scroll.ViewportHeight-60)/r.Height));SyncStage();scroll.UpdateLayout();
-        var center=surface.TranslatePoint(new Point((r.X+r.Width/2-document.Crop.X)*surface.Zoom,(r.Y+r.Height/2-document.Crop.Y)*surface.Zoom),scroll);
+        surface.SetZoom(Math.Min((scroll.ViewportWidth-60)/r.Width,(scroll.ViewportHeight-60)/r.Height));
+        CenterOn(r.X+r.Width/2,r.Y+r.Height/2);
+    }
+    /// <summary>Q/W: look closely at one corner of the pending crop or selected object, for precise adjustment.</summary>
+    internal void ZoomToCorner(bool bottomRight)
+    {
+        RectD? target=surface.PendingCrop ?? surface.Selection?.Bounds;
+        if(target is not RectD r || scroll.ViewportWidth<=1){status.Text="확대할 선택 영역이 없습니다. 자르기 범위나 객체를 먼저 선택하세요.";return;}
+        fitMode=false;surface.SetZoom(Math.Max(surface.Zoom,4));
+        CenterOn(bottomRight?r.Right:r.X,bottomRight?r.Bottom:r.Y);
+    }
+    /// <summary>Z: jump to 200% under the pointer, and back to the fitted view.</summary>
+    internal void QuickZoom()
+    {
+        if(!fitMode){fitMode=true;Fit();return;}
+        var pointer=Mouse.GetPosition(scroll);
+        var inside=pointer.X>=0 && pointer.Y>=0 && pointer.X<=scroll.ActualWidth && pointer.Y<=scroll.ActualHeight;
+        ZoomAt(2/VisualTreeHelper.GetDpi(surface).DpiScaleX,inside?pointer:new Point(scroll.ActualWidth/2,scroll.ActualHeight/2));
+    }
+    private void CenterOn(double x,double y)
+    {
+        SyncStage();scroll.UpdateLayout();
+        var center=surface.TranslatePoint(new Point((x-document.Crop.X)*surface.Zoom,(y-document.Crop.Y)*surface.Zoom),scroll);
         scroll.ScrollToHorizontalOffset(scroll.HorizontalOffset+center.X-scroll.ViewportWidth/2);
         scroll.ScrollToVerticalOffset(scroll.VerticalOffset+center.Y-scroll.ViewportHeight/2);
         scroll.UpdateLayout();UpdateStatus();
+    }
+    private void Print()
+    {
+        if(!FinishTextEdit(true))return;document.EndEdit();
+        try{ImageActions.Print(BackdropRenderer.Export(source,document),this);}
+        catch(Exception ex){ShowError("인쇄 실패",ex);}
     }
     private void SetActualSize()=>ZoomAt(1/VisualTreeHelper.GetDpi(surface).DpiScaleX,new(scroll.ActualWidth/2,scroll.ActualHeight/2));
     private void ChangeZoom(double factor,Point? anchor=null)=>ZoomAt(surface.Zoom*factor,anchor ?? new Point(scroll.ActualWidth/2,scroll.ActualHeight/2));
@@ -827,7 +855,7 @@ public sealed class EditorWindow : Window
                 case Key.V:PasteImage();break;case Key.O:InsertImageFile();break;
                 case Key.A:if(shift)_=CaptureIntoDocumentAsync();else return;break;
                 case Key.Enter:if(surface.Selection is {Kind:AnnotationKind.Highlight})surface.ChangeSelected(a=>a with {Style=a.Appearance with {MarkerCap=(MarkerCap)(((int)a.Appearance.MarkerCap+1)%3)}});else return;break;
-                case Key.C:_=CopyAsync();break;case Key.S:Save(shift);break;
+                case Key.C:_=CopyAsync();break;case Key.S:Save(shift);break;case Key.P:Print();break;
                 case Key.D:surface.DuplicateSelected();break;
                 case Key.D0:fitMode=true;Fit();break;case Key.D1:SetActualSize();break;case Key.D2:ZoomToSelection();break;
                 case Key.OemPlus:case Key.Add:ChangeZoom(1.25);break;case Key.OemMinus:case Key.Subtract:ChangeZoom(.8);break;
@@ -848,6 +876,7 @@ public sealed class EditorWindow : Window
             case Key.T:SetTool(AnnotationKind.Text);break;case Key.N:SetTool(AnnotationKind.Step);break;case Key.H:SetTool(AnnotationKind.Highlight);break;
             case Key.G:SetTool(AnnotationKind.Magnifier);break;case Key.S:SetTool(AnnotationKind.Spotlight);break;case Key.E:SetTool(AnnotationKind.Erase);break;
             case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;case Key.I:StartColorPick();break;
+            case Key.Z:QuickZoom();break;case Key.Q:ZoomToCorner(false);break;case Key.W:ZoomToCorner(true);break;
             case Key.Left:case Key.Right:case Key.Up:case Key.Down:NudgeKeyDown(e.Key,shift);break;
             default:return;
         }
@@ -925,7 +954,7 @@ public sealed class EditorWindow : Window
     {
         if(!FinishTextEdit(true))return;document.EndEdit();var path=savedPath;
         if(saveAs || path==null) {
-            var dialog=new SaveFileDialog {Filter="PNG 이미지 (*.png)|*.png|JPEG 이미지 (*.jpg)|*.jpg",FileName=path ?? $"Snaplet_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png",AddExtension=true,OverwritePrompt=true};
+            var dialog=new SaveFileDialog {Filter="PNG 이미지 (*.png)|*.png|JPEG 이미지 (*.jpg)|*.jpg",FileName=path ?? ImageActions.DefaultName(),AddExtension=true,OverwritePrompt=true};
             if(dialog.ShowDialog(this)!=true)return;path=dialog.FileName;
         }
         try {ImageActions.Save(BackdropRenderer.Export(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport)Hide();}

@@ -60,7 +60,7 @@ public partial class App : Application
         if(!created){try{using var handle=EventWaitHandle.OpenExisting(@"Local\Snaplet.Windows11.Show");handle.Set();}catch(WaitHandleCannotBeOpenedException){}Shutdown();return;}
         wake=new EventWaitHandle(false,EventResetMode.AutoReset,@"Local\Snaplet.Windows11.Show");
         wakeRegistration=ThreadPool.RegisterWaitForSingleObject(wake,(_,_)=>Dispatcher.BeginInvoke(ShowHome),null,Timeout.Infinite,false);
-        settings=SettingsStore.Load(out var warning);
+        settings=SettingsStore.Load(out var warning);ImageActions.NameTemplate=settings.FileNameTemplate;
         _=CommandChannel.ListenAsync(command=>Dispatcher.BeginInvoke(()=>_=RunCommandAsync(command)),commandListener.Token);
         if(settings.EnableDeepLinks)CommandChannel.SetProtocolRegistration(true);
         if(settings.LaunchAtLogin)StartupRegistration.Apply(true);
@@ -306,7 +306,7 @@ public partial class App : Application
             if(previous.LaunchAtLogin!=next.LaunchAtLogin && !StartupRegistration.Apply(next.LaunchAtLogin))throw new InvalidOperationException("로그인 시 자동 실행을 설정하지 못했습니다. Windows 설정 → 앱 → 시작 프로그램을 확인해 주세요.");
             if(!previous.KeepHistoryOnDisk && next.KeepHistoryOnDisk){var oldestFirst=history.AsEnumerable().Reverse().ToArray();_=Task.Run(()=>{foreach(var image in oldestFirst){try{HistoryStore.Save(image);Thread.Sleep(2);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}}});}
             hotkeys?.Apply(next.Hotkeys);
-            try{SettingsStore.Save(next);settings=next;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
+            try{SettingsStore.Save(next);settings=next;ImageActions.NameTemplate=next.FileNameTemplate;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
             foreach(var editor in editors.Values){editor.EscapeAction=settings.EscapeAction;editor.EscapeSaveFolder=settings.SaveFolder;}
             home?.UpdateSettings(settings);status.Text="설정을 저장했습니다.";
         },updates,RestartForUpdate);preferences.SelectPage(page);preferences.Closed+=(_,_)=>preferences=null;Exclude(preferences);preferences.Show();
