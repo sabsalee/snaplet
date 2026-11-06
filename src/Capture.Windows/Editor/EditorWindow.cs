@@ -92,7 +92,7 @@ public sealed class EditorWindow : Window
         var actions=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,2,0)};DockPanel.SetDock(actions,Dock.Left);toolbar.Children.Add(actions);
         ToolButton(bottomRight,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
         ToolButton(bottomRight,"⧉","복사 · Ctrl+C · Alt를 누르면 창 유지",async()=>await CopyAsync());
-        var saveButton=Ui.Button("저장",()=>Save(false),style:"PrimaryButton");saveButton.Margin=new Thickness(6,0,0,0);saveButton.ToolTip="저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S · Alt를 누르면 창 유지";bottomRight.Children.Add(saveButton);
+        var saveButton=Ui.Button("저장",()=>Save(false),style:"PrimaryButton");saveButton.Margin=new Thickness(6,0,0,0);saveButton.Height=30;saveButton.MinHeight=0;saveButton.VerticalAlignment=VerticalAlignment.Center;saveButton.Foreground=Brushes.White;saveButton.ToolTip="저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S · Alt를 누르면 창 유지";bottomRight.Children.Add(saveButton);
         FileDragButton(bottomCenter);
         ToolButton(actions,"region","자르기 · C",StartCrop);
         backdropButton=ToolButton(actions,"backdrop","배경 꾸미기 · 여백·그라데이션·그림자·둥근 모서리",()=>{});backdropButton.Click+=(_,_)=>ShowBackdrop(backdropButton);
