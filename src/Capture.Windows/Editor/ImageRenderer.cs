@@ -47,7 +47,7 @@ internal static class ImageRenderer
         {
             case AnnotationKind.Line:
             case AnnotationKind.Arrow:
-                if (a.Kind == AnnotationKind.Arrow && a.Appearance.ArrowHead is ArrowHead.Filled or ArrowHead.Double)
+                if (a.Kind == AnnotationKind.Arrow && a.Appearance.ArrowHead == ArrowHead.Filled)
                 {
                     dc.DrawGeometry(brush, null, ArrowGeometry(a));
                     break;
@@ -157,30 +157,40 @@ internal static class ImageRenderer
         if (a.Kind != AnnotationKind.Arrow) return curve;
         var from = a.Control ?? a.Start;
         if (AnnotationGeometry.Distance(from, a.End) < .001) from = a.Start;
+        var chord = AnnotationGeometry.Distance(a.Start, a.End);
         var result = new GeometryGroup(); result.Children.Add(curve);
-        result.Children.Add(ArrowTip(a.End, from, a.Thickness, a.Appearance.ArrowHead));
+        result.Children.Add(ArrowTip(a.End, from, a.Thickness, a.Appearance.ArrowHead, chord));
+        if (a.Appearance.ArrowHead == ArrowHead.Double)
+        {
+            var back = a.Control ?? a.End;
+            if (AnnotationGeometry.Distance(back, a.Start) < .001) back = a.End;
+            result.Children.Add(ArrowTip(a.Start, back, a.Thickness, ArrowHead.Double, chord));
+        }
         return result;
     }
 
-    private static Geometry ArrowTip(PointD tip,PointD from,double thickness,ArrowHead style)
+    /// <summary>Straight V head. Length and half-width in thickness units come from reference output at the default size; a short arrow keeps its shaft visible.</summary>
+    private static Geometry ArrowTip(PointD tip,PointD from,double thickness,ArrowHead style,double chord)
     {
         var tangent = P(tip) - P(from);
         if (tangent.LengthSquared < .000001) tangent = new(1, 0);
         tangent.Normalize(); var normal = new Vector(-tangent.Y, tangent.X);
-        var length = Math.Max(12, thickness * (style == ArrowHead.Simple ? 3 : 5));
-        var spread = length * (style == ArrowHead.Simple ? .36 : .52);
+        var (reach, floor, widthRatio) = style switch
+        {
+            ArrowHead.Open => (7.3, 10.0, .62),
+            ArrowHead.Filled => (5.0, 12.0, .52),
+            _ => (3.0, 6.0, .93)
+        };
+        var limit = Math.Max(1, chord * (style == ArrowHead.Double ? .4 : .45));
+        var length = Math.Min(limit, Math.Max(floor, thickness * reach));
+        var spread = length * widthRatio;
         var back = P(tip) - tangent * length;
-        var left = back + normal * spread; var right = back - normal * spread;
         var shape = new StreamGeometry();
         using (var g = shape.Open())
         {
-            g.BeginFigure(left, false, false);
-            if (style == ArrowHead.Open)
-            {
-                g.QuadraticBezierTo(P(tip) - tangent * (length * .4) + normal * (spread * .85), P(tip), true, true);
-                g.QuadraticBezierTo(P(tip) - tangent * (length * .4) - normal * (spread * .85), right, true, true);
-            }
-            else { g.LineTo(P(tip), true, true); g.LineTo(right, true, true); }
+            g.BeginFigure(back + normal * spread, false, false);
+            g.LineTo(P(tip), true, true);
+            g.LineTo(back - normal * spread, true, true);
         }
         shape.Freeze(); return shape;
     }

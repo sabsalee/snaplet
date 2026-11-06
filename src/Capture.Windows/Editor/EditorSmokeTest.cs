@@ -113,7 +113,7 @@ public static class EditorSmokeTest
         Check(paintedTail is PointD witness && surface.Hit(callout,witness),"callout can be selected by its painted tail");
         Check(surface.Hit(pointer,new(472,260)),"counter can be selected by its painted pointer");
         var openArrow=new Annotation(Guid.NewGuid(),AnnotationKind.Arrow,new(20,200),new(300,200),red,10,Style:new(ArrowHead:ArrowHead.Open));
-        Check(surface.Hit(openArrow,new(250,226)),"open arrow can be selected by its curved head wing away from its shaft");
+        Check(surface.Hit(openArrow,new(250,226)),"open arrow can be selected by its head wing away from its shaft");
         var dotAnnotation=new Annotation(Guid.NewGuid(),AnnotationKind.Pen,new(30,30),new(30,30),red,4,Points:new[]{new PointD(30,30)});
         Check(surface.Hit(dotAnnotation,new(30,30)) && !surface.Hit(dotAnnotation,new(100,100)),"single-point pen mark remains selectable");
         var edgeText=surface.NewTextAt(new(630,410));
@@ -213,7 +213,7 @@ public static class EditorSmokeTest
             annotations.Add(new(Guid.NewGuid(), AnnotationKind.Arrow, new(x + 15, 100), new(x + 235, 100), red, 5, Style: new(ArrowHead: styles[i])));
             var bent = AnnotationGeometry.BendThrough(new(Guid.NewGuid(), AnnotationKind.Arrow, new(x + 15, 180), new(x + 235, 180), blue, 5, Style: new(ArrowHead: styles[i])), new(x + 125, 240));
             annotations.Add(bent);
-            if (styles[i] is ArrowHead.Filled or ArrowHead.Double)
+            if (styles[i] == ArrowHead.Filled)
             {
                 var outline = ImageRenderer.ArrowGeometry(bent);
                 check(outline.FillContains(new Point(x + 125, 240)), styles[i] + " curved silhouette contains its bend handle");
@@ -221,6 +221,22 @@ public static class EditorSmokeTest
             }
         }
         var wide = annotations[0];
+        var doubleArrow = wide with { Style = new(ArrowHead: ArrowHead.Double) };
+        var stroke = ImageRenderer.ArrowStrokeGeometry(doubleArrow);
+        check(stroke.StrokeContains(new Pen(Brushes.Black, 1), new Point(50 + 15 * .5, 100 + 15 * .5 * .93)), "double arrow draws an open head at its start");
+        check(stroke.StrokeContains(new Pen(Brushes.Black, 1), new Point(270 - 15 * .5, 100 + 15 * .5 * .93)), "double arrow draws an open head at its end");
+        // Thickness 5 is step 1.05: the chevron leaves a notch between shaft and barb where the wedge is solid.
+        const double step = 1.05;
+        var notch = new Point(270 - 22 * step, 100 + 8.5 * step);
+        check(ImageRenderer.ArrowGeometry(wide).FillContains(notch), "wedge head is solid behind its tip");
+        check(!ImageRenderer.ArrowGeometry(wide with { Style = new(RibbonStyle: RibbonStyle.Chevron) }).FillContains(notch), "chevron head is cut away behind its barbs");
+        var band = wide with { Style = new(RibbonStyle: RibbonStyle.Band) };
+        check(ImageRenderer.ArrowGeometry(band).FillContains(new Point(160, 100 + 13 * step)), "band arrow keeps a broad body");
+        check(!ImageRenderer.ArrowGeometry(band).FillContains(new Point(50 + step, 100)), "band arrow has a notched tail");
+        check(!ImageRenderer.ArrowGeometry(wide with { Style = new(RibbonStyle: RibbonStyle.Round) }).FillContains(new Point(50 + .3 * step, 100 + 5.5 * step)), "round arrow has a rounded tail");
+        foreach (var ribbon in Enum.GetValues<RibbonStyle>())
+            foreach (var endpoint in new[] { new PointD(30, 30), new PointD(31, 31), new PointD(60, 60) })
+                check(!ImageRenderer.ArrowGeometry(wide with { Start = new(30, 30), End = endpoint, Style = new(RibbonStyle: ribbon) }).Bounds.IsEmpty, ribbon + " short arrow remains a valid visible path");
         check(ImageRenderer.ArrowGeometry(wide).FillContains(new Point(120, 106)), "filled arrow has a broad continuous shaft rather than a thin line with a triangle");
         foreach (var endpoint in new[] { new PointD(30, 30), new PointD(30.01, 30.01), new PointD(31, 31) })
         {

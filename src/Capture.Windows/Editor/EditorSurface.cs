@@ -273,7 +273,7 @@ internal sealed class EditorSurface : FrameworkElement
     {
         var margin=Math.Max(7/Zoom,a.Thickness/2+3/Zoom);
         if(a.Kind is not (AnnotationKind.Rectangle or AnnotationKind.Ellipse) && ImageRenderer.TailGeometry(a).FillContains(ImageRenderer.P(p)))return true;
-        if(a.Kind==AnnotationKind.Arrow && a.Appearance.ArrowHead is ArrowHead.Filled or ArrowHead.Double)
+        if(a.Kind==AnnotationKind.Arrow && a.Appearance.ArrowHead==ArrowHead.Filled)
             return ImageRenderer.ArrowGeometry(a).FillContains(ImageRenderer.P(p)) || ImageRenderer.ArrowGeometry(a).StrokeContains(new Pen(Brushes.Black,margin*2),ImageRenderer.P(p));
         if(a.Kind==AnnotationKind.Arrow)return ImageRenderer.ArrowStrokeGeometry(a).StrokeContains(new Pen(Brushes.Black,margin*2) {StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round,LineJoin=PenLineJoin.Round},ImageRenderer.P(p));
         if(a.Kind==AnnotationKind.Highlight)return AdvancedDrawing.MarkerGeometry(a).FillContains(ImageRenderer.P(p)) || AdvancedDrawing.MarkerGeometry(a).StrokeContains(new Pen(Brushes.Black,6/Zoom),ImageRenderer.P(p));
