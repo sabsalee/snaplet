@@ -37,7 +37,7 @@ internal sealed class HomeWindow : Window
         DockPanel.SetDock(toolbarFrame,Dock.Top);root.Children.Add(toolbarFrame);
         var left=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(left,Dock.Left);toolbar.Children.Add(left);
         void Tool(Panel panel,string glyph,string label,Action action){var b=Ui.IconButton(glyph,label,action,36);b.Margin=new Thickness(2);panel.Children.Add(b);}
-        Tool(left,"region","영역 캡처",()=>command("region"));Tool(left,"window","활성 창",()=>command("window"));Tool(left,"display","현재 화면",()=>command("display"));
+        Tool(left,"region","영역 캡처",()=>command("region"));Tool(left,"window","창 선택",()=>command("window"));Tool(left,"display","현재 화면",()=>command("display"));
         Tool(left,"clock","3초 타이머",()=>command("delayed"));Tool(left,"scroll","긴 화면",()=>command("scroll"));Tool(left,"ocr","텍스트·QR",()=>command("ocr"));
         left.Children.Add(Divider());
         Tool(left,"folder","이미지 열기",open);Tool(left,"clipboard","클립보드에서 가져오기",clipboard);

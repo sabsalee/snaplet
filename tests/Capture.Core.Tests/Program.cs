@@ -29,6 +29,8 @@ document.Replace(moved); document.Undo(); Check(document.Annotations[0].Points![
 document.Add(Item()); Check(!document.CanRedo, "New edit invalidates redo branch.");
 Throws(() => document.Add(Item() with { Thickness = double.NaN }), "Invalid style rejected.");
 Throws(() => document.Add(Item() with { Style = new(RibbonStyle: (RibbonStyle)99) }), "Unknown arrow silhouette rejected.");
+Throws(() => document.Add(Item() with { Style = new(Align: (TextAlign)9) }), "Unknown text alignment rejected.");
+Check(new AnnotationStyle().Bold && !new AnnotationStyle().Italic && new AnnotationStyle().Align == TextAlign.Left, "New text is bold and left aligned.");
 Check(new AnnotationStyle().RibbonStyle == RibbonStyle.Wedge, "New arrows start with the wedge silhouette.");
 Throws(() => document.Add(document.Annotations[0]), "Duplicate IDs rejected.");
 document.Delete(document.Annotations[0].Id); document.Undo(); Check(document.Annotations.Count == 2, "Delete undo restores annotations.");

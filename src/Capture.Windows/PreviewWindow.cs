@@ -27,6 +27,7 @@ internal sealed class PreviewWindow : Window
     private Native.RECT pinMoveBounds;
     private Border? imageContainer;
     private FrameworkElement? pinHeader,pinTools;
+    private Slider? pinOpacity;
     public bool Pinned{get;private set;}
     /// <summary>Pinned images can be made translucent (Shift+wheel or the opacity button) and click-through for overlay comparison.</summary>
     public double PinOpacity{get;private set;}=1;
@@ -36,17 +37,20 @@ internal sealed class PreviewWindow : Window
     internal PreviewWindow(BitmapSource bitmap,AppSettings preferences,bool pinned=false,bool enableDesktopIntegration=true,bool nearPointer=false)
     {
         image=bitmap;settings=preferences;Pinned=pinned;interactive=enableDesktopIntegration;this.nearPointer=nearPointer;
-        Title="Snaplet · 미리보기";WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;ShowActivated=false;Topmost=true;
+        Title="Snaplet · 미리보기";WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=Brushes.Transparent;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;ShowActivated=false;Topmost=true;
         thumbnail=new Image{Source=image,Stretch=Stretch.Uniform,Cursor=Cursors.Hand,ToolTip="클릭하여 편집 · 드래그하여 PNG 파일 전달"};
         thumbnail.MouseLeftButtonDown+=(_,e)=>down=e.GetPosition(thumbnail);
         thumbnail.MouseMove+=(_,e)=>{
             if(down is not Point start || busy || e.LeftButton!=MouseButtonState.Pressed || (e.GetPosition(thumbnail)-start).Length<8)return;
-            down=null;DragFile(thumbnail);
+            down=null;
+            // A pinned image moves when dragged; only the unpinned preview hands out a file.
+            if(Pinned){BeginPinMove();return;}
+            DragFile(thumbnail);
         };
-        thumbnail.MouseMove+=(_,e)=>{if(pinMoveStart is not Native.POINT p || e.RightButton!=MouseButtonState.Pressed)return;Native.GetCursorPos(out var at);Native.SetWindowPos(new WindowInteropHelper(this).Handle,0,pinMoveBounds.Left+at.X-p.X,pinMoveBounds.Top+at.Y-p.Y,0,0,0x1|0x4|0x10);};
+        thumbnail.MouseMove+=(_,e)=>{if(pinMoveStart is not Native.POINT p || e.RightButton!=MouseButtonState.Pressed && e.LeftButton!=MouseButtonState.Pressed)return;Native.GetCursorPos(out var at);Native.SetWindowPos(new WindowInteropHelper(this).Handle,0,pinMoveBounds.Left+at.X-p.X,pinMoveBounds.Top+at.Y-p.Y,0,0,0x1|0x4|0x10);};
         thumbnail.MouseRightButtonUp+=(_,e)=>{if(pinMoveStart==null)return;pinMoveStart=null;thumbnail.ReleaseMouseCapture();e.Handled=true;};
         thumbnail.LostMouseCapture+=(_,_)=>pinMoveStart=null;
-        thumbnail.MouseLeftButtonUp+=(_,e)=>{var start=down;down=null;if(start is Point p && (e.GetPosition(thumbnail)-p).Length<8)RequestEdit();};
+        thumbnail.MouseLeftButtonUp+=(_,e)=>{if(pinMoveStart!=null){pinMoveStart=null;thumbnail.ReleaseMouseCapture();e.Handled=true;return;}var start=down;down=null;if(start is Point p && (e.GetPosition(thumbnail)-p).Length<8)RequestEdit();};
         Build();
         SourceInitialized+=(_,_)=>{
             var hwnd=new WindowInteropHelper(this).Handle;Native.SetWindowLongPtr(hwnd,-20,(nint)(Native.GetWindowLongPtr(hwnd,-20).ToInt64()|0x08000000L|0x80L));Native.SetWindowDisplayAffinity(hwnd,0x11);
@@ -57,7 +61,7 @@ internal sealed class PreviewWindow : Window
             if(settings.ClosePreviewOutside && !Pinned && !busy && DateTime.UtcNow-shown>TimeSpan.FromMilliseconds(500) && pressed && !previousMouse && !IsMouseOver)Close();
             previousMouse=pressed;
         };
-        MouseWheel+=(_,e)=>{if(!Pinned)return;if(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)){SetPinOpacity(PinOpacity+(e.Delta>0?.1:-.1));e.Handled=true;return;}Width=Math.Clamp(Width+(e.Delta>0?32:-32),180,900);Height=PinHeight(Width);e.Handled=true;};
+        MouseWheel+=(_,e)=>{if(!Pinned)return;if(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)){SetPinOpacity(PinOpacity+(e.Delta>0?.1:-.1));e.Handled=true;return;}ResizePin(e.Delta>0?32:-32);e.Handled=true;};
         MouseEnter+=(_,_)=>SetPinChrome(true);MouseLeave+=(_,_)=>SetPinChrome(false);
         Closed+=(_,_)=>outside.Stop();
     }
@@ -80,25 +84,30 @@ internal sealed class PreviewWindow : Window
         };
         return handle;
     }
+    internal void ResizePin(double change){Width=Math.Clamp(Width+change,180,900);Height=PinHeight(Width);}
     private double PinHeight(double width)=>Math.Clamp(width*image.PixelHeight/image.PixelWidth,120,900);
     private void Build()
     {
         if(imageContainer!=null)imageContainer.Child=null;
         if(message.Parent is Panel old)old.Children.Remove(message);
-        Content=null;thumbnail.Height=double.NaN;thumbnail.ToolTip=Pinned?"오른쪽 드래그로 이동 · 휠로 크기 조절 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
+        Content=null;thumbnail.Height=double.NaN;thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
         var header=new DockPanel{LastChildFill=true};
         var close=Ui.IconButton("close","미리보기 닫기",Close,26);DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);
         var title=Ui.Label(Pinned?"고정 이미지":"캡처",12,Ui.Muted,FontWeights.SemiBold);title.VerticalAlignment=VerticalAlignment.Center;header.Children.Add(title);
         var tools=new DockPanel{LastChildFill=false};
         var pin=Ui.IconButton("pin",Pinned?"고정 해제":"이미지 고정",()=>{Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;ApplyLayering();}Build();},32);pin.Foreground=Pinned?Ui.Accent:Ui.Text;DockPanel.SetDock(pin,Dock.Right);tools.Children.Add(pin);
-        var left=new StackPanel{Orientation=Orientation.Horizontal};tools.Children.Add(left);
+        Panel left=Pinned?new WrapPanel():new StackPanel{Orientation=Orientation.Horizontal};tools.Children.Add(left);
         left.Children.Add(Ui.IconButton("edit","편집",RequestEdit,34));
         var copy=Ui.IconButton("copy","이미지 복사",()=>{},34);copy.Click+=async (_,_)=>await RunAsync(async()=>message.Text=await ImageActions.CopyAsync(image)?"클립보드에 복사했습니다.":"새 복사 요청이 있어 취소했습니다.");left.Children.Add(copy);
         left.Children.Add(Ui.IconButton("save","이미지 저장",()=>Run(()=>{if(ImageActions.SaveDialog(image,this)!=null)message.Text="파일로 저장했습니다.";}),34));
         left.Children.Add(Ui.IconButton("ocr","텍스트 추출",()=>OcrRequested?.Invoke(image),34));
         if(Pinned) {
-            left.Children.Add(Ui.IconButton("spotlight","불투명도 낮추기 · Shift+휠",()=>SetPinOpacity(PinOpacity<=.21?1:PinOpacity-.2),34));
-            left.Children.Add(Ui.IconButton("lens","클릭 통과 · 트레이 메뉴에서 해제",()=>SetClickThrough(true),34));
+            left.Children.Add(Ui.IconButton("−","축소 · 휠",()=>ResizePin(-64),34));
+            left.Children.Add(Ui.IconButton("+","확대 · 휠",()=>ResizePin(64),34));
+            pinOpacity=new Slider{Minimum=.2,Maximum=1,Value=PinOpacity,Width=72,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,4,0),ToolTip="불투명도 · Shift+휠"};
+            System.Windows.Automation.AutomationProperties.SetName(pinOpacity,"불투명도");pinOpacity.ValueChanged+=(_,e)=>SetPinOpacity(e.NewValue);left.Children.Add(pinOpacity);
+            left.Children.Add(Ui.IconButton("↖","클릭 통과 · 트레이 메뉴에서 해제",()=>SetClickThrough(true),34));
+            left.Children.Add(FileHandle());
         }
         imageContainer=new Border{Background=new SolidColorBrush(Color.FromRgb(17,19,23)),CornerRadius=new CornerRadius(6),Child=thumbnail};
         message.Text=Pinned?"":"클릭하여 편집 · 드래그하여 전달";message.TextTrimming=TextTrimming.CharacterEllipsis;message.TextWrapping=TextWrapping.NoWrap;
@@ -109,7 +118,7 @@ internal sealed class PreviewWindow : Window
             var bottom=new Border{Background=new SolidColorBrush(Color.FromArgb(235,25,28,33)),Child=tools,Padding=new Thickness(8,4,8,4),VerticalAlignment=VerticalAlignment.Bottom};root.Children.Add(bottom);
             pinHeader=top;pinTools=bottom;Content=new Border{BorderBrush=Ui.Line,BorderThickness=new Thickness(1),Child=root};SetPinChrome(IsMouseOver);
             header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};
-            // Drag a pinned image with the right mouse button; left drag keeps file transfer.
+            // Either mouse button moves a pinned image; the file handle in its tools hands out a file.
             thumbnail.MouseRightButtonDown-=MovePinned;thumbnail.MouseRightButtonDown+=MovePinned;
         } else if(nearPointer) {
             // Image with a close corner, one row of actions and a drag handle, and a line that names the hovered action.
@@ -139,28 +148,28 @@ internal sealed class PreviewWindow : Window
             header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};
         }
     }
-    /// <summary>Window-level alpha through a layered window, so the whole pin (not just its image) becomes see-through.</summary>
+    /// <summary>The whole pin (not just its image) becomes see-through. This window is created transparent, the only state in which WPF honours Window.Opacity.</summary>
     internal void SetPinOpacity(double value)
     {
-        PinOpacity=Pinned?Math.Clamp(Math.Round(value,1),.2,1):1;ApplyLayering();
+        PinOpacity=Pinned?Math.Clamp(Math.Round(value,2),.2,1):1;ApplyLayering();
+        if(pinOpacity!=null && Math.Abs(pinOpacity.Value-PinOpacity)>.001)pinOpacity.Value=PinOpacity;
         if(Pinned)message.Text=$"불투명도 {PinOpacity:P0}";
     }
     /// <summary>Click-through pins ignore the mouse entirely; turn it off from the tray menu.</summary>
     internal void SetClickThrough(bool value){ClickThrough=Pinned && value;if(ClickThrough && PinOpacity>.8)PinOpacity=.6;ApplyLayering();}
     private void ApplyLayering()
     {
+        Opacity=PinOpacity;
         var hwnd=new WindowInteropHelper(this).Handle;if(hwnd==0)return;
         long ex=Native.GetWindowLongPtr(hwnd,-20).ToInt64();
-        bool layered=PinOpacity<1 || ClickThrough;
-        ex=layered?ex|0x80000L:ex&~0x80000L;
         ex=ClickThrough?ex|0x20L:ex&~0x20L;
         Native.SetWindowLongPtr(hwnd,-20,(nint)ex);
-        if(layered)Native.SetLayeredWindowAttributes(hwnd,0,(byte)Math.Round(PinOpacity*255),2);
     }
     private void MovePinned(object sender,MouseButtonEventArgs e)
     {
-        if(!Pinned)return;Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();e.Handled=true;
+        if(!Pinned)return;BeginPinMove();e.Handled=true;
     }
+    private void BeginPinMove(){Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();}
     private void SetPinChrome(bool show){if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;}
     private static Button FindTool(Panel tools,string label)=>tools.Children.OfType<Button>().Concat(tools.Children.OfType<Panel>().SelectMany(p=>p.Children.OfType<Button>()))
         .Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)==label);

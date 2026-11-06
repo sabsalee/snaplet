@@ -279,7 +279,13 @@ internal sealed class EditorSurface : FrameworkElement
             var reach=AnnotationGeometry.CounterRadius(a)*1.45/Math.Sqrt(2);
             a=a.Appearance.ShowTail ? a with {Text=Document.NextCounter.ToString(),Start=new(start.X+reach,start.Y-reach),End=new(start.X+reach,start.Y-reach),Tail=start}
                 : a with {Text=Document.NextCounter.ToString(),Tail=new(start.X-reach,start.Y+reach)};
-            Document.Add(a);Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();return;
+            // Grouped so one undo removes the counter together with the aim of its pointer.
+            var aiming=a.Appearance.ShowTail;
+            if(aiming && !Document.IsEditing){Document.BeginEdit();aimingCounter=true;}
+            Document.Add(a);Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();
+            // Keep the button down and drag to aim the pointer.
+            if(aiming){original=a;gesture=Gesture.Tail;CaptureMouse();}
+            return;
         }
         Selected=a.Id;points=kind==AnnotationKind.Pen || kind==AnnotationKind.Highlight && InkStyle.HighlightShape==MarkerShape.Freehand?[start]:null;draft=a with {Points=points?.ToArray()};gesture=Gesture.Create;CaptureMouse();InvalidateVisual();
     }
@@ -484,6 +490,8 @@ internal sealed class EditorSurface : FrameworkElement
     {
         base.OnMouseLeftButtonUp(e);EndPointer(ImagePoint(e),Keyboard.Modifiers);
     }
+    private bool aimingCounter;
+    private void FinishAimingCounter(){if(aimingCounter){aimingCounter=false;Document.EndEdit();}}
     internal void EndPointer(PointD position,ModifierKeys modifiers=ModifierKeys.None)
     {
         if(gesture==Gesture.None)return;
@@ -507,12 +515,14 @@ internal sealed class EditorSurface : FrameworkElement
         }
         if(gesture==Gesture.CropNew && PendingCrop is RectD drawn && Math.Min(drawn.Width,drawn.Height)*Zoom<3)PendingCrop=null;
         if(!CropTool && !IsRegionGesture && Selection is null)Selected=selectionBeforeGesture;
+        FinishAimingCounter();
         gesture=Gesture.None;guideX=guideY=null;draft=original=null;points=null;ReleaseMouseCapture();SelectionChanged?.Invoke();UpdateHover(position);InvalidateVisual();
     }
     protected override void OnLostMouseCapture(MouseEventArgs e) {base.OnLostMouseCapture(e);if(gesture!=Gesture.None)CancelGesture();}
     internal void CancelGesture()
     {
         FinishNumberEdit();var active=gesture!=Gesture.None;
+        FinishAimingCounter();
         if(active)Selected=selectionBeforeGesture;
         gesture=Gesture.None;guideX=guideY=null;draft=original=null;points=null;ReleaseMouseCapture();
         if(active)SelectionChanged?.Invoke();InvalidateVisual();
