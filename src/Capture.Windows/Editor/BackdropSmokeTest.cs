@@ -50,6 +50,13 @@ internal static class BackdropSmokeTest
             editor.SetBackdropForTest(new Backdrop(Enabled:true,Preset:2,Padding:40,Shadow:.5));editor.UpdateLayout();
             var frame=editor.BackdropFrameSize;var zoom=editor.SurfaceZoom;
             Check(Math.Abs(frame.Width-(200+80)*zoom)<1 && Math.Abs(frame.Height-(80+80)*zoom)<1,"backdrop preview hugs the image with equal padding instead of filling the view");
+            var viewBefore=editor.BackdropFrameSize;editor.ToggleBackdropPanel();editor.UpdateLayout();
+            Check(editor.BackdropPanelShown && editor.BackdropPanelWidth>200,"the backdrop panel opens beside the image");
+            var panelView=(FrameworkElement)editor.Content;var panelShot=new RenderTargetBitmap((int)Math.Ceiling(panelView.ActualWidth),(int)Math.Ceiling(panelView.ActualHeight),96,96,PixelFormats.Pbgra32);panelShot.Render(panelView);Save(panelShot,Path.Combine(directory,"editor-backdrop-panel.png"));
+            var stylesBefore=BackdropStyles.Styles.Count;BackdropStyles.Add(new Backdrop(Enabled:false,Preset:3,Padding:20));
+            Check(BackdropStyles.Styles[0]==new Backdrop(Enabled:true,Preset:3,Padding:20),"saved styles are kept enabled");
+            BackdropStyles.Remove(BackdropStyles.Styles[0]);Check(BackdropStyles.Styles.Count==stylesBefore,"a saved style can be removed");
+            editor.ToggleBackdropPanel();editor.UpdateLayout();Check(!editor.BackdropPanelShown,"the backdrop panel closes again");
         } finally {editor.CloseForExit();}
         var gallery=new EditableDocument(200,100);gallery.SetBackdrop(new Backdrop(Enabled:true,Preset:2,Padding:48,CornerRadius:14,Shadow:.6));
         Save(BackdropRenderer.Export(content,gallery),Path.Combine(directory,"backdrop-preview.png"));
