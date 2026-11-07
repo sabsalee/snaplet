@@ -30,6 +30,7 @@ public sealed record AppSettings
     public bool ClosePreviewOutside {get;init;}=true;
     /// <summary>Keep the drawn area adjustable (handles, arrow keys, smart fit) until Enter instead of capturing on mouse release.</summary>
     public bool AdjustSelectionBeforeCapture {get;init;}
+    public bool ShowCaptureModeBar {get;init;}
     /// <summary>Show the pixel loupe and crosshair in the selection overlay.</summary>
     public bool ShowLoupe {get;init;}=true;
     /// <summary>Join recognised lines with spaces before copying text.</summary>

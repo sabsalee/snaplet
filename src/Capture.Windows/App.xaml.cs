@@ -98,7 +98,7 @@ public partial class App : Application
         var cursor=settings.IncludeCursor && command is not ("ocr" or "scroll")?CursorSnapshot.Capture():null;
         // Window capture always asks which window: the active one is rarely known for sure once a shortcut is pressed.
         if(command=="window")command="pick-window";
-        bool windowCapture=false;
+        bool windowCapture=false;string? nextCommand=null;
         try {
             foreach(Window window in Windows)if(window.IsVisible && window is not SelectionWindow){hidden.Add(window);window.Hide();}
             await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.Render);
@@ -114,9 +114,10 @@ public partial class App : Application
                 var shots=await Task.WhenAll(displays.Select(d=>engine.CaptureMonitorAsync(d.Handle,token)));
                 diagnostics.Frames(shots);
                 var purpose=command switch {"ocr"=>"텍스트·QR 인식","scroll"=>"스크롤 캡처 영역","pick-window"=>"캡처할 창을 클릭하세요",_=>destination!=null?"편집 중인 이미지에 추가":null};
-                var options=new SelectionOptions(settings.ShowLoupe,settings.AdjustSelectionBeforeCapture || command=="scroll",purpose);
+                var options=new SelectionOptions(settings.ShowLoupe,settings.AdjustSelectionBeforeCapture || command=="scroll",purpose,settings.ShowCaptureModeBar && destination==null,command);
                 var selection=await SelectAsync(displays,shots,targets,token,diagnostics,options);
                 if(selection is null)return;
+                if(selection.NextCommand is string chosen){nextCommand=chosen;return;}
                 if(selection.Window!=0){result=await engine.CaptureWindowAsync(selection.Window,token);windowCapture=true;}
                 else {
                     var rect=selection.Region!.Value;
@@ -166,6 +167,8 @@ public partial class App : Application
                 else if(Windows.Cast<Window>().Contains(window)) {var activate=window.ShowActivated;window.ShowActivated=false;window.Show();window.ShowActivated=activate;}
             }
             if(destination!=null && !quitting && Windows.Cast<Window>().Contains(destination))destination.ShowDocument();
+            // Another mode was chosen on the all-in-one bar; run it now that this capture has fully finished.
+            if(nextCommand!=null)_=RunCommandAsync(nextCommand);
         }
     }
     private Task<SelectionResult?> SelectAsync(IReadOnlyList<DisplayInfo> displays,CapturedFrame[] shots,IReadOnlyList<PickableWindow>? targets,CancellationToken token,CaptureDiagnostics diagnostics,SelectionOptions options) {

@@ -218,10 +218,12 @@ internal sealed class PreviewWindow : Window
     }
     private void BeginPinMove(){Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();}
     private const double PopupImageWidth=204,PopupImageHeight=150,PopupMinWidth=164,PopupMinHeight=132;
+    // Nearly clear rather than clear: Windows passes the mouse through fully clear pixels, which would leave a thin image almost impossible to hover.
+    private static readonly SolidColorBrush PopupClearHitBrush=new(Color.FromArgb(1,0,0,0));
     private bool popupLetterboxed;
     private Border? popupCard;
     private void SetPinChrome(bool show){
-        if(popupCard!=null && popupChrome!=null && popupLetterboxed){popupCard.Background=show?Ui.Card:Brushes.Transparent;popupCard.BorderBrush=show?Ui.Line:Brushes.Transparent;}
+        if(popupCard!=null && popupChrome!=null && popupLetterboxed){popupCard.Background=show?Ui.Card:PopupClearHitBrush;popupCard.BorderBrush=show?Ui.Line:Brushes.Transparent;}
         if(popupChrome!=null){popupChrome.Opacity=show?1:0;popupChrome.IsHitTestVisible=show;thumbnail.Effect=show?new System.Windows.Media.Effects.BlurEffect{Radius=4}:null;}
         if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;
     }

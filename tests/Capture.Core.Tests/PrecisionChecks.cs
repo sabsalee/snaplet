@@ -17,6 +17,12 @@ internal static class PrecisionChecks
 
     internal static void Run(Action<bool, string> check)
     {
+        var screen = new PixelRect(0, 0, 1920, 1080);
+        check(SelectionMath.FromDragAtRatio(100, 100, 260, 120, 16d / 9, screen) == new PixelRect(100, 100, 160, 90), "a ratio drag follows the longer side");
+        check(SelectionMath.FromDragAtRatio(500, 500, 400, 400, 1, screen) == new PixelRect(400, 400, 100, 100), "a ratio drag works up and to the left");
+        check(SelectionMath.FromDragAtRatio(1900, 1000, 2500, 1040, 16d / 9, screen).Right <= 1920, "a ratio drag stays inside the screen");
+        var ratioed = SelectionMath.ResizeAtRatio(new(100, 100, 160, 90), new(100, 100, 320, 90), 16d / 9, screen);
+        check(ratioed == new PixelRect(100, 100, 320, 180), "resizing keeps the fixed ratio");
         var work = new PixelRect(0, 0, 1450, 780);
         check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
         check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
@@ -102,6 +108,12 @@ internal static class BackdropChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        var screen = new PixelRect(0, 0, 1920, 1080);
+        check(SelectionMath.FromDragAtRatio(100, 100, 260, 120, 16d / 9, screen) == new PixelRect(100, 100, 160, 90), "a ratio drag follows the longer side");
+        check(SelectionMath.FromDragAtRatio(500, 500, 400, 400, 1, screen) == new PixelRect(400, 400, 100, 100), "a ratio drag works up and to the left");
+        check(SelectionMath.FromDragAtRatio(1900, 1000, 2500, 1040, 16d / 9, screen).Right <= 1920, "a ratio drag stays inside the screen");
+        var ratioed = SelectionMath.ResizeAtRatio(new(100, 100, 160, 90), new(100, 100, 320, 90), 16d / 9, screen);
+        check(ratioed == new PixelRect(100, 100, 320, 180), "resizing keeps the fixed ratio");
         var work = new PixelRect(0, 0, 1450, 780);
         check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
         check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
@@ -149,6 +161,12 @@ internal static class ColorChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        var screen = new PixelRect(0, 0, 1920, 1080);
+        check(SelectionMath.FromDragAtRatio(100, 100, 260, 120, 16d / 9, screen) == new PixelRect(100, 100, 160, 90), "a ratio drag follows the longer side");
+        check(SelectionMath.FromDragAtRatio(500, 500, 400, 400, 1, screen) == new PixelRect(400, 400, 100, 100), "a ratio drag works up and to the left");
+        check(SelectionMath.FromDragAtRatio(1900, 1000, 2500, 1040, 16d / 9, screen).Right <= 1920, "a ratio drag stays inside the screen");
+        var ratioed = SelectionMath.ResizeAtRatio(new(100, 100, 160, 90), new(100, 100, 320, 90), 16d / 9, screen);
+        check(ratioed == new PixelRect(100, 100, 320, 180), "resizing keeps the fixed ratio");
         var work = new PixelRect(0, 0, 1450, 780);
         check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
         check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
@@ -173,6 +191,12 @@ internal static class ScrollBandChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        var screen = new PixelRect(0, 0, 1920, 1080);
+        check(SelectionMath.FromDragAtRatio(100, 100, 260, 120, 16d / 9, screen) == new PixelRect(100, 100, 160, 90), "a ratio drag follows the longer side");
+        check(SelectionMath.FromDragAtRatio(500, 500, 400, 400, 1, screen) == new PixelRect(400, 400, 100, 100), "a ratio drag works up and to the left");
+        check(SelectionMath.FromDragAtRatio(1900, 1000, 2500, 1040, 16d / 9, screen).Right <= 1920, "a ratio drag stays inside the screen");
+        var ratioed = SelectionMath.ResizeAtRatio(new(100, 100, 160, 90), new(100, 100, 320, 90), 16d / 9, screen);
+        check(ratioed == new PixelRect(100, 100, 320, 180), "resizing keeps the fixed ratio");
         var work = new PixelRect(0, 0, 1450, 780);
         check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
         check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
