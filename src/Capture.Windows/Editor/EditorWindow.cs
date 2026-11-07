@@ -211,11 +211,12 @@ public sealed class EditorWindow : Window
         surface.OperationFailed+=message=>NoticeWindow.Alert(this,"편집 작업",message);
         surface.PointerHintChanged+=hint=>{if(textEditor==null && !string.IsNullOrEmpty(hint))status.Text=hint;};
         surface.SelectionChanged+=SyncInspector;surface.SelectionChanged+=()=>{if(surface.RegionActive)UpdateCropStatus();};surface.TextEditRequested+=BeginTextEdit;
+        surface.TypingStyleChanged=()=>{if(textEditor==null || editingText is not Annotation typed)return false;editingText=typed with {Color=surface.Ink,Thickness=surface.Thickness,Style=surface.InkStyle};UpdateTextEditorLayout();textEditor.Focus();return true;};
         PreviewKeyDown+=OnKey;
         PreviewKeyUp+=(_,e)=>NudgeKeyUp(e.Key);
         surface.LostKeyboardFocus+=(_,_)=>FinishNudge();
         Deactivated+=(_,_)=>FinishNudge();
-        PreviewMouseDown+=(_,e)=>{FinishNudge();if(textEditor!=null && !textEditor.IsMouseOver && !FinishTextEdit(true))e.Handled=true;};
+        PreviewMouseDown+=(_,e)=>{FinishNudge();if(textEditor!=null && !textEditor.IsMouseOver && !inspector.IsMouseOver && !FinishTextEdit(true))e.Handled=true;};
         Closing+=(_,e)=>{if(closeOnDismiss){closingForExit=true;return;}if(!closingForExit){e.Cancel=true;if(!FinishTextEdit(true))return;Hide();}};
         Closed+=(_,_)=>closingForExit=true;
         Loaded+=(_,_)=>{Fit();surface.Selected=document.Annotations.FirstOrDefault()?.Id;surface.Focus();SyncInspector();};
@@ -413,7 +414,7 @@ public sealed class EditorWindow : Window
         panel.Children.Add(new TextBlock {Text="복사·저장·고정에 그대로 포함됩니다 · Ctrl+Z로 되돌리기",FontSize=11,Foreground=Ui.Brush("MutedBrush"),Margin=new Thickness(4,8,4,2),TextWrapping=TextWrapping.Wrap});
         popup.Child=PopupFrame(panel,8);
         panel.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){popup.IsOpen=false;anchor.Focus();e.Handled=true;}};
-        popup.Closed+=(_,_)=>{document.EndEdit();surface.Focus();};
+        popup.Closed+=(_,_)=>{document.EndEdit();FocusEditing();};
         popup.IsOpen=true;
     }
     internal void PanDragAt(Point cursor)
@@ -555,23 +556,23 @@ public sealed class EditorWindow : Window
     private void SyncInspector()
     {
         if(syncingControls)return;
-        var a=surface.Selection;
-        // Hidden while typing so the inline editor is the only thing changing on the canvas.
-        inspector.Visibility=textEditor==null && (a!=null || surface.Tool!=null || surface.CropTool)?Visibility.Visible:Visibility.Collapsed;
-        if(textEditor!=null)return;
-        if(a!=null){surface.Ink=a.Color;surface.Thickness=a.Thickness;surface.InkStyle=a.Appearance;}
+        // While typing the panel shows the text being typed; changes go to it instead of the document, so Esc still discards them.
+        var typing=textEditor!=null?editingText:null;
+        var a=typing==null?surface.Selection:null;
+        inspector.Visibility=typing!=null || a!=null || surface.Tool!=null || surface.CropTool?Visibility.Visible:Visibility.Collapsed;
+        if((typing ?? a) is Annotation shown){surface.Ink=shown.Color;surface.Thickness=shown.Thickness;surface.InkStyle=shown.Appearance;}
         foreach(var (kind,button) in toolButtons) {if(kind==surface.Tool && !surface.CropTool)button.SetResourceReference(BackgroundProperty,"SelectedToolBrush");else button.Background=Brushes.Transparent;}
         // Preserve both mouse drags and keyboard adjustment of the active slider.
         if(Mouse.Captured is Thumb || Keyboard.FocusedElement is Slider focused && focused.IsDescendantOf(inspector))return;
         propertyRow.Children.Clear();propertyDetails.Children.Clear();
-        if(a==null && surface.Tool==null){inspector.Visibility=Visibility.Collapsed;return;}
+        if(typing==null && a==null && surface.Tool==null){inspector.Visibility=Visibility.Collapsed;return;}
         var collapse=ToolButton(propertyRow,inspectorCollapsed?"›":"‹",inspectorCollapsed?"속성 패널 펼치기":"속성 패널 접기",()=>{inspectorCollapsed=!inspectorCollapsed;SyncInspector();});
         collapse.MinWidth=24;collapse.Height=32;collapse.FontSize=16;
         if(inspectorCollapsed){propertyDetails.Visibility=Visibility.Collapsed;return;}
         var ink=EditorTheme.Ink(this);var icon=new ColorRgba(ink.R,ink.G,ink.B);
         syncingControls=true;
         try {
-            var kind=a?.Kind ?? surface.Tool;
+            var kind=typing?.Kind ?? a?.Kind ?? surface.Tool;
             if(kind is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line) {
                 var presets=new Button {Content="프리셋 ▾",Padding=new Thickness(10,5,10,5),Margin=new Thickness(2),ToolTip="완성된 스타일을 미리 보고 한 번에 적용"};
                 System.Windows.Automation.AutomationProperties.SetName(presets,"스타일 프리셋");
@@ -741,10 +742,10 @@ public sealed class EditorWindow : Window
         var input=new TextBox {Text=$"{slider.Value:0.#}",Width=44,FontSize=11,Padding=new Thickness(5,4,5,4),Margin=new Thickness(2),VerticalContentAlignment=VerticalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,ToolTip=$"{label} · {slider.Minimum:0.#}–{slider.Maximum:0.#} · 숫자 입력 후 Enter 적용 / Esc 취소"};
         System.Windows.Automation.AutomationProperties.SetName(input,label+" 숫자 입력");
         input.PreviewKeyDown+=(_,e)=>{
-            if(e.Key==Key.Escape){input.Text=$"{slider.Value:0.#}";surface.Focus();e.Handled=true;}
+            if(e.Key==Key.Escape){input.Text=$"{slider.Value:0.#}";FocusEditing();e.Handled=true;}
             else if(e.Key==Key.Enter) {
                 e.Handled=true;
-                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {input.ClearValue(Control.BorderBrushProperty);slider.Value=number;surface.Focus();}
+                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {input.ClearValue(Control.BorderBrushProperty);slider.Value=number;FocusEditing();}
                 else {input.BorderBrush=Brushes.IndianRed;input.SelectAll();}
             }
         };
@@ -765,7 +766,7 @@ public sealed class EditorWindow : Window
             row.Children.Add(new TextBlock {Text=preset.Name,VerticalAlignment=VerticalAlignment.Center,FontSize=12});
             var button=new Button {Content=row,HorizontalContentAlignment=HorizontalAlignment.Left,Margin=new Thickness(2),Padding=new Thickness(6),ToolTip=preset.Name+" · 선택 객체와 다음 그리기에 적용"};
             System.Windows.Automation.AutomationProperties.SetName(button,preset.Name);
-            button.Click+=(_,_)=>{var size=preset.Size*PresetScale;surface.Ink=preset.Color;surface.Thickness=size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,size,preset.Style);popup.IsOpen=false;SyncInspector();surface.Focus();};panel.Children.Add(button);
+            button.Click+=(_,_)=>{var size=preset.Size*PresetScale;surface.Ink=preset.Color;surface.Thickness=size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,size,preset.Style);popup.IsOpen=false;SyncInspector();FocusEditing();};panel.Children.Add(button);
         }
         popup.Child=PopupFrame(panel,8);
         KeyboardNavigation.SetTabNavigation(panel,KeyboardNavigationMode.Cycle);
@@ -807,7 +808,8 @@ public sealed class EditorWindow : Window
         textEditor.TextChanged+=(_,_)=>UpdateTextEditorLayout();
         TextCompositionManager.AddPreviewTextInputStartHandler(textEditor,(_,_)=>composingText=true);
         TextCompositionManager.AddPreviewTextInputHandler(textEditor,(_,_)=>composingText=false);
-        textEditor.PreviewKeyDown+=(_,e)=>{if(composingText)return;if(e.Key==Key.Escape){FinishTextEdit(false);e.Handled=true;}else if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){FinishTextEdit(true);e.Handled=true;}};
+        textEditor.PreviewKeyDown+=(_,e)=>{if(composingText)return;if(e.Key==Key.Escape){FinishTextEdit(false);e.Handled=true;}else if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){FinishTextEdit(true);e.Handled=true;}
+            else if(Keyboard.Modifiers==ModifierKeys.Control && Ui.Pressed(e) is Key.B or Key.I or Key.U){var format=Ui.Pressed(e);ChangeTextStyle(s=>format==Key.B?s with {Bold=!s.Bold}:format==Key.I?s with {Italic=!s.Italic}:s with {Underline=!s.Underline});SyncInspector();e.Handled=true;}};
         // New text starts as selected placeholder: typing replaces it, leaving it alone inserts something visible.
         textEditor.Focus();if(create)textEditor.SelectAll();else textEditor.CaretIndex=textEditor.Text.Length;SyncInspector();
         // The mouse press that opened this box is still bubbling, and the ScrollViewer around the canvas takes focus when it arrives. Focus again after it.
@@ -815,6 +817,8 @@ public sealed class EditorWindow : Window
         Dispatcher.BeginInvoke(()=>{if(textEditor!=opened)return;opened.Focus();if(create && opened.Text==TextPlaceholder)opened.SelectAll();},DispatcherPriority.Input);
         status.Text="이미지 위에 입력하세요 · Enter 줄바꿈 · Ctrl+Enter 완료 · Esc 취소";
     }
+    private void FocusEditing(){if(textEditor!=null)textEditor.Focus();else surface.Focus();}
+    internal bool InspectorShown=>inspector.Visibility==Visibility.Visible;
     private const string TextPlaceholder="텍스트";
     /// <summary>Changes the text style for new text, the selected text, and text being typed right now.</summary>
     private void ChangeTextStyle(Func<AnnotationStyle,AnnotationStyle> change)

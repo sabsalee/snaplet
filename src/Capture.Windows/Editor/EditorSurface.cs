@@ -571,7 +571,10 @@ internal sealed class EditorSurface : FrameworkElement
     }
     internal void DeleteSelected() {CancelGesture();if(Selected is Guid id)Document.Delete(id);Selected=null;SelectionChanged?.Invoke();InvalidateVisual();}
     internal void ChangeSelected(Func<Annotation,Annotation> update) {FinishNumberEdit();if(Selection is Annotation a){var changed=update(a);if(changed.Kind is AnnotationKind.Image or AnnotationKind.Magnifier or AnnotationKind.Text)CommitAnnotation(changed,false);else Document.Replace(changed);SelectionChanged?.Invoke();InvalidateVisual();}}
-    internal void ApplyStyle()=>ChangeSelected(a=>WithReachableShapeTail(a with {Color=Ink,Thickness=Thickness,Style=InkStyle}));
+    /// <summary>Set by the window: takes style changes while text is being typed, and returns true if it did.</summary>
+    internal Func<bool>? TypingStyleChanged {get;set;}
+    internal void ApplyStyle(){if(TypingStyleChanged?.Invoke()!=true)ApplySelectedStyle();}
+    private void ApplySelectedStyle()=>ChangeSelected(a=>WithReachableShapeTail(a with {Color=Ink,Thickness=Thickness,Style=InkStyle}));
     internal Annotation WithReachableShapeTail(Annotation a)
     {
         if(a.Kind is not (AnnotationKind.Rectangle or AnnotationKind.Ellipse) || !a.Appearance.ShapeTail || a.Tail!=null)return a;
