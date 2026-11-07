@@ -76,6 +76,15 @@ public sealed class EditorWindow : Window
         surface=new(source,document) {HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
         ApplyTheme(EditorTheme.SystemUsesDark());
         Title="Snaplet — 이미지 편집";Width=1180;Height=800;MinWidth=700;MinHeight=450;
+        // Windows cascades new windows, which can push the bottom bar past the taskbar on a small screen.
+        SourceInitialized+=(_,_)=>{
+            var hwnd=new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if(!Native.GetWindowRect(hwnd,out var r))return;
+            var info=new Native.MONITORINFOEX {Size=System.Runtime.InteropServices.Marshal.SizeOf<Native.MONITORINFOEX>()};
+            if(!Native.GetMonitorInfo(Native.MonitorFromPoint(new Native.POINT {X=r.Left+r.Width/2,Y=r.Top+r.Height/2},2),ref info))return;
+            var now=new PixelRect(r.Left,r.Top,r.Width,r.Height);var fit=WindowPlacement.FitInside(now,new PixelRect(info.Work.Left,info.Work.Top,info.Work.Width,info.Work.Height));
+            if(fit!=now)Native.SetWindowPos(hwnd,0,fit.X,fit.Y,fit.Width,fit.Height,0x4|0x10);
+        };
         SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=new FontFamily("Segoe UI");
         var root=new DockPanel();Content=root;
         // One toolbar row like the reference: export · pin · file drag | tools ··· | colour under cursor · image size · zoom.

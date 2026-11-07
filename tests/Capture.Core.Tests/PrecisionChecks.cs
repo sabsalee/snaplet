@@ -17,6 +17,10 @@ internal static class PrecisionChecks
 
     internal static void Run(Action<bool, string> check)
     {
+        var work = new PixelRect(0, 0, 1450, 780);
+        check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
+        check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
+        check(WindowPlacement.FitInside(new(600, 300, 1180, 500), work) == new PixelRect(270, 280, 1180, 500), "a window past the corner moves back inside");
         var margins = Canvas(100, 60, (255, 255, 255)); Paint(margins, 100, new(30, 10, 20, 20), (10, 20, 30));
         check(PixelProbe.BalanceMargins(margins, 100, 60, 10) == new PixelRect(0, 0, 80, 40), "balancing keeps the smaller margin on both sides of each axis");
         var even = PixelProbe.BalanceMargins(margins, 100, 60, 10); var evenPixels = Canvas(even.Width, even.Height, (255, 255, 255)); Paint(evenPixels, even.Width, new(30, 10, 20, 20), (10, 20, 30));
@@ -98,6 +102,10 @@ internal static class BackdropChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        var work = new PixelRect(0, 0, 1450, 780);
+        check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
+        check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
+        check(WindowPlacement.FitInside(new(600, 300, 1180, 500), work) == new PixelRect(270, 280, 1180, 500), "a window past the corner moves back inside");
         void Rejects(Action action, string message)
         {
             bool rejected = false;
@@ -141,6 +149,10 @@ internal static class ColorChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        var work = new PixelRect(0, 0, 1450, 780);
+        check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
+        check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
+        check(WindowPlacement.FitInside(new(600, 300, 1180, 500), work) == new PixelRect(270, 280, 1180, 500), "a window past the corner moves back inside");
         ColorRgba black = new(0, 0, 0), white = new(255, 255, 255), red = new(255, 0, 0);
         check(ColorMath.Hsl(red) == "hsl(0, 100%, 50%)" && ColorMath.Hsl(new ColorRgba(0, 128, 128)) == "hsl(180, 100%, 25%)", "HSL matches CSS for red and teal.");
         check(ColorMath.Hsl(new ColorRgba(128, 128, 128)) == "hsl(0, 0%, 50%)", "Grey has zero saturation.");
@@ -161,6 +173,10 @@ internal static class ScrollBandChecks
 {
     internal static void Run(Action<bool, string> check)
     {
+        var work = new PixelRect(0, 0, 1450, 780);
+        check(WindowPlacement.FitInside(new(100, 80, 800, 500), work) == new PixelRect(100, 80, 800, 500), "a window already on screen stays where it is");
+        check(WindowPlacement.FitInside(new(70, 100, 1180, 800), work) == new PixelRect(70, 0, 1180, 780), "a window too tall for the work area shrinks and moves up");
+        check(WindowPlacement.FitInside(new(600, 300, 1180, 500), work) == new PixelRect(270, 280, 1180, 500), "a window past the corner moves back inside");
         const int width = 40, frameHeight = 100, header = 8, footer = 10;
         var random = new Random(4242);
         var page = new byte[width * 400 * 4]; random.NextBytes(page);

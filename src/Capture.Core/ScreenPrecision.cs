@@ -1,6 +1,17 @@
 namespace Capture.Core;
 
 /// <summary>Integer rectangle in source-image pixels. Selection and measurement never use fractional pixels.</summary>
+/// <summary>Keeps a window fully on screen.</summary>
+public static class WindowPlacement
+{
+    /// <summary>Shrinks the window to the work area if needed, then moves it just far enough to fit inside.</summary>
+    public static PixelRect FitInside(PixelRect window, PixelRect work)
+    {
+        int width = Math.Min(window.Width, work.Width), height = Math.Min(window.Height, work.Height);
+        return new(Math.Clamp(window.X, work.X, work.Right - width), Math.Clamp(window.Y, work.Y, work.Bottom - height), width, height);
+    }
+}
+
 public readonly record struct PixelRect(int X, int Y, int Width, int Height)
 {
     public int Right => X + Width;
