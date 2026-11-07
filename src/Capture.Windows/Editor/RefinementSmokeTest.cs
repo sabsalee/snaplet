@@ -71,7 +71,7 @@ internal static class RefinementSmokeTest
             check(typingHeight>80 && typingWidth==200,"inline callout grows vertically while keeping a predictable wrapping width");
             check(window.ActiveTextEditor.ExtentHeight<=window.ActiveTextEditor.ViewportHeight+2 && window.ActiveTextEditor.VerticalOffset==0,
                 "actual WPF multiline editor fits the text without silently scrolling or clipping its first lines");
-            check(!Descendants(window).OfType<Slider>().Any(c=>c.IsVisible),"inline text editing hides unrelated property controls until commit");
+            check(Descendants(window).OfType<Slider>().Any(c=>c.IsVisible),"the format panel stays available during inline text editing");
             Snapshot(window,Path.Combine(directory,"editor-text-editing.png"));
             check(window.FinishTextEdit(true),"multiline Korean and English callout commits successfully");
             check(Descendants(window).OfType<Slider>().Any(c=>c.IsVisible),"committing inline text restores its editable property panel");
