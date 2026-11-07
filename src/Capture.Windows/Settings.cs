@@ -63,7 +63,7 @@ public sealed record AppSettings
     public static readonly IReadOnlyList<(string Command,string Name)> Commands=[
         ("region","영역 캡처"),("window","창 캡처"),("display","현재 화면 캡처"),("delayed","3초 후 화면 캡처"),
         ("last","최근 캡처 편집"),("repeat","직전 영역 반복"),("desktop","모든 화면 캡처"),("pick-window","창 캡처 (추가 단축키)"),
-        ("scroll","스크롤 캡처"),("ocr","텍스트·QR 바로 인식"),("home","Snaplet 열기")];
+        ("scroll","스크롤 캡처"),("ocr","텍스트·QR 바로 인식"),("home","Snaplet 열기"),("history","캡처 기록")];
     public static List<HotkeyBinding> DefaultHotkeys()=>[
         new("region",Key.D1,ModifierKeys.Control|ModifierKeys.Shift),
         new("window",Key.D2,ModifierKeys.Control|ModifierKeys.Shift),
@@ -75,7 +75,8 @@ public sealed record AppSettings
         new("pick-window",Key.None,ModifierKeys.None),
         new("scroll",Key.None,ModifierKeys.None),
         new("ocr",Key.None,ModifierKeys.None),
-        new("home",Key.None,ModifierKeys.None)];
+        new("home",Key.None,ModifierKeys.None),
+        new("history",Key.None,ModifierKeys.None)];
 }
 
 internal static class SettingsStore

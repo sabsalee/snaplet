@@ -30,6 +30,10 @@ public partial class App : Application
     private readonly CaptureEngine engine=new();
     private readonly List<PreviewWindow> previews=[];
     private readonly List<BitmapSource> history=[];
+    /// <summary>When each capture in memory was taken and, once written, its file in the disk history.</summary>
+    private sealed class HistoryRecord{public DateTime When=DateTime.Now;public string? Path;}
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<BitmapSource,HistoryRecord> historyRecords=[];
+    private GalleryWindow? gallery;
     private readonly Dictionary<BitmapSource,EditorWindow> editors=[];
     private HomeWindow? home;
     private SettingsWindow? preferences;
@@ -76,7 +80,7 @@ public partial class App : Application
             try{hotkeys.Apply(settings.Hotkeys);}catch(Exception error){warning=error.Message+"\n설정에서 단축키를 바꿔 주세요. 트레이 메뉴는 사용할 수 있습니다.";}
         } catch(Exception error){Error(error);}
         CleanDragFiles();
-        if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load());}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
+        if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load(loaded:(image,path,when)=>historyRecords.Add(image,new(){When=when,Path=path})));}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
         if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지",true);Edit(demo);}
         else if(forwarded!=null)Dispatcher.BeginInvoke(()=>_=RunCommandAsync(forwarded),DispatcherPriority.ApplicationIdle);
         // Snaplet starts in the tray; the main window opens from the tray icon, the "home" shortcut or a second launch.
@@ -90,6 +94,7 @@ public partial class App : Application
         if(command=="scroll-finish"){scrollWindow?.Finish();return;}
         if(command=="last"){if(history.FirstOrDefault() is BitmapSource last)Edit(last);else ShowHome();return;}
         if(command=="home"){ShowHome();return;}
+        if(command=="history"){ShowGallery();return;}
         if(scrollWindow is not null){scrollWindow.Message("스크롤 캡처가 진행 중입니다. F9 또는 완료 버튼으로 마쳐 주세요.");return;}
         if(capturing)return;
         capturing=true;activeCapture=new CancellationTokenSource();var token=activeCapture.Token;
@@ -230,13 +235,40 @@ public partial class App : Application
     private void Received(BitmapSource image,string detail,bool openingEditor=false) {
         var revision=++captureRevision;
         var copyLease=settings.CopyAfterCapture?ImageActions.ReserveClipboard():0;
-        history.Insert(0,image);
+        history.Insert(0,image);historyRecords.GetOrCreateValue(image).When=DateTime.Now;
         while(history.Count>1 && (history.Count>12 || history.Sum(x=>(long)x.PixelWidth*x.PixelHeight*4)>256_000_000))history.RemoveAt(history.Count-1);
-        home?.UpdateRecent(history);status.Text=detail;
+        home?.UpdateRecent(history);gallery?.Reload();status.Text=detail;
         if(settings.AfterCapture==AfterCaptureAction.Popup)ShowPopup(image);
         else if(settings.AfterCapture==AfterCaptureAction.Editor && !openingEditor)Edit(image);
         _=AfterCaptureAsync(image,settings,revision,copyLease);
-        if(settings.KeepHistoryOnDisk)_=Task.Run(()=>{try{HistoryStore.Save(image);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}});
+        if(settings.KeepHistoryOnDisk)_=Task.Run(()=>{try{WriteHistoryFile(image);Dispatcher.BeginInvoke(()=>gallery?.Reload());}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}});
+    }
+    private void WriteHistoryFile(BitmapSource image)=>historyRecords.GetOrCreateValue(image).Path=HistoryStore.Save(image);
+    /// <summary>The disk history when it is on, plus anything in memory that has no file (yet). A capture is never listed twice.</summary>
+    private IReadOnlyList<GalleryItem> GalleryItems() {
+        var items=new List<GalleryItem>();
+        if(settings.KeepHistoryOnDisk)foreach(var (path,when) in HistoryStore.Entries())items.Add(new(when,path,null));
+        foreach(var image in history) {
+            var record=historyRecords.GetOrCreateValue(image);
+            if(!settings.KeepHistoryOnDisk || record.Path is null || !items.Any(i=>i.Path==record.Path))items.Add(new(record.When,null,image));
+        }
+        return items;
+    }
+    private void DeleteCapture(GalleryItem item) {
+        if(item.Path!=null)HistoryStore.Delete(item.Path);
+        history.RemoveAll(image=>ReferenceEquals(image,item.Memory) || (item.Path!=null && historyRecords.GetOrCreateValue(image).Path==item.Path));
+        home?.UpdateRecent(history);gallery?.Reload();
+    }
+    private void ClearCaptures() {
+        if(!UI.NoticeWindow.Confirm(gallery,"캡처 기록을 모두 지울까요?","되돌릴 수 없습니다. 저장 폴더에 저장한 파일은 지워지지 않습니다.","모두 지우기"))return;
+        HistoryStore.Clear();history.Clear();closedPopups.Clear();
+        home?.UpdateRecent(history);gallery?.Reload();
+    }
+    private void ShowGallery() {
+        if(gallery is not null){gallery.Reload();gallery.Show();gallery.Activate();return;}
+        gallery=new GalleryWindow(GalleryItems,Edit,DeleteCapture,ClearCaptures,()=>ShowSettingsPage("storage"),()=>settings.KeepHistoryOnDisk);
+        gallery.Closed+=(_,_)=>gallery=null;
+        Exclude(gallery);gallery.Show();gallery.Activate();
     }
     /// <summary>Popups stack up to a limit; the most recently closed ones can be brought back from the tray.</summary>
     private const int PopupLimit=5;
@@ -325,12 +357,12 @@ public partial class App : Application
             if(previous.KeepHistoryOnDisk && !next.KeepHistoryOnDisk)HistoryStore.Clear();
             if(previous.EnableDeepLinks!=next.EnableDeepLinks)CommandChannel.SetProtocolRegistration(next.EnableDeepLinks);
             if(previous.LaunchAtLogin!=next.LaunchAtLogin && !StartupRegistration.Apply(next.LaunchAtLogin))throw new InvalidOperationException("로그인 시 자동 실행을 설정하지 못했습니다. Windows 설정 → 앱 → 시작 프로그램을 확인해 주세요.");
-            if(!previous.KeepHistoryOnDisk && next.KeepHistoryOnDisk){var oldestFirst=history.AsEnumerable().Reverse().ToArray();_=Task.Run(()=>{foreach(var image in oldestFirst){try{HistoryStore.Save(image);Thread.Sleep(2);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}}});}
+            if(!previous.KeepHistoryOnDisk && next.KeepHistoryOnDisk){var oldestFirst=history.AsEnumerable().Reverse().ToArray();_=Task.Run(()=>{foreach(var image in oldestFirst){try{WriteHistoryFile(image);Thread.Sleep(2);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}}});}
             hotkeys?.Apply(next.Hotkeys);
             if(previous.LiveSelection!=next.LiveSelection)liveOverride=null;
             try{SettingsStore.Save(next);settings=next;ImageActions.NameTemplate=next.FileNameTemplate;Editor.TextFonts.DefaultName=next.DefaultTextFont;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
             foreach(var editor in editors.Values){editor.EscapeAction=settings.EscapeAction;editor.EscapeSaveFolder=settings.SaveFolder;}
-            home?.UpdateSettings(settings);status.Text="설정을 저장했습니다.";
+            home?.UpdateSettings(settings);gallery?.Reload();status.Text="설정을 저장했습니다.";
         },updates,RestartForUpdate);preferences.SelectPage(page);preferences.Closed+=(_,_)=>preferences=null;Exclude(preferences);preferences.Show();
     }
     private async Task CheckUpdatesAfterStartupAsync()
@@ -355,7 +387,7 @@ public partial class App : Application
         if(closedPopups.Count>0)Add("닫은 캡처 팝업 다시 열기",()=>{var image=closedPopups[0];closedPopups.RemoveAt(0);ShowPopup(image);});
         if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
         if(previews.Any(p=>p.Pinned))Add("고정 이미지 모두 닫기",()=>{foreach(var p in previews.Where(p=>p.Pinned).ToArray())p.Close();});
-        menu.Items.Add(new Separator());Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
+        menu.Items.Add(new Separator());Add("캡처 기록…",ShowGallery);Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
         menu.IsOpen=true;
     }
     private void ShowTrayNotice() {
@@ -381,6 +413,7 @@ public partial class App : Application
             EditorSmokeTest.Run(path);
             UI.UiSmokeTest.Run(path);
             UI.SelectionSmokeTest.Run(path);
+            await UI.GallerySmokeTest.RunAsync(path);
             BackdropSmokeTest.Run(path);
             await UI.ScrollSmokeTest.RunAsync(path);
             FidelitySheet.Run(path);

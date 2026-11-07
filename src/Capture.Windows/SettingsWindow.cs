@@ -120,7 +120,7 @@ internal sealed class SettingsWindow : Window
         var card=new StackPanel();card.Children.Add(Ui.Label("캡처 저장 폴더",13,weight:FontWeights.SemiBold));folder.Margin=new Thickness(0,12,0,10);card.Children.Add(folder);
         var browse=Ui.Button("폴더 선택",()=>{var d=new OpenFolderDialog();if(d.ShowDialog(this)==true)folder.Text=d.FolderName;},"folder");browse.HorizontalAlignment=HorizontalAlignment.Left;card.Children.Add(browse);p.Children.Add(Ui.CardOf(card));
         p.Children.Add(Row("파일 이름 규칙","%Y %m %d 날짜, %H %M %S 시각, %f 밀리초, %r 임의 문자 4개. 시각이 같아도 덮어쓰지 않으려면 %f나 %r을 넣으세요.",fileName));
-        var history=Row("최근 캡처를 디스크에 보관","최근 12개 원본을 이 PC의 앱 데이터 폴더에 PNG로 남겨 다시 시작·업데이트 후에도 열 수 있습니다. 끄면 보관한 파일을 지웁니다. 편집 객체는 포함하지 않습니다.",keepHistory);history.Margin=new Thickness(0,16,0,0);p.Children.Add(history);
+        var history=Row("최근 캡처를 디스크에 보관",$"최근 {HistoryStore.DiskLimit}개 원본을 이 PC의 앱 데이터 폴더에 PNG로 남겨 다시 시작·업데이트 후에도 열 수 있습니다. 끄면 보관한 파일을 지웁니다. 편집 객체는 포함하지 않습니다.",keepHistory);history.Margin=new Thickness(0,16,0,0);p.Children.Add(history);
         var text=Ui.Label("자동 저장을 켠 경우 PNG 원본이 이 폴더에 저장됩니다. 편집창의 다른 이름으로 저장에서는 위치와 형식을 따로 고를 수 있습니다.",12,Ui.Muted);text.Margin=new Thickness(0,16,0,0);p.Children.Add(text);return p;
     }
     private UIElement UpdatesPage()

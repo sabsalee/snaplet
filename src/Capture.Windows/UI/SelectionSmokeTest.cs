@@ -149,10 +149,12 @@ internal static class SelectionSmokeTest
 
         // --- optional on-disk history -----------------------------------------------------
         var historyFolder=Path.Combine(directory,"history-check");HistoryStore.Clear(historyFolder);
-        for(int i=0;i<HistoryStore.Limit+2;i++){HistoryStore.Save(white,historyFolder);Thread.Sleep(3);}
-        Check(Directory.GetFiles(historyFolder,"*.png").Length==HistoryStore.Limit && HistoryStore.Load(historyFolder).Count==HistoryStore.Limit,"history keeps only the newest captures on disk");
-        File.WriteAllText(Path.Combine(historyFolder,"zzz-broken.png"),"not a png");
-        Check(HistoryStore.Load(historyFolder).Count==HistoryStore.Limit-1,"unreadable history files are skipped without failing");
+        for(int i=0;i<HistoryStore.DiskLimit+1;i++)HistoryStore.Save(white,historyFolder);
+        Thread.Sleep(3);var newest=HistoryStore.Save(white,historyFolder);
+        Check(Directory.GetFiles(historyFolder,"*.png").Length==HistoryStore.DiskLimit && HistoryStore.Entries(historyFolder)[0].Path==newest,"history keeps only the newest captures on disk");
+        Check(HistoryStore.Load(historyFolder).Count==HistoryStore.Limit,"startup loads only the recent few captures");
+        File.WriteAllText(Path.Combine(historyFolder,Capture.Core.HistoryNames.Create(DateTime.UtcNow.AddHours(1),"broken")),"not a png");
+        Check(HistoryStore.Load(historyFolder).Count==HistoryStore.Limit,"unreadable history files are skipped without failing");
         HistoryStore.Clear(historyFolder);Check(!Directory.Exists(historyFolder),"turning history off deletes the stored captures");
 
         // --- editor crop precision reuses the same arithmetic --------------------------------
