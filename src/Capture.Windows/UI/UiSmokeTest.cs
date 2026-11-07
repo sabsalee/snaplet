@@ -19,7 +19,7 @@ internal static class UiSmokeTest
             var icon=Ui.Icon(name);Check(icon is Viewbox {Child:Canvas {Width:24,Height:24}},"Fluent icon retains consistent design grid: "+name);
         }
         var image=ImageActions.Demo();var settings=new AppSettings();var commands=new List<string>();
-        var home=new HomeWindow(settings,commands.Add,()=>commands.Add("open"),()=>commands.Add("paste"),()=>{},()=>{},_=>{},new TextBlock());
+        var home=new HomeWindow(settings,commands.Add,()=>commands.Add("open"),()=>commands.Add("paste"),()=>{},()=>{},_=>{},_=>{},new TextBlock());
         try {
             Shot(home,"home-empty");
             Check(Find<TextBlock>(home).Where(t=>t.IsVisible && !string.IsNullOrWhiteSpace(t.Text)).All(t=>t.Foreground is SolidColorBrush c && c.Color!=Colors.Black),"home text uses explicit readable theme foregrounds");
@@ -84,7 +84,7 @@ internal static class UiSmokeTest
         var notice=new NoticeWindow("이미지를 저장하지 못했습니다","저장 폴더에 접근할 수 없습니다. 다른 폴더를 선택한 뒤 다시 저장해 주세요.");
         try{Shot(notice,"notice");}finally{notice.Close();}
         // Layout magnification is useful QA, but does not claim OS per-monitor DPI transition coverage.
-        var scaled=new HomeWindow(settings,_=>{},()=>{},()=>{},()=>{},()=>{},_=>{},new TextBlock());
+        var scaled=new HomeWindow(settings,_=>{},()=>{},()=>{},()=>{},()=>{},_=>{},_=>{},new TextBlock());
         try {scaled.Width=1120;scaled.Height=900;((FrameworkElement)scaled.Content).LayoutTransform=new ScaleTransform(1.5,1.5);Shot(scaled,"home-layout-150");Check(((FrameworkElement)scaled.Content).ActualWidth>=660,"150 percent layout scale retains supported content width");}finally{scaled.Close();}
         File.WriteAllText(Path.Combine(directory,"ui-smoke.json"),JsonSerializer.Serialize(new{component="application design and routed actions",passed=checks.Count,checks,limitations=new[]{"Routed WPF command checks are not physical mouse/keyboard or IME testing","Layout scaling is not an OS DPI transition test","Does not read the desktop or measure capture latency"}},new JsonSerializerOptions{WriteIndented=true}));
         void Shot(Window window,string name)

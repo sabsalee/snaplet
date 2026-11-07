@@ -64,6 +64,7 @@ public sealed class EditorWindow : Window
     /// <summary>Optional copy/save when Esc closes an idle editor (set from app settings).</summary>
     public EscapeAction EscapeAction {get;set;}
     public string? EscapeSaveFolder {get;set;}
+    private string? projectPath;
     // Secondary tools, shown inline while the toolbar has room. Once it runs out they fold behind ··· from the end,
     // and the last one chosen there takes the slot before ··· like the reference app.
     private static readonly AnnotationKind[] MoreTools=[AnnotationKind.Blur,AnnotationKind.Highlight,AnnotationKind.Spotlight,AnnotationKind.Step,AnnotationKind.Ellipse,AnnotationKind.Line,AnnotationKind.Magnifier,AnnotationKind.Solid];
@@ -305,7 +306,7 @@ public sealed class EditorWindow : Window
         var snapping=new MenuItem {Header="객체 가장자리·중심에 맞추기 · Ctrl 일시 해제",IsCheckable=true,IsChecked=surface.SnapToObjects};
         snapping.Click+=(_,_)=>surface.SnapToObjects=snapping.IsChecked;menu.Items.Add(snapping);
         Item(menu,"선택 객체 복제 · Ctrl+D",surface.DuplicateSelected);Item(menu,"선택 객체 삭제 · Delete",surface.DeleteSelected);
-        menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));Item(menu,"인쇄 · Ctrl+P",Print);
+        menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));Item(menu,"프로젝트로 저장…",SaveProject);Item(menu,"인쇄 · Ctrl+P",Print);
         Item(menu,"텍스트 추출",()=>{if(!FinishTextEdit(true))return;OcrRequested?.Invoke(ImageRenderer.Render(source,document));});
         var turn=new MenuItem {Header="회전·뒤집기 (객체를 합쳐 새 편집창)"};
         foreach(var (label,kind) in new[]{("왼쪽으로 회전",ImageTurn.Left),("오른쪽으로 회전",ImageTurn.Right),("좌우 뒤집기",ImageTurn.FlipHorizontal),("상하 뒤집기",ImageTurn.FlipVertical)}) {
@@ -1146,6 +1147,16 @@ public sealed class EditorWindow : Window
         }
         try {ImageActions.Save(BackdropRenderer.Export(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport && !keepOpen)Hide();}
         catch(Exception ex){ShowError("이미지 저장 실패",ex);}
+    }
+    /// <summary>Keeps the original and every object editable in a ".snaplet" file, unlike an exported image.</summary>
+    private void SaveProject()
+    {
+        if(!FinishTextEdit(true))return;document.EndEdit();
+        var name=projectPath ?? Path.ChangeExtension(ImageActions.DefaultName(),ProjectFile.Extension);
+        var dialog=new SaveFileDialog {Filter=ProjectFileIO.DialogFilter,FileName=name,DefaultExt=ProjectFile.Extension,AddExtension=true,OverwritePrompt=true};
+        if(dialog.ShowDialog(this)!=true)return;
+        try{ProjectFileIO.Save(source,document,dialog.FileName);projectPath=dialog.FileName;status.Text=$"프로젝트 저장 완료: {dialog.FileName}";}
+        catch(Exception ex){ShowError("프로젝트 저장 실패",ex);}
     }
     /// <summary>Esc on an idle editor closes it like the original, optionally copying or saving first. The document stays reopenable.</summary>
     private async Task DismissWithEscapeAsync()

@@ -238,6 +238,7 @@ PrecisionChecks.Run(Check);
 BackdropChecks.Run(Check);
 ColorChecks.Run(Check);
 ScrollBandChecks.Run(Check);
+ProjectFileChecks.Run(Check);
 var capturedAt = new DateTime(2026, 11, 8, 3, 4, 5, 678, DateTimeKind.Utc);
 Check(HistoryNames.TryParseUtc(HistoryNames.Create(capturedAt, "abc123"), out var parsedAt) && parsedAt == capturedAt && parsedAt.Kind == DateTimeKind.Utc, "A history name gives back its capture time.");
 Check(!HistoryNames.TryParseUtc("photo.png", out _) && !HistoryNames.TryParseUtc("", out _), "Other file names are not history entries.");

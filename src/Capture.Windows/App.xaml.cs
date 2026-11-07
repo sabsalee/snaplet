@@ -86,7 +86,7 @@ public partial class App : Application
         // Snaplet starts in the tray; the main window opens from the tray icon, the "home" shortcut or a second launch.
         if(warning is not null){status.Text=warning;tray?.Notify("Snaplet 확인 필요",warning);}
         else if(!settings.TrayNoticeShown && forwarded is null && !e.Args.Contains("--background"))ShowTrayNotice();
-        foreach(var path in e.Args.Where(File.Exists)){try{Edit(ImageActions.Load(path));}catch(Exception error){Error(error);}}
+        foreach(var path in e.Args.Where(File.Exists)){try{OpenPath(path);}catch(Exception error){Error(error);}}
     }
     private async Task RunCommandAsync(string command,long? hotkeyTimestamp=null,EditorWindow? destination=null) {
         if(quitting)return;
@@ -297,14 +297,20 @@ public partial class App : Application
         } catch(Exception error){Error(error);}
         finally {backgroundExports--;}
     }
-    private void Edit(BitmapSource image) {
+    private void Edit(BitmapSource image)=>Edit(image,null);
+    /// <summary>Opens an image or a ".snaplet" project in a new editor.</summary>
+    private void OpenPath(string path) {
+        if(ProjectFileIO.IsProject(path)){var (image,document)=ProjectFileIO.Load(path);Edit(image,document);}
+        else Edit(ImageActions.Load(path));
+    }
+    private void Edit(BitmapSource image,Capture.Core.EditableDocument? document) {
         if(editors.TryGetValue(image,out var existing)){existing.ShowDocument();return;}
         // Release older hidden documents; visible editors are owned by the user.
         foreach(var pair in editors.Where(p=>!p.Value.IsVisible).ToArray()) {
             if(editors.Count<12 && editors.Values.Sum(window=>window.EstimatedImageBytes)<256_000_000)break;
             pair.Value.CloseForExit();editors.Remove(pair.Key);
         }
-        var window=new EditorWindow(image){EscapeAction=settings.EscapeAction,EscapeSaveFolder=settings.SaveFolder};editors[image]=window;
+        var window=new EditorWindow(image,document){EscapeAction=settings.EscapeAction,EscapeSaveFolder=settings.SaveFolder};editors[image]=window;
         window.OcrRequested+=source=>_=RecognizeAsync(source);window.RasterizedRequested+=Edit;
         window.AddCaptureRequested+=()=>RunCommandAsync("region",null,window);
         window.PinRequested+=bitmap=>{
@@ -344,9 +350,9 @@ public partial class App : Application
     }
     private string JoinIfWanted(string text)=>settings.OcrJoinLines?System.Text.RegularExpressions.Regex.Replace(text.Trim(),@"\s*\r?\n\s*"," "):text;
     private void OpenImage() {
-        var dialog=new OpenFileDialog {Filter="이미지|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif"};
+        var dialog=new OpenFileDialog {Filter="이미지와 프로젝트|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif;*.snaplet|이미지|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif|"+ProjectFileIO.DialogFilter};
         if(dialog.ShowDialog()!=true)return;
-        try{Edit(ImageActions.Load(dialog.FileName));}catch(Exception error){Error(error);}
+        try{OpenPath(dialog.FileName);}catch(Exception error){Error(error);}
     }
     private void ClipboardImage() {try{if(Clipboard.GetImage() is BitmapSource image){image.Freeze();Edit(image);}else status.Text="클립보드에 이미지가 없습니다.";}catch(Exception error){Error(error);}}
     private void ShowSettings()=>ShowSettingsPage("capture");
@@ -398,7 +404,7 @@ public partial class App : Application
     }
     private void ShowHome() {
         if(home is not null){home.UpdateSettings(settings);home.UpdateRecent(history);home.Show();home.Activate();return;}
-        home=new HomeWindow(settings,command=>_=RunCommandAsync(command),OpenImage,ClipboardImage,()=>Edit(ImageActions.Demo()),ShowSettings,Edit,status);
+        home=new HomeWindow(settings,command=>_=RunCommandAsync(command),OpenImage,ClipboardImage,()=>Edit(ImageActions.Demo()),ShowSettings,Edit,OpenPath,status);
         home.UpdateRecent(history);
         home.Closing+=(_,e)=>{if(!quitting){e.Cancel=true;home.Hide();}};
         Exclude(home);home.Show();home.Activate();
@@ -414,6 +420,7 @@ public partial class App : Application
             UI.UiSmokeTest.Run(path);
             UI.SelectionSmokeTest.Run(path);
             await UI.GallerySmokeTest.RunAsync(path);
+            UI.ProjectSmokeTest.Run(path);
             BackdropSmokeTest.Run(path);
             await UI.ScrollSmokeTest.RunAsync(path);
             FidelitySheet.Run(path);
