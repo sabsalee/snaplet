@@ -40,6 +40,8 @@ internal static class Ui
     internal static Brush Page=>Brush("PageBrush");internal static Brush Card=>Brush("CardBrush");internal static Brush Raised=>Brush("RaisedBrush");
     internal static Brush Text=>Brush("TextBrush");internal static Brush Muted=>Brush("MutedBrush");internal static Brush Accent=>Brush("AccentBrush");internal static Brush Line=>Brush("BorderBrush");
     internal static TextBlock Label(string text,double size=13,Brush? ink=null,FontWeight? weight=null)=>new(){Text=text,FontSize=size,Foreground=ink??Text,FontWeight=weight??FontWeights.Normal,TextWrapping=TextWrapping.Wrap};
+    /// <summary>The physical key. With the Korean IME in Hangul mode WPF reports letter keys as ImeProcessed, which would break letter shortcuts.</summary>
+    internal static System.Windows.Input.Key Pressed(System.Windows.Input.KeyEventArgs e)=>e.Key==System.Windows.Input.Key.ImeProcessed?e.ImeProcessedKey:e.Key;
     internal static Border CardOf(UIElement child,double padding=18)=>new(){Child=child,Background=Card,BorderBrush=Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(padding)};
     internal static Border Keycap(string value)=>new(){Child=new TextBlock{Text=value,FontSize=11,Foreground=Muted,VerticalAlignment=VerticalAlignment.Center},Background=Page,CornerRadius=new CornerRadius(4),BorderBrush=Line,BorderThickness=new Thickness(1),Padding=new Thickness(7,4,7,4),VerticalAlignment=VerticalAlignment.Center};
     internal static Button Button(string title,Action action,string? glyph=null,string style="BaseButton")

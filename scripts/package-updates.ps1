@@ -10,7 +10,7 @@ try {
         dotnet tool run vpk -- download github --repoUrl https://github.com/sabsalee/snaplet --channel win-x64 --pre --timeout 2 --outputDir $OutputDirectory
         if ($LASTEXITCODE -ne 0) { Write-Host 'No previous update package available; building a full package.' }
     }
-    dotnet tool run vpk -- pack --packId SnapletApp --packTitle Snaplet --packAuthors sabsalee --packVersion $Version --packDir $PackDirectory --mainExe Snaplet.exe --runtime win-x64 --channel win-x64 --framework vcredist143-x64 --noPortable --outputDir $OutputDirectory
+    dotnet tool run vpk -- pack --packId SnapletApp --packTitle Snaplet --packAuthors sabsalee --packVersion $Version --packDir $PackDirectory --mainExe Snaplet.exe --runtime win-x64 --channel win-x64 --framework vcredist143-x64 --icon assets/snaplet.ico --noPortable --outputDir $OutputDirectory
     if ($LASTEXITCODE -ne 0) { throw '자동 업데이트 패키지 생성 실패' }
     $feed = Join-Path $OutputDirectory 'releases.win-x64.json'
     if (-not (Test-Path $feed)) { throw '업데이트 피드가 없습니다.' }

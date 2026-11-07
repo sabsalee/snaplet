@@ -49,6 +49,8 @@ internal static class Native
     [DllImport("user32.dll",SetLastError=true)] public static extern bool RegisterHotKey(nint hwnd,int id,uint modifiers,uint key);
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(nint hwnd,int id);
     [DllImport("user32.dll")] public static extern nint LoadIcon(nint instance,nint icon);
+    [DllImport("user32.dll")] public static extern bool DestroyIcon(nint icon);
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode)] public static extern uint ExtractIconEx(string file,int index,out nint large,out nint small,uint count);
     [DllImport("shell32.dll",CharSet=CharSet.Unicode)] public static extern bool Shell_NotifyIcon(uint message,ref NOTIFYICONDATA data);
     [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] public struct NOTIFYICONDATA {
         public int Size; public nint Hwnd; public uint Id,Flags,Callback; public nint Icon;
@@ -80,7 +82,7 @@ internal static class Native
             DwmGetWindowAttribute(hwnd,14,out var cloaked,4);
             if(cloaked!=0 || !GetWindowRect(hwnd,out var r) || r.Width<40 || r.Height<30) return true;
             var text=new StringBuilder(512); GetWindowText(hwnd,text,text.Capacity);
-            if(text.Length>0) list.Add(new(hwnd,r,text.ToString()));
+            if(text.Length>0) list.Add(new(hwnd,r,text.ToString()=="Program Manager"?"바탕화면":text.ToString()));
             return true;
         },0);
         return list;

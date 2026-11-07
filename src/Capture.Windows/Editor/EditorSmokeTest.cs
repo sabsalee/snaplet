@@ -145,6 +145,9 @@ public static class EditorSmokeTest
             var countBeforeText=rich.Annotations.Count;var keepSelected=editingSurface.Selected;
             window.BeginTextEdit(editingSurface.NewTextAt(new(30,30)),true);
             Check(window.ActiveTextEditor is {Text:"텍스트"} placeholder && placeholder.SelectedText=="텍스트","new text starts with its placeholder selected so typing replaces it");
+            // The canvas ScrollViewer takes focus while the opening mouse press bubbles; the box must get it back.
+            var openedBox=window.ActiveTextEditor!;editingSurface.Focus();window.Dispatcher.Invoke(()=>{},System.Windows.Threading.DispatcherPriority.Background);
+            Check(FocusManager.GetFocusedElement(window)==openedBox && openedBox.SelectedText=="텍스트","a new text box takes focus back after the opening click");
             Check(window.FinishTextEdit(true) && rich.Annotations.Count==countBeforeText+1 && rich.Annotations.Last().Text=="텍스트","leaving the placeholder alone inserts it");
             rich.Undo();editingSurface.Selected=keepSelected;
             editingSurface.Tool=AnnotationKind.Step;editingSurface.Selected=null;

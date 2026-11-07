@@ -62,7 +62,7 @@ internal sealed class PreviewWindow : Window
         SourceInitialized+=(_,_)=>{
             var hwnd=new WindowInteropHelper(this).Handle;Native.SetWindowLongPtr(hwnd,-20,(nint)(Native.GetWindowLongPtr(hwnd,-20).ToInt64()|0x08000000L|0x80L));Native.SetWindowDisplayAffinity(hwnd,0x11);
         };
-        Loaded+=(_,_)=>{ApplyLayering();if(interactive){Position();outside.Start();}};
+        Loaded+=(_,_)=>{ApplyLayering();if(Pinned)FitPin();if(interactive){Position();outside.Start();}};
         outside.Tick+=(_,_)=>{
             bool pressed=Native.GetAsyncKeyState(1)<0;
             if(IsVisible && settings.ClosePreviewOutside && !Pinned && !busy && DateTime.UtcNow-shown>TimeSpan.FromMilliseconds(500) && pressed && !previousMouse && !IsMouseOver)Close();
@@ -97,13 +97,26 @@ internal sealed class PreviewWindow : Window
         };
         return handle;
     }
-    internal void ResizePin(double change){Width=Math.Clamp(Width+change,180,900);Height=PinHeight(Width);}
-    private double PinHeight(double width)=>Math.Clamp(width*image.PixelHeight/image.PixelWidth,120,900);
+    internal void ResizePin(double change)=>FitPin(pinImageWidth+change);
+    /// <summary>The window follows the image's shape. An image too short to sit under the tools gets clear bands above and below, which show the tools only on hover.</summary>
+    private void FitPin(double? imageWidth=null)
+    {
+        var scale=VisualTreeHelper.GetDpi(this).DpiScaleX;if(scale<=0)scale=1;
+        // Actual size at first, but a large capture starts smaller so it does not cover the screen and can still grow.
+        var width=Math.Clamp(imageWidth ?? Math.Min(image.PixelWidth/scale,PinStartMaxWidth),180,900);var height=width*image.PixelHeight/image.PixelWidth;
+        if(height>900){height=900;width=Math.Max(180,height*image.PixelWidth/image.PixelHeight);}
+        pinImageWidth=width;
+        var bands=height<PinToolsHeight;
+        if(imageContainer!=null){imageContainer.Margin=bands?new Thickness(0,34,0,84):new Thickness(0);}
+        Width=width+2;Height=height+2+(bands?118:0);
+    }
+    private const double PinToolsHeight=120,PinStartMaxWidth=640;
+    private double pinImageWidth;
     private void Build()
     {
         if(imageContainer!=null)imageContainer.Child=null;
         if(message.Parent is Panel old)old.Children.Remove(message);
-        Content=null;thumbnail.Height=double.NaN;thumbnail.Effect=null;popupChrome=null;message.ClearValue(TextBlock.ForegroundProperty);message.Foreground=Ui.Muted;thumbnail.ContextMenu=Pinned?null:PopupMenu();thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
+        Content=null;thumbnail.Height=thumbnail.Width=double.NaN;thumbnail.Effect=null;popupChrome=null;popupCard=null;popupLetterboxed=false;message.ClearValue(TextBlock.ForegroundProperty);message.Foreground=Ui.Muted;thumbnail.ContextMenu=Pinned?null:PopupMenu();thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
         var header=new DockPanel{LastChildFill=true};
         var close=Ui.IconButton("close","미리보기 닫기",Close,26);DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);
         var title=Ui.Label(Pinned?"고정 이미지":"캡처",12,Ui.Muted,FontWeights.SemiBold);title.VerticalAlignment=VerticalAlignment.Center;header.Children.Add(title);
@@ -125,20 +138,25 @@ internal sealed class PreviewWindow : Window
         imageContainer=new Border{Background=new SolidColorBrush(Color.FromRgb(17,19,23)),CornerRadius=new CornerRadius(6),Child=thumbnail};
         message.Text=Pinned?"":"클릭하여 편집 · 드래그하여 전달";message.TextTrimming=TextTrimming.CharacterEllipsis;message.TextWrapping=TextWrapping.NoWrap;
         if(Pinned) {
-            SizeToContent=SizeToContent.Manual;Width=360;Height=PinHeight(Width);
-            var root=new Grid{Background=Ui.Page};root.Children.Add(imageContainer);
+            SizeToContent=SizeToContent.Manual;imageContainer.Background=Brushes.Transparent;imageContainer.CornerRadius=new CornerRadius(0);imageContainer.BorderBrush=Ui.Line;imageContainer.BorderThickness=new Thickness(1);FitPin();
+            var root=new Grid{Background=Brushes.Transparent};root.Children.Add(imageContainer);
             var top=new Border{Background=new SolidColorBrush(Color.FromArgb(235,25,28,33)),Child=header,Padding=new Thickness(8,4,6,4),VerticalAlignment=VerticalAlignment.Top};root.Children.Add(top);
             var bottom=new Border{Background=new SolidColorBrush(Color.FromArgb(235,25,28,33)),Child=tools,Padding=new Thickness(8,4,8,4),VerticalAlignment=VerticalAlignment.Bottom};root.Children.Add(bottom);
-            pinHeader=top;pinTools=bottom;Content=new Border{BorderBrush=Ui.Line,BorderThickness=new Thickness(1),Child=root};SetPinChrome(IsMouseOver);
+            pinHeader=top;pinTools=bottom;Content=root;SetPinChrome(IsMouseOver);
             header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};
             // Either mouse button moves a pinned image; the file handle in its tools hands out a file.
             thumbnail.MouseRightButtonDown-=MovePinned;thumbnail.MouseRightButtonDown+=MovePinned;
         } else if(nearPointer) {
             // Only the image at rest; hovering dims it and shows copy and save in the middle, with the other actions in the corners.
             // It never takes focus, so Ctrl+V into another app keeps working.
-            SizeToContent=SizeToContent.Height;Width=212;Height=double.NaN;pinHeader=pinTools=null;
-            thumbnail.Height=Math.Clamp(200d*image.PixelHeight/image.PixelWidth,104,150);imageContainer.CornerRadius=new CornerRadius(6);
-            var frame=new Grid();frame.Children.Add(imageContainer);
+            // The window keeps room for the hover controls; an image that does not fill it stays clear around it until hover.
+            var fit=Math.Min(1,Math.Min(PopupImageWidth/image.PixelWidth,PopupImageHeight/image.PixelHeight));
+            var shownWidth=image.PixelWidth*fit;var shownHeight=image.PixelHeight*fit;
+            var boxWidth=Math.Max(shownWidth,PopupMinWidth);var boxHeight=Math.Max(shownHeight,PopupMinHeight);
+            popupLetterboxed=boxWidth>shownWidth+.5 || boxHeight>shownHeight+.5;
+            SizeToContent=SizeToContent.Height;Width=boxWidth+8;Height=double.NaN;pinHeader=pinTools=null;
+            thumbnail.Width=shownWidth;thumbnail.Height=shownHeight;imageContainer.Background=Brushes.Transparent;imageContainer.CornerRadius=new CornerRadius(6);
+            var frame=new Grid{Width=boxWidth,Height=boxHeight};frame.Children.Add(imageContainer);
             var dim=new Border{Background=new SolidColorBrush(Color.FromArgb(120,10,12,16)),CornerRadius=new CornerRadius(6),IsHitTestVisible=false};
             var chrome=new Grid();chrome.Children.Add(dim);
             Button Corner(Button b,HorizontalAlignment x,VerticalAlignment y) {
@@ -150,13 +168,18 @@ internal sealed class PreviewWindow : Window
             Corner(FindTool(tools,"텍스트 추출"),HorizontalAlignment.Right,VerticalAlignment.Bottom);
             var middle=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};chrome.Children.Add(middle);
             void Pill(Button b,string text) {
-                ((Panel)b.Parent).Children.Remove(b);b.Width=double.NaN;b.MinWidth=62;b.Height=26;b.Padding=new Thickness(10,2,10,2);b.Margin=new Thickness(0,2,0,2);b.Content=new TextBlock{Text=text,FontSize=12,FontWeight=FontWeights.SemiBold,Foreground=Brushes.Black,HorizontalAlignment=HorizontalAlignment.Center};b.Background=new SolidColorBrush(Color.FromArgb(235,255,255,255));middle.Children.Add(b);
+                ((Panel)b.Parent).Children.Remove(b);b.Width=double.NaN;b.MinWidth=62;b.Height=26;b.Padding=new Thickness(10,2,10,2);b.Margin=new Thickness(0,2,0,2);b.ToolTip=null;b.Content=new TextBlock{Text=text,FontSize=12,FontWeight=FontWeights.SemiBold,Foreground=Brushes.Black,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
+                // Its own template: the shared icon button turns dark on hover, which hides this black label.
+                var pillFace=new FrameworkElementFactory(typeof(Border));pillFace.SetValue(Border.CornerRadiusProperty,new CornerRadius(6));pillFace.SetBinding(Border.BackgroundProperty,new System.Windows.Data.Binding("Background"){RelativeSource=System.Windows.Data.RelativeSource.TemplatedParent});
+                var pillText=new FrameworkElementFactory(typeof(ContentPresenter));pillText.SetValue(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Center);pillText.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center);pillFace.AppendChild(pillText);
+                b.Template=new ControlTemplate(typeof(Button)){VisualTree=pillFace};
+                b.Background=new SolidColorBrush(Color.FromArgb(235,255,255,255));b.MouseEnter+=(_,_)=>b.Background=Brushes.White;b.MouseLeave+=(_,_)=>b.Background=new SolidColorBrush(Color.FromArgb(235,255,255,255));middle.Children.Add(b);
             }
             Pill(FindTool(tools,"이미지 복사"),"복사");Pill(FindTool(tools,"이미지 저장"),"저장");
             message.Text=$"{image.PixelWidth:N0} × {image.PixelHeight:N0}"+(settings.CopyAfterCapture?" · 복사됨":"");message.Foreground=Brushes.White;message.TextAlignment=TextAlignment.Center;message.FontSize=10;message.Margin=new Thickness(0,2,0,0);middle.Children.Add(message);
             var handle=FileHandle();handle.HorizontalAlignment=HorizontalAlignment.Center;handle.VerticalAlignment=VerticalAlignment.Bottom;handle.Margin=new Thickness(0,0,0,3);handle.SetValue(Button.ForegroundProperty,Brushes.White);chrome.Children.Add(handle);
             popupChrome=chrome;frame.Children.Add(chrome);
-            Content=Ui.CardOf(frame,3);SetPinChrome(IsMouseOver);
+            popupCard=Ui.CardOf(frame,3);Content=popupCard;SetPinChrome(IsMouseOver);
         } else {
             SizeToContent=SizeToContent.Height;Width=334;Height=double.NaN;pinHeader=pinTools=null;
             var root=new StackPanel();header.Margin=new Thickness(0,0,0,8);root.Children.Add(header);
@@ -190,7 +213,11 @@ internal sealed class PreviewWindow : Window
         if(!Pinned)return;BeginPinMove();e.Handled=true;
     }
     private void BeginPinMove(){Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();}
+    private const double PopupImageWidth=204,PopupImageHeight=150,PopupMinWidth=164,PopupMinHeight=124;
+    private bool popupLetterboxed;
+    private Border? popupCard;
     private void SetPinChrome(bool show){
+        if(popupCard!=null && popupChrome!=null && popupLetterboxed){popupCard.Background=show?Ui.Card:Brushes.Transparent;popupCard.BorderBrush=show?Ui.Line:Brushes.Transparent;}
         if(popupChrome!=null){popupChrome.Opacity=show?1:0;popupChrome.IsHitTestVisible=show;thumbnail.Effect=show?new System.Windows.Media.Effects.BlurEffect{Radius=4}:null;}
         if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;
     }

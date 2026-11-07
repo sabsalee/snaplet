@@ -330,13 +330,14 @@ public partial class App : Application
         updates.ApplyAndRestart(()=>{quitting=true;foreach(var editor in editors.Values.ToArray())editor.CloseForExit();Shutdown();});
     }
     private void ShowTrayMenu() {
-        var menu=new ContextMenu {Placement=PlacementMode.MousePoint};
+        var menu=Editor.EditorTheme.Themed(new ContextMenu {Placement=PlacementMode.MousePoint},Editor.EditorTheme.SystemUsesDark());
         void Add(string text,Action action){var item=new MenuItem {Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
         foreach(var (text,command) in new[]{("영역 캡처","region"),("창 캡처","window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
         var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
         if(closedPopups.Count>0)Add("닫은 캡처 팝업 다시 열기",()=>{var image=closedPopups[0];closedPopups.RemoveAt(0);ShowPopup(image);});
         if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
+        if(previews.Any(p=>p.Pinned))Add("고정 이미지 모두 닫기",()=>{foreach(var p in previews.Where(p=>p.Pinned).ToArray())p.Close();});
         menu.Items.Add(new Separator());Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
         menu.IsOpen=true;
     }

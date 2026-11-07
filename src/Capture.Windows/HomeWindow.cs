@@ -67,7 +67,7 @@ internal sealed class HomeWindow : Window
         };
         PreviewKeyDown+=(_,e)=>{
             if(!Keyboard.Modifiers.HasFlag(ModifierKeys.Control))return;
-            if(e.Key==Key.V){this.clipboard();e.Handled=true;}else if(e.Key==Key.O){this.open();e.Handled=true;}
+            var pressed=Ui.Pressed(e);if(pressed==Key.V){this.clipboard();e.Handled=true;}else if(pressed==Key.O){this.open();e.Handled=true;}
         };
         UpdateSettings(settings);UpdateRecent([]);
     }
