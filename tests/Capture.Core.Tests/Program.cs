@@ -239,6 +239,16 @@ BackdropChecks.Run(Check);
 ColorChecks.Run(Check);
 ScrollBandChecks.Run(Check);
 ProjectFileChecks.Run(Check);
+byte[] twoByThree = Enumerable.Range(0, 24).Select(i => (byte)i).ToArray();
+var turned = ScrollStitchSession.Transpose(twoByThree, 2, 3);
+Check(turned.AsSpan(4, 4).SequenceEqual(twoByThree.AsSpan(8, 4)) && turned.AsSpan(12, 4).SequenceEqual(twoByThree.AsSpan(4, 4)), "Transposing swaps rows and columns.");
+Check(ScrollStitchSession.Transpose(turned, 3, 2).SequenceEqual(twoByThree), "Transposing twice restores the image.");
+Throws(() => ScrollStitchSession.Transpose(twoByThree, 3, 3), "Transposing checks the image size.");
+var wideRandom = new Random(5); var widePage = new byte[400 * 60 * 4]; wideRandom.NextBytes(widePage); for (int i = 3; i < widePage.Length; i += 4) widePage[i] = 255;
+byte[] WideView(int left) { var view = new byte[120 * 60 * 4]; for (int y = 0; y < 60; y++) widePage.AsSpan((y * 400 + left) * 4, 120 * 4).CopyTo(view.AsSpan(y * 120 * 4)); return ScrollStitchSession.Transpose(view, 120, 60); }
+var wideSession = new ScrollStitchSession(60, 120, WideView(0), minimumOverlap: 30);
+Check(wideSession.Append(WideView(50)) && wideSession.Append(WideView(130)) && wideSession.Append(WideView(210)) && wideSession.Append(WideView(280)), "Sideways frames stitch through the same session.");
+Check(wideSession.OutputHeight == 400 && ScrollStitchSession.Transpose(wideSession.ToArray(), 60, 400).SequenceEqual(widePage), "A sideways stitch transposes back to the original page.");
 var capturedAt = new DateTime(2026, 11, 8, 3, 4, 5, 678, DateTimeKind.Utc);
 Check(HistoryNames.TryParseUtc(HistoryNames.Create(capturedAt, "abc123"), out var parsedAt) && parsedAt == capturedAt && parsedAt.Kind == DateTimeKind.Utc, "A history name gives back its capture time.");
 Check(!HistoryNames.TryParseUtc("photo.png", out _) && !HistoryNames.TryParseUtc("", out _), "Other file names are not history entries.");
