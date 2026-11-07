@@ -5,6 +5,7 @@
     <UseWPF>true</UseWPF>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../assets/snaplet.ico</ApplicationIcon>
     <AssemblyName>Snaplet</AssemblyName>
     <Product>Snaplet</Product>
     <Title>Snaplet</Title>

@@ -810,6 +810,9 @@ public sealed class EditorWindow : Window
         textEditor.PreviewKeyDown+=(_,e)=>{if(composingText)return;if(e.Key==Key.Escape){FinishTextEdit(false);e.Handled=true;}else if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){FinishTextEdit(true);e.Handled=true;}};
         // New text starts as selected placeholder: typing replaces it, leaving it alone inserts something visible.
         textEditor.Focus();if(create)textEditor.SelectAll();else textEditor.CaretIndex=textEditor.Text.Length;SyncInspector();
+        // The mouse press that opened this box is still bubbling, and the ScrollViewer around the canvas takes focus when it arrives. Focus again after it.
+        var opened=textEditor;
+        Dispatcher.BeginInvoke(()=>{if(textEditor!=opened)return;opened.Focus();if(create && opened.Text==TextPlaceholder)opened.SelectAll();},DispatcherPriority.Input);
         status.Text="이미지 위에 입력하세요 · Enter 줄바꿈 · Ctrl+Enter 완료 · Esc 취소";
     }
     private const string TextPlaceholder="텍스트";
@@ -975,11 +978,12 @@ public sealed class EditorWindow : Window
     private void OnKey(object sender,KeyEventArgs e)
     {
         if(e.OriginalSource is TextBox || textEditor!=null || IsPropertyInput(e.OriginalSource as DependencyObject))return;
-        if(e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down))FinishNudge();
+        var pressed=Ui.Pressed(e);
+        if(pressed is not (Key.Left or Key.Right or Key.Up or Key.Down))FinishNudge();
         var ctrl=Keyboard.Modifiers.HasFlag(ModifierKeys.Control);var shift=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         if(surface.RegionActive && !ctrl) {
             // Range precision like the capture overlay, for the crop tool and the select-mode range box: arrows move, Alt+arrows resize, [ ] grow/shrink, A fits to content.
-            var key=e.Key==Key.System?e.SystemKey:e.Key;var step=shift?10:1;var alt=Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
+            var key=pressed==Key.System?e.SystemKey:pressed;var step=shift?10:1;var alt=Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
             int dx=key==Key.Left?-step:key==Key.Right?step:0,dy=key==Key.Up?-step:key==Key.Down?step:0;
             bool handled=key switch {
                 Key.Left or Key.Right or Key.Up or Key.Down=>surface.NudgeCrop(dx,dy,alt),
@@ -988,7 +992,7 @@ public sealed class EditorWindow : Window
             if(handled){UpdateCropStatus();e.Handled=true;return;}
         }
         if(ctrl) {
-            switch(e.Key) {
+            switch(pressed) {
                 case Key.Z:surface.CancelGesture();if(shift)document.Redo();else document.Undo();break;
                 case Key.Y:surface.CancelGesture();document.Redo();break;
                 case Key.V:PasteImage();break;case Key.O:InsertImageFile();break;
@@ -1002,7 +1006,7 @@ public sealed class EditorWindow : Window
             }
             e.Handled=true;return;
         }
-        switch(e.Key) {
+        switch(pressed) {
             case Key.Tab when e.OriginalSource==surface && hoverColor is ColorRgba hovered:
                 var hex=PixelProbe.Hex(hovered);
                 try{Clipboard.SetText(hex);status.Text=hex+" 복사됨";}catch(System.Runtime.InteropServices.ExternalException){status.Text=hex+" · 다른 앱이 클립보드를 사용 중입니다";}
@@ -1016,7 +1020,7 @@ public sealed class EditorWindow : Window
             case Key.G:SetTool(AnnotationKind.Magnifier);break;case Key.S:SetTool(AnnotationKind.Spotlight);break;
             case Key.M:SetTool(AnnotationKind.Pixelate);break;case Key.B:SetTool(AnnotationKind.Blur);break;case Key.C:StartCrop();break;case Key.I:StartColorPick();break;case Key.U:StartMeasure();break;
             case Key.Z:QuickZoom();break;case Key.Q:ZoomToCorner(false);break;case Key.W:ZoomToCorner(true);break;
-            case Key.Left:case Key.Right:case Key.Up:case Key.Down:NudgeKeyDown(e.Key,shift);break;
+            case Key.Left:case Key.Right:case Key.Up:case Key.Down:NudgeKeyDown(pressed,shift);break;
             default:return;
         }
         e.Handled=true;

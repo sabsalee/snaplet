@@ -179,7 +179,7 @@ internal sealed class SelectionWindow : Window
 
     // ---- keyboard -------------------------------------------------------------------------
     private void OnKey(object sender,KeyEventArgs e) {
-        var key=e.Key==System.Windows.Input.Key.System?e.SystemKey:e.Key;
+        var pressedKey=UI.Ui.Pressed(e);var key=pressedKey==System.Windows.Input.Key.System?e.SystemKey:pressedKey;
         var shift=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);var alt=Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         int step=shift?10:1;
         bool hasSelection=!selection.IsEmpty && windows is null && mode is Mode.Adjusting or Mode.Drawing;
