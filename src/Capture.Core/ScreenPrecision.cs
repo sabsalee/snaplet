@@ -130,6 +130,28 @@ public static class PixelProbe
     }
 
     /// <summary>
+    /// Evens out a single-colour margin around the content: each axis keeps the smaller of its two margins on both sides, which centres the content.
+    /// Returns the whole image when its corners differ, it has no content, or the margins already match.
+    /// </summary>
+    public static PixelRect BalanceMargins(ReadOnlySpan<byte> bgra, int width, int height, int tolerance)
+    {
+        if (width <= 0 || height <= 0 || (long)width * height * 4 > bgra.Length) throw new ArgumentException("BGRA buffer is smaller than its dimensions.", nameof(bgra));
+        var whole = new PixelRect(0, 0, width, height);
+        var background = At(bgra, width, 0, 0);
+        if (Distance(At(bgra, width, width - 1, 0), background) > tolerance || Distance(At(bgra, width, 0, height - 1), background) > tolerance || Distance(At(bgra, width, width - 1, height - 1), background) > tolerance) return whole;
+        int left = width, top = height, right = -1, bottom = -1;
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            if (Distance(At(bgra, width, x, y), background) <= tolerance) continue;
+            left = Math.Min(left, x); right = Math.Max(right, x); top = Math.Min(top, y); bottom = Math.Max(bottom, y);
+        }
+        if (right < 0) return whole;
+        int sideX = Math.Min(left, width - 1 - right), sideY = Math.Min(top, height - 1 - bottom);
+        return new(left - sideX, top - sideY, right - left + 1 + 2 * sideX, bottom - top + 1 + 2 * sideY);
+    }
+
+    /// <summary>
     /// Shrinks <paramref name="rect"/> past outer rows/columns that share the margin colour, like an automatic "fit to content".
     /// Each side takes its outermost line's first pixel as the background, so differing margins trim independently.
     /// Stacked bands of different colours (a title bar above a page) trim one band per call; calling again continues.

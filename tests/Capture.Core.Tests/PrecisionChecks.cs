@@ -17,6 +17,13 @@ internal static class PrecisionChecks
 
     internal static void Run(Action<bool, string> check)
     {
+        var margins = Canvas(100, 60, (255, 255, 255)); Paint(margins, 100, new(30, 10, 20, 20), (10, 20, 30));
+        check(PixelProbe.BalanceMargins(margins, 100, 60, 10) == new PixelRect(0, 0, 80, 40), "balancing keeps the smaller margin on both sides of each axis");
+        var even = PixelProbe.BalanceMargins(margins, 100, 60, 10); var evenPixels = Canvas(even.Width, even.Height, (255, 255, 255)); Paint(evenPixels, even.Width, new(30, 10, 20, 20), (10, 20, 30));
+        check(PixelProbe.BalanceMargins(evenPixels, even.Width, even.Height, 10) == new PixelRect(0, 0, even.Width, even.Height), "balanced margins stay as they are");
+        var corner = Canvas(40, 40, (255, 255, 255)); Paint(corner, 40, new(0, 0, 5, 5), (0, 0, 0));
+        check(PixelProbe.BalanceMargins(corner, 40, 40, 10) == new PixelRect(0, 0, 40, 40), "differing corners leave the image alone");
+        check(PixelProbe.BalanceMargins(Canvas(20, 20, (9, 9, 9)), 20, 20, 10) == new PixelRect(0, 0, 20, 20), "an image with no content is left alone");
         void Rejects(Action action, string message)
         {
             bool rejected = false;

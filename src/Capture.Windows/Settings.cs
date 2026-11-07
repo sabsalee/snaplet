@@ -52,6 +52,7 @@ public sealed record AppSettings
     public string DefaultTextFont {get;init;}="";
     /// <summary>Colours saved from the editor's colour popup, as #AARRGGBB.</summary>
     public List<string> SavedColors {get;init;}=[];
+    public List<Capture.Core.Backdrop> SavedBackdrops {get;init;}=[];
     public string FileNameTemplate {get;init;}=Capture.Core.FileNameTemplate.Default;
     public List<HotkeyBinding> Hotkeys {get;init;}=DefaultHotkeys();
 

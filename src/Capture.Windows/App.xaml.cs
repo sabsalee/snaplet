@@ -59,6 +59,8 @@ public partial class App : Application
         wake=new EventWaitHandle(false,EventResetMode.AutoReset,@"Local\Snaplet.Windows11.Show");
         wakeRegistration=ThreadPool.RegisterWaitForSingleObject(wake,(_,_)=>Dispatcher.BeginInvoke(ShowHome),null,Timeout.Infinite,false);
         settings=SettingsStore.Load(out var warning);ImageActions.NameTemplate=settings.FileNameTemplate;Editor.TextFonts.DefaultName=settings.DefaultTextFont;Editor.ColorPalette.Load(settings.SavedColors);
+        Editor.BackdropStyles.Load(settings.SavedBackdrops);
+        Editor.BackdropStyles.Changed+=()=>{try{var next=settings with{SavedBackdrops=Editor.BackdropStyles.Styles.ToList()};SettingsStore.Save(next);settings=next;}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}};
         Editor.ColorPalette.Changed+=()=>{try{var next=settings with{SavedColors=Editor.ColorPalette.ToStored().ToList()};SettingsStore.Save(next);settings=next;}catch(Exception error) when(error is IOException or UnauthorizedAccessException){status.Text=error.Message;}};
         _=CommandChannel.ListenAsync(command=>Dispatcher.BeginInvoke(()=>_=RunCommandAsync(command)),commandListener.Token);
         if(settings.EnableDeepLinks)CommandChannel.SetProtocolRegistration(true);
