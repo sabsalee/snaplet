@@ -46,6 +46,7 @@ internal sealed class PreviewWindow : Window
         image=bitmap;settings=preferences;Pinned=pinned;interactive=enableDesktopIntegration;this.nearPointer=nearPointer;
         Title="Snaplet · 미리보기";WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=Brushes.Transparent;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;ShowActivated=false;Topmost=true;
         thumbnail=new Image{Source=image,Stretch=Stretch.Uniform,Cursor=Cursors.Hand,ToolTip="클릭하여 편집 · 드래그하여 PNG 파일 전달"};
+        ToolTipService.SetInitialShowDelay(thumbnail,1500);
         thumbnail.MouseLeftButtonDown+=(_,e)=>down=e.GetPosition(thumbnail);
         thumbnail.MouseMove+=(_,e)=>{
             if(down is not Point start || busy || e.LeftButton!=MouseButtonState.Pressed || (e.GetPosition(thumbnail)-start).Length<8)return;
@@ -107,8 +108,10 @@ internal sealed class PreviewWindow : Window
         if(height>900){height=900;width=Math.Max(180,height*image.PixelWidth/image.PixelHeight);}
         pinImageWidth=width;
         var bands=height<PinToolsHeight;
-        if(imageContainer!=null){imageContainer.Margin=bands?new Thickness(0,34,0,84):new Thickness(0);}
-        Width=width+2;Height=height+2+(bands?118:0);
+        // The tools wrap to a second row on a narrow pin.
+        var below=bands?(width<420?84d:44d):0;var above=bands?34d:0;
+        if(imageContainer!=null){imageContainer.Margin=new Thickness(0,above,0,below);}
+        Width=width+2;Height=height+2+above+below;
     }
     private const double PinToolsHeight=120,PinStartMaxWidth=640;
     private double pinImageWidth;
@@ -149,6 +152,7 @@ internal sealed class PreviewWindow : Window
         } else if(nearPointer) {
             // Only the image at rest; hovering dims it and shows copy and save in the middle, with the other actions in the corners.
             // It never takes focus, so Ctrl+V into another app keeps working.
+            thumbnail.ToolTip=null;
             // The window keeps room for the hover controls; an image that does not fill it stays clear around it until hover.
             var fit=Math.Min(1,Math.Min(PopupImageWidth/image.PixelWidth,PopupImageHeight/image.PixelHeight));
             var shownWidth=image.PixelWidth*fit;var shownHeight=image.PixelHeight*fit;
@@ -213,7 +217,7 @@ internal sealed class PreviewWindow : Window
         if(!Pinned)return;BeginPinMove();e.Handled=true;
     }
     private void BeginPinMove(){Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();}
-    private const double PopupImageWidth=204,PopupImageHeight=150,PopupMinWidth=164,PopupMinHeight=124;
+    private const double PopupImageWidth=204,PopupImageHeight=150,PopupMinWidth=164,PopupMinHeight=132;
     private bool popupLetterboxed;
     private Border? popupCard;
     private void SetPinChrome(bool show){

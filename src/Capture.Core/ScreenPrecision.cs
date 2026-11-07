@@ -1,6 +1,17 @@
 namespace Capture.Core;
 
 /// <summary>Integer rectangle in source-image pixels. Selection and measurement never use fractional pixels.</summary>
+/// <summary>Keeps a window fully on screen.</summary>
+public static class WindowPlacement
+{
+    /// <summary>Shrinks the window to the work area if needed, then moves it just far enough to fit inside.</summary>
+    public static PixelRect FitInside(PixelRect window, PixelRect work)
+    {
+        int width = Math.Min(window.Width, work.Width), height = Math.Min(window.Height, work.Height);
+        return new(Math.Clamp(window.X, work.X, work.Right - width), Math.Clamp(window.Y, work.Y, work.Bottom - height), width, height);
+    }
+}
+
 public readonly record struct PixelRect(int X, int Y, int Width, int Height)
 {
     public int Right => X + Width;
@@ -127,6 +138,28 @@ public static class PixelProbe
         while (index - before - 1 >= 0 && Distance(At(lineBgra, length, index - before - 1, 0), origin) <= tolerance) before++;
         while (index + after + 1 < length && Distance(At(lineBgra, length, index + after + 1, 0), origin) <= tolerance) after++;
         return (before, after);
+    }
+
+    /// <summary>
+    /// Evens out a single-colour margin around the content: each axis keeps the smaller of its two margins on both sides, which centres the content.
+    /// Returns the whole image when its corners differ, it has no content, or the margins already match.
+    /// </summary>
+    public static PixelRect BalanceMargins(ReadOnlySpan<byte> bgra, int width, int height, int tolerance)
+    {
+        if (width <= 0 || height <= 0 || (long)width * height * 4 > bgra.Length) throw new ArgumentException("BGRA buffer is smaller than its dimensions.", nameof(bgra));
+        var whole = new PixelRect(0, 0, width, height);
+        var background = At(bgra, width, 0, 0);
+        if (Distance(At(bgra, width, width - 1, 0), background) > tolerance || Distance(At(bgra, width, 0, height - 1), background) > tolerance || Distance(At(bgra, width, width - 1, height - 1), background) > tolerance) return whole;
+        int left = width, top = height, right = -1, bottom = -1;
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
+        {
+            if (Distance(At(bgra, width, x, y), background) <= tolerance) continue;
+            left = Math.Min(left, x); right = Math.Max(right, x); top = Math.Min(top, y); bottom = Math.Max(bottom, y);
+        }
+        if (right < 0) return whole;
+        int sideX = Math.Min(left, width - 1 - right), sideY = Math.Min(top, height - 1 - bottom);
+        return new(left - sideX, top - sideY, right - left + 1 + 2 * sideX, bottom - top + 1 + 2 * sideY);
     }
 
     /// <summary>

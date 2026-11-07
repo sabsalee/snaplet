@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -75,6 +76,15 @@ public sealed class EditorWindow : Window
         surface=new(source,document) {HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
         ApplyTheme(EditorTheme.SystemUsesDark());
         Title="Snaplet — 이미지 편집";Width=1180;Height=800;MinWidth=700;MinHeight=450;
+        // Windows cascades new windows, which can push the bottom bar past the taskbar on a small screen.
+        SourceInitialized+=(_,_)=>{
+            var hwnd=new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if(!Native.GetWindowRect(hwnd,out var r))return;
+            var info=new Native.MONITORINFOEX {Size=System.Runtime.InteropServices.Marshal.SizeOf<Native.MONITORINFOEX>()};
+            if(!Native.GetMonitorInfo(Native.MonitorFromPoint(new Native.POINT {X=r.Left+r.Width/2,Y=r.Top+r.Height/2},2),ref info))return;
+            var now=new PixelRect(r.Left,r.Top,r.Width,r.Height);var fit=WindowPlacement.FitInside(now,new PixelRect(info.Work.Left,info.Work.Top,info.Work.Width,info.Work.Height));
+            if(fit!=now)Native.SetWindowPos(hwnd,0,fit.X,fit.Y,fit.Width,fit.Height,0x4|0x10);
+        };
         SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=new FontFamily("Segoe UI");
         var root=new DockPanel();Content=root;
         // One toolbar row like the reference: export · pin · file drag | tools ··· | colour under cursor · image size · zoom.
@@ -95,7 +105,7 @@ public sealed class EditorWindow : Window
         var saveButton=Ui.Button("저장",()=>Save(false),style:"PrimaryButton");saveButton.Margin=new Thickness(6,0,0,0);saveButton.Height=30;saveButton.MinHeight=0;saveButton.MinWidth=64;saveButton.Padding=new Thickness(14,0,14,0);saveButton.VerticalAlignment=VerticalAlignment.Center;saveButton.VerticalContentAlignment=VerticalAlignment.Center;saveButton.Content=new TextBlock {Text="저장",Foreground=Brushes.White,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center};saveButton.ToolTip="저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S · Alt를 누르면 창 유지";bottomRight.Children.Add(saveButton);
         FileDragButton(bottomCenter);
         ToolButton(actions,"region","자르기 · C",StartCrop);
-        backdropButton=ToolButton(actions,"backdrop","배경 꾸미기 · 여백·그라데이션·그림자·둥근 모서리",()=>{});backdropButton.Click+=(_,_)=>ShowBackdrop(backdropButton);
+        backdropButton=ToolButton(actions,"backdrop","배경 꾸미기 · 여백·그라데이션·그림자·둥근 모서리",()=>{});backdropButton.Click+=(_,_)=>ToggleBackdropPanel();
         Divider(actions);
         var info=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,8,0)};DockPanel.SetDock(info,Dock.Right);toolbar.Children.Add(info);
         var hoverValue=new StackPanel {Orientation=Orientation.Horizontal};hoverValue.Children.Add(hoverSwatch);hoverValue.Children.Add(hoverHex);
@@ -150,7 +160,9 @@ public sealed class EditorWindow : Window
             foreach(var entry in folded){var kind=entry.Kind;Item(menu,entry.Button.ToolTip?.ToString() ?? ToolName(kind),()=>SetTool(kind));}
             more.ContextMenu=menu;menu.PlacementTarget=more;menu.IsOpen=true;
         };
-        var workspace=new Grid();workspace.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");root.Children.Add(workspace);
+        var workspace=new Grid();workspace.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");
+        backdropPanel.SetResourceReference(Border.BackgroundProperty,"ToolbarBrush");backdropPanel.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");backdropPanel.SetResourceReference(TextElement.ForegroundProperty,"TextBrush");
+        var body=new DockPanel();DockPanel.SetDock(backdropPanel,Dock.Left);body.Children.Add(backdropPanel);body.Children.Add(workspace);root.Children.Add(body);
         stage.Children.Add(surface);stage.Children.Add(textLayer);
         stage.HorizontalAlignment=HorizontalAlignment.Left;stage.VerticalAlignment=VerticalAlignment.Top;
         backdropShadow.HorizontalAlignment=HorizontalAlignment.Left;backdropShadow.VerticalAlignment=VerticalAlignment.Top;backdropShadow.IsHitTestVisible=false;
@@ -207,15 +219,16 @@ public sealed class EditorWindow : Window
         PreviewMouseWheel+=(_,e)=>{if(textEditor==null && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){ChangeZoom(e.Delta>0?1.25:.8,e.GetPosition(scroll));e.Handled=true;}};
         surface.ColorPickRequested+=PickColor;
         Deactivated+=(_,_)=>{if(colorPopup!=null)colorPopup.IsOpen=false;};Activated+=(_,_)=>{if(colorPopup!=null && surface.PickColorTool)colorPopup.IsOpen=true;};
-        document.Changed+=(_,_)=>{pickCache=null;revision++;if(fitMode)Fit();SyncStage();UpdateStatus();SyncInspector();};
+        document.Changed+=(_,_)=>{pickCache=null;revision++;if(fitMode)Fit();SyncStage();UpdateStatus();SyncInspector();if(BackdropPanelShown && document.Backdrop!=shownBackdrop && Mouse.Captured is not Thumb)BuildBackdropPanel();};
         surface.OperationFailed+=message=>NoticeWindow.Alert(this,"편집 작업",message);
         surface.PointerHintChanged+=hint=>{if(textEditor==null && !string.IsNullOrEmpty(hint))status.Text=hint;};
         surface.SelectionChanged+=SyncInspector;surface.SelectionChanged+=()=>{if(surface.RegionActive)UpdateCropStatus();};surface.TextEditRequested+=BeginTextEdit;
+        surface.TypingStyleChanged=()=>{if(textEditor==null || editingText is not Annotation typed)return false;editingText=typed with {Color=surface.Ink,Thickness=surface.Thickness,Style=surface.InkStyle};UpdateTextEditorLayout();textEditor.Focus();return true;};
         PreviewKeyDown+=OnKey;
         PreviewKeyUp+=(_,e)=>NudgeKeyUp(e.Key);
         surface.LostKeyboardFocus+=(_,_)=>FinishNudge();
         Deactivated+=(_,_)=>FinishNudge();
-        PreviewMouseDown+=(_,e)=>{FinishNudge();if(textEditor!=null && !textEditor.IsMouseOver && !FinishTextEdit(true))e.Handled=true;};
+        PreviewMouseDown+=(_,e)=>{FinishNudge();if(textEditor!=null && !textEditor.IsMouseOver && !inspector.IsMouseOver && !FinishTextEdit(true))e.Handled=true;};
         Closing+=(_,e)=>{if(closeOnDismiss){closingForExit=true;return;}if(!closingForExit){e.Cancel=true;if(!FinishTextEdit(true))return;Hide();}};
         Closed+=(_,_)=>closingForExit=true;
         Loaded+=(_,_)=>{Fit();surface.Selected=document.Annotations.FirstOrDefault()?.Id;surface.Focus();SyncInspector();};
@@ -286,7 +299,7 @@ public sealed class EditorWindow : Window
         Item(menu,"실행 취소 · Ctrl+Z",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Undo();}).IsEnabled=document.CanUndo;
         Item(menu,"다시 실행 · Ctrl+Y",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Redo();}).IsEnabled=document.CanRedo;
         menu.Items.Add(new Separator());
-        Item(menu,"배경 꾸미기 · 그라데이션·여백·그림자·둥근 모서리",()=>ShowBackdrop(anchor));
+        Item(menu,"배경 꾸미기 · 그라데이션·여백·그림자·둥근 모서리",ToggleBackdropPanel);
         Item(menu,"자르기 / 선택 · C",StartCrop);Item(menu,"전체 캔버스 보기",()=>{if(!FinishTextEdit(true))return;surface.ClearCrop();document.ResetCrop();});
         var snapping=new MenuItem {Header="객체 가장자리·중심에 맞추기 · Ctrl 일시 해제",IsCheckable=true,IsChecked=surface.SnapToObjects};
         snapping.Click+=(_,_)=>surface.SnapToObjects=snapping.IsChecked;menu.Items.Add(snapping);
@@ -370,36 +383,51 @@ public sealed class EditorWindow : Window
         checker=new DrawingBrush(group){TileMode=TileMode.Tile,Viewport=new Rect(0,0,16,16),ViewportUnits=BrushMappingMode.Absolute};checker.Freeze();return checker;
     }
     /// <summary>Backdrop panel: on/off, gradient swatches, transparent/solid, padding, corner radius and shadow sliders. Each change is undoable.</summary>
-    private void ShowBackdrop(Button anchor)
+    private readonly Border backdropPanel=new() {Width=276,Visibility=Visibility.Collapsed,BorderThickness=new Thickness(0,0,1,0)};
+    private Backdrop? shownBackdrop;
+    internal bool BackdropPanelShown=>backdropPanel.Visibility==Visibility.Visible;
+    internal double BackdropPanelWidth=>backdropPanel.ActualWidth;
+    /// <summary>Opens or closes the panel left of the image. It stays open while editing, so the result is always in view next to its settings.</summary>
+    internal void ToggleBackdropPanel()
     {
         if(!FinishTextEdit(true))return;document.EndEdit();
-        var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true};
-        var panel=new StackPanel {Width=320};
-        var header=new DockPanel {Margin=new Thickness(4,2,4,10)};
-        var enabled=new CheckBox {Content="사용",IsChecked=document.Backdrop.Enabled,VerticalAlignment=VerticalAlignment.Center};System.Windows.Automation.AutomationProperties.SetName(enabled,"배경 사용");
+        if(BackdropPanelShown){backdropPanel.Visibility=Visibility.Collapsed;FocusEditing();return;}
+        BuildBackdropPanel();backdropPanel.Visibility=Visibility.Visible;
+    }
+    private void BuildBackdropPanel()
+    {
+        shownBackdrop=document.Backdrop;
+        var panel=new StackPanel {Margin=new Thickness(12,10,12,12)};
+        var header=new DockPanel {Margin=new Thickness(0,0,0,10)};
+        var close=ToolButton(header,"close","배경 패널 닫기",ToggleBackdropPanel);close.Height=28;close.Width=28;close.Padding=new Thickness(6);header.Children.Remove(close);DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);
+        var enabled=new CheckBox {Content="사용",IsChecked=document.Backdrop.Enabled,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,6,0)};System.Windows.Automation.AutomationProperties.SetName(enabled,"배경 사용");
         DockPanel.SetDock(enabled,Dock.Right);header.Children.Add(enabled);
         header.Children.Add(new TextBlock {Text="배경 꾸미기",FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center});panel.Children.Add(header);
-        void Apply(Func<Backdrop,Backdrop> change){try{document.SetBackdrop(change(document.Backdrop));enabled.IsChecked=document.Backdrop.Enabled;}catch(Exception error) when(error is ArgumentException or InvalidOperationException){status.Text=error.Message;}}
+        void Apply(Func<Backdrop,Backdrop> change){try{var next=change(document.Backdrop);shownBackdrop=next;document.SetBackdrop(next);enabled.IsChecked=next.Enabled;}catch(Exception error) when(error is ArgumentException or InvalidOperationException){status.Text=error.Message;}}
         enabled.Click+=(_,_)=>Apply(b=>b with {Enabled=enabled.IsChecked==true});
-        var swatches=new WrapPanel {Margin=new Thickness(2,0,2,8)};panel.Children.Add(swatches);
-        Button Swatch(Brush fill,string name,Func<Backdrop,Backdrop> change)
+        TextBlock Section(string text){var label=new TextBlock {Text=text,FontSize=11,Margin=new Thickness(0,10,0,4)};label.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");panel.Children.Add(label);return label;}
+        Button Swatch(Panel into,Brush fill,string name,bool current,Func<Backdrop,Backdrop> change)
         {
-            var button=new Button {Width=32,Height=32,Margin=new Thickness(3),Padding=new Thickness(0),ToolTip=name,Content=new Border {Background=fill,CornerRadius=new CornerRadius(6),Width=26,Height=26}};
+            var face=new Border {Background=fill,CornerRadius=new CornerRadius(6),Width=26,Height=26,BorderThickness=new Thickness(current?2:0)};
+            face.SetResourceReference(Border.BorderBrushProperty,"AccentBrush");
+            var button=new Button {Width=34,Height=34,Margin=new Thickness(2),Padding=new Thickness(0),ToolTip=name,Content=face};
             System.Windows.Automation.AutomationProperties.SetName(button,"배경 "+name);
-            button.Click+=(_,_)=>Apply(b=>change(b) with {Enabled=true});swatches.Children.Add(button);return button;
+            button.Click+=(_,_)=>{Apply(b=>change(b) with {Enabled=true});BuildBackdropPanel();};into.Children.Add(button);return button;
         }
+        var current=document.Backdrop;
+        var swatches=new WrapPanel();panel.Children.Add(swatches);
         for(int i=0;i<Backdrop.PresetCount;i++) {
             var index=i;var preset=BackdropRenderer.Presets[i];
             var brush=new LinearGradientBrush(preset.From,preset.To,new Point(0,0),new Point(1,1));brush.Freeze();
-            Swatch(brush,preset.Name,b=>b with {Fill=BackdropFill.Gradient,Preset=index});
+            Swatch(swatches,brush,preset.Name,current.Enabled && current.Fill==BackdropFill.Gradient && current.Preset==index,b=>b with {Fill=BackdropFill.Gradient,Preset=index});
         }
-        Swatch(CheckerBrush(),"투명",b=>b with {Fill=BackdropFill.Transparent});
-        Swatch(new SolidColorBrush(Color.FromRgb(surface.Ink.R,surface.Ink.G,surface.Ink.B)),"현재 색 단색",b=>b with {Fill=BackdropFill.Solid,Color=surface.Ink with {A=255}});
+        Swatch(swatches,CheckerBrush(),"투명",current.Enabled && current.Fill==BackdropFill.Transparent,b=>b with {Fill=BackdropFill.Transparent});
+        Swatch(swatches,new SolidColorBrush(Color.FromRgb(surface.Ink.R,surface.Ink.G,surface.Ink.B)),"현재 색 단색",current.Enabled && current.Fill==BackdropFill.Solid,b=>b with {Fill=BackdropFill.Solid,Color=surface.Ink with {A=255}});
         void SliderRow(string label,double min,double max,Func<Backdrop,double> read,Func<Backdrop,double,Backdrop> write,string format)
         {
-            var row=new DockPanel {Margin=new Thickness(4,4,4,4)};
-            var value=new TextBlock {Width=44,TextAlignment=TextAlignment.Right,VerticalAlignment=VerticalAlignment.Center,Foreground=Ui.Brush("MutedBrush")};DockPanel.SetDock(value,Dock.Right);row.Children.Add(value);
-            var name=new TextBlock {Text=label,Width=60,VerticalAlignment=VerticalAlignment.Center};DockPanel.SetDock(name,Dock.Left);row.Children.Add(name);
+            var row=new DockPanel {Margin=new Thickness(0,4,0,4)};
+            var value=new TextBlock {Width=36,TextAlignment=TextAlignment.Right,VerticalAlignment=VerticalAlignment.Center};value.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");DockPanel.SetDock(value,Dock.Right);row.Children.Add(value);
+            var name=new TextBlock {Text=label,Width=48,VerticalAlignment=VerticalAlignment.Center};DockPanel.SetDock(name,Dock.Left);row.Children.Add(name);
             var slider=new Slider {Minimum=min,Maximum=max,Value=read(document.Backdrop),VerticalAlignment=VerticalAlignment.Center};System.Windows.Automation.AutomationProperties.SetName(slider,"배경 "+label);
             row.Children.Add(slider);value.Text=read(document.Backdrop).ToString(format);
             slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
@@ -407,14 +435,24 @@ public sealed class EditorWindow : Window
             slider.ValueChanged+=(_,_)=>{value.Text=slider.Value.ToString(format);Apply(b=>write(b,slider.Value) with {Enabled=true});};
             panel.Children.Add(row);
         }
+        Section("모양");
         SliderRow("여백",0,200,b=>b.Padding,(b,v)=>b with {Padding=Math.Round(v)},"0");
         SliderRow("둥글기",0,60,b=>b.CornerRadius,(b,v)=>b with {CornerRadius=Math.Round(v)},"0");
         SliderRow("그림자",0,1,b=>b.Shadow,(b,v)=>b with {Shadow=Math.Round(v,2)},"0.00");
-        panel.Children.Add(new TextBlock {Text="복사·저장·고정에 그대로 포함됩니다 · Ctrl+Z로 되돌리기",FontSize=11,Foreground=Ui.Brush("MutedBrush"),Margin=new Thickness(4,8,4,2),TextWrapping=TextWrapping.Wrap});
-        popup.Child=PopupFrame(panel,8);
-        panel.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape){popup.IsOpen=false;anchor.Focus();e.Handled=true;}};
-        popup.Closed+=(_,_)=>{document.EndEdit();surface.Focus();};
-        popup.IsOpen=true;
+        Section("이미지 안쪽");
+        var balance=new Button {Content="여백 균형 맞추기",Margin=new Thickness(0,2,0,2),Padding=new Thickness(8,5,8,5),ToolTip="이미지 안의 단색 여백을 위아래·좌우 같게 잘라 내용을 가운데에 둡니다 · Ctrl+Z로 되돌리기"};
+        balance.Click+=(_,_)=>{status.Text=surface.BalanceContent()?"여백을 맞췄습니다 · Ctrl+Z로 되돌리기":"맞출 단색 여백이 없습니다.";};panel.Children.Add(balance);
+        Section("내 스타일 · 오른쪽 클릭으로 삭제");
+        var saved=new WrapPanel();panel.Children.Add(saved);
+        foreach(var style in BackdropStyles.Styles) {
+            var fill=style.Fill==BackdropFill.Transparent?CheckerBrush():BackdropRenderer.Fill(style);
+            var button=Swatch(saved,fill,$"여백 {style.Padding:0} · 둥글기 {style.CornerRadius:0} · 그림자 {style.Shadow:0.00}",current.Enabled && current==style with {Enabled=true},_=>style);
+            button.MouseRightButtonUp+=(_,_)=>{BackdropStyles.Remove(style);BuildBackdropPanel();};
+        }
+        var keep=new Button {Content="현재 스타일 저장",Margin=new Thickness(0,4,0,2),Padding=new Thickness(8,5,8,5),IsEnabled=document.Backdrop.Enabled,ToolTip=$"다른 캡처에서도 쓸 수 있게 저장합니다 · 최대 {BackdropStyles.Limit}개"};
+        keep.Click+=(_,_)=>{BackdropStyles.Add(document.Backdrop);BuildBackdropPanel();};panel.Children.Add(keep);
+        var note=new TextBlock {Text="복사·저장·고정에 그대로 포함됩니다",FontSize=11,Margin=new Thickness(0,12,0,0),TextWrapping=TextWrapping.Wrap};note.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");panel.Children.Add(note);
+        backdropPanel.Child=new ScrollViewer {Content=panel,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
     }
     internal void PanDragAt(Point cursor)
     {
@@ -555,23 +593,23 @@ public sealed class EditorWindow : Window
     private void SyncInspector()
     {
         if(syncingControls)return;
-        var a=surface.Selection;
-        // Hidden while typing so the inline editor is the only thing changing on the canvas.
-        inspector.Visibility=textEditor==null && (a!=null || surface.Tool!=null || surface.CropTool)?Visibility.Visible:Visibility.Collapsed;
-        if(textEditor!=null)return;
-        if(a!=null){surface.Ink=a.Color;surface.Thickness=a.Thickness;surface.InkStyle=a.Appearance;}
+        // While typing the panel shows the text being typed; changes go to it instead of the document, so Esc still discards them.
+        var typing=textEditor!=null?editingText:null;
+        var a=typing==null?surface.Selection:null;
+        inspector.Visibility=typing!=null || a!=null || surface.Tool!=null || surface.CropTool?Visibility.Visible:Visibility.Collapsed;
+        if((typing ?? a) is Annotation shown){surface.Ink=shown.Color;surface.Thickness=shown.Thickness;surface.InkStyle=shown.Appearance;}
         foreach(var (kind,button) in toolButtons) {if(kind==surface.Tool && !surface.CropTool)button.SetResourceReference(BackgroundProperty,"SelectedToolBrush");else button.Background=Brushes.Transparent;}
         // Preserve both mouse drags and keyboard adjustment of the active slider.
         if(Mouse.Captured is Thumb || Keyboard.FocusedElement is Slider focused && focused.IsDescendantOf(inspector))return;
         propertyRow.Children.Clear();propertyDetails.Children.Clear();
-        if(a==null && surface.Tool==null){inspector.Visibility=Visibility.Collapsed;return;}
+        if(typing==null && a==null && surface.Tool==null){inspector.Visibility=Visibility.Collapsed;return;}
         var collapse=ToolButton(propertyRow,inspectorCollapsed?"›":"‹",inspectorCollapsed?"속성 패널 펼치기":"속성 패널 접기",()=>{inspectorCollapsed=!inspectorCollapsed;SyncInspector();});
         collapse.MinWidth=24;collapse.Height=32;collapse.FontSize=16;
         if(inspectorCollapsed){propertyDetails.Visibility=Visibility.Collapsed;return;}
         var ink=EditorTheme.Ink(this);var icon=new ColorRgba(ink.R,ink.G,ink.B);
         syncingControls=true;
         try {
-            var kind=a?.Kind ?? surface.Tool;
+            var kind=typing?.Kind ?? a?.Kind ?? surface.Tool;
             if(kind is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line) {
                 var presets=new Button {Content="프리셋 ▾",Padding=new Thickness(10,5,10,5),Margin=new Thickness(2),ToolTip="완성된 스타일을 미리 보고 한 번에 적용"};
                 System.Windows.Automation.AutomationProperties.SetName(presets,"스타일 프리셋");
@@ -741,10 +779,10 @@ public sealed class EditorWindow : Window
         var input=new TextBox {Text=$"{slider.Value:0.#}",Width=44,FontSize=11,Padding=new Thickness(5,4,5,4),Margin=new Thickness(2),VerticalContentAlignment=VerticalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,ToolTip=$"{label} · {slider.Minimum:0.#}–{slider.Maximum:0.#} · 숫자 입력 후 Enter 적용 / Esc 취소"};
         System.Windows.Automation.AutomationProperties.SetName(input,label+" 숫자 입력");
         input.PreviewKeyDown+=(_,e)=>{
-            if(e.Key==Key.Escape){input.Text=$"{slider.Value:0.#}";surface.Focus();e.Handled=true;}
+            if(e.Key==Key.Escape){input.Text=$"{slider.Value:0.#}";FocusEditing();e.Handled=true;}
             else if(e.Key==Key.Enter) {
                 e.Handled=true;
-                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {input.ClearValue(Control.BorderBrushProperty);slider.Value=number;surface.Focus();}
+                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {input.ClearValue(Control.BorderBrushProperty);slider.Value=number;FocusEditing();}
                 else {input.BorderBrush=Brushes.IndianRed;input.SelectAll();}
             }
         };
@@ -765,7 +803,7 @@ public sealed class EditorWindow : Window
             row.Children.Add(new TextBlock {Text=preset.Name,VerticalAlignment=VerticalAlignment.Center,FontSize=12});
             var button=new Button {Content=row,HorizontalContentAlignment=HorizontalAlignment.Left,Margin=new Thickness(2),Padding=new Thickness(6),ToolTip=preset.Name+" · 선택 객체와 다음 그리기에 적용"};
             System.Windows.Automation.AutomationProperties.SetName(button,preset.Name);
-            button.Click+=(_,_)=>{var size=preset.Size*PresetScale;surface.Ink=preset.Color;surface.Thickness=size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,size,preset.Style);popup.IsOpen=false;SyncInspector();surface.Focus();};panel.Children.Add(button);
+            button.Click+=(_,_)=>{var size=preset.Size*PresetScale;surface.Ink=preset.Color;surface.Thickness=size;surface.InkStyle=preset.Style;surface.ApplyStyle();toolStyles[kind]=(preset.Color,size,preset.Style);popup.IsOpen=false;SyncInspector();FocusEditing();};panel.Children.Add(button);
         }
         popup.Child=PopupFrame(panel,8);
         KeyboardNavigation.SetTabNavigation(panel,KeyboardNavigationMode.Cycle);
@@ -807,7 +845,8 @@ public sealed class EditorWindow : Window
         textEditor.TextChanged+=(_,_)=>UpdateTextEditorLayout();
         TextCompositionManager.AddPreviewTextInputStartHandler(textEditor,(_,_)=>composingText=true);
         TextCompositionManager.AddPreviewTextInputHandler(textEditor,(_,_)=>composingText=false);
-        textEditor.PreviewKeyDown+=(_,e)=>{if(composingText)return;if(e.Key==Key.Escape){FinishTextEdit(false);e.Handled=true;}else if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){FinishTextEdit(true);e.Handled=true;}};
+        textEditor.PreviewKeyDown+=(_,e)=>{if(composingText)return;if(e.Key==Key.Escape){FinishTextEdit(false);e.Handled=true;}else if(e.Key==Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)){FinishTextEdit(true);e.Handled=true;}
+            else if(Keyboard.Modifiers==ModifierKeys.Control && Ui.Pressed(e) is Key.B or Key.I or Key.U){var format=Ui.Pressed(e);ChangeTextStyle(s=>format==Key.B?s with {Bold=!s.Bold}:format==Key.I?s with {Italic=!s.Italic}:s with {Underline=!s.Underline});SyncInspector();e.Handled=true;}};
         // New text starts as selected placeholder: typing replaces it, leaving it alone inserts something visible.
         textEditor.Focus();if(create)textEditor.SelectAll();else textEditor.CaretIndex=textEditor.Text.Length;SyncInspector();
         // The mouse press that opened this box is still bubbling, and the ScrollViewer around the canvas takes focus when it arrives. Focus again after it.
@@ -815,6 +854,8 @@ public sealed class EditorWindow : Window
         Dispatcher.BeginInvoke(()=>{if(textEditor!=opened)return;opened.Focus();if(create && opened.Text==TextPlaceholder)opened.SelectAll();},DispatcherPriority.Input);
         status.Text="이미지 위에 입력하세요 · Enter 줄바꿈 · Ctrl+Enter 완료 · Esc 취소";
     }
+    private void FocusEditing(){if(textEditor!=null)textEditor.Focus();else surface.Focus();}
+    internal bool InspectorShown=>inspector.Visibility==Visibility.Visible;
     private const string TextPlaceholder="텍스트";
     /// <summary>Changes the text style for new text, the selected text, and text being typed right now.</summary>
     private void ChangeTextStyle(Func<AnnotationStyle,AnnotationStyle> change)

@@ -148,8 +148,13 @@ public static class EditorSmokeTest
             // The canvas ScrollViewer takes focus while the opening mouse press bubbles; the box must get it back.
             var openedBox=window.ActiveTextEditor!;editingSurface.Focus();window.Dispatcher.Invoke(()=>{},System.Windows.Threading.DispatcherPriority.Background);
             Check(FocusManager.GetFocusedElement(window)==openedBox && openedBox.SelectedText=="텍스트","a new text box takes focus back after the opening click");
+            Check(window.InspectorShown,"the format panel stays available while typing");
+            var inkBeforeText=editingSurface.Ink;var typedInk=new ColorRgba(0,0,255,255);var revisionsWhileTyping=rich.Annotations.Count;
+            editingSurface.Ink=typedInk;editingSurface.ApplyStyle();
+            Check(rich.Annotations.Count==revisionsWhileTyping && window.ActiveTextEditor!=null,"changing the color while typing keeps the text box open and the document unchanged");
             Check(window.FinishTextEdit(true) && rich.Annotations.Count==countBeforeText+1 && rich.Annotations.Last().Text=="텍스트","leaving the placeholder alone inserts it");
-            rich.Undo();editingSurface.Selected=keepSelected;
+            Check(rich.Annotations.Last().Color==typedInk,"a color chosen while typing reaches the text");
+            rich.Undo();editingSurface.Selected=keepSelected;editingSurface.Ink=inkBeforeText;
             editingSurface.Tool=AnnotationKind.Step;editingSurface.Selected=null;
             var countBeforeStep=rich.Annotations.Count;
             editingSurface.BeginPointer(new(100,100));

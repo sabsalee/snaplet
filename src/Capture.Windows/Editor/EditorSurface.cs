@@ -569,9 +569,24 @@ internal sealed class EditorSurface : FrameworkElement
         if(fitted==ToPixels(c))return false;
         PendingCrop=FromPixels(fitted);InvalidateVisual();return true;
     }
+    /// <summary>Crops so a single-colour margin inside the screenshot is even on opposite sides. One undo step; false when nothing changes.</summary>
+    internal bool BalanceContent()
+    {
+        var crop=ToPixels(Document.Crop);var area=crop.Intersect(new PixelRect(0,0,source.PixelWidth,source.PixelHeight));
+        if(area.IsEmpty || (long)area.Width*area.Height>40_000_000)return false;
+        BitmapSource pixels=source.Format==PixelFormats.Bgra32 || source.Format==PixelFormats.Pbgra32?source:new FormatConvertedBitmap(source,PixelFormats.Bgra32,null,0);
+        var buffer=new byte[area.Width*area.Height*4];pixels.CopyPixels(new Int32Rect(area.X,area.Y,area.Width,area.Height),buffer,area.Width*4,0);
+        var local=PixelProbe.BalanceMargins(buffer,area.Width,area.Height,10);
+        var balanced=new PixelRect(area.X+local.X,area.Y+local.Y,local.Width,local.Height);
+        if(balanced==crop)return false;
+        CancelGesture();Document.CropTo(FromPixels(balanced));InvalidateVisual();return true;
+    }
     internal void DeleteSelected() {CancelGesture();if(Selected is Guid id)Document.Delete(id);Selected=null;SelectionChanged?.Invoke();InvalidateVisual();}
     internal void ChangeSelected(Func<Annotation,Annotation> update) {FinishNumberEdit();if(Selection is Annotation a){var changed=update(a);if(changed.Kind is AnnotationKind.Image or AnnotationKind.Magnifier or AnnotationKind.Text)CommitAnnotation(changed,false);else Document.Replace(changed);SelectionChanged?.Invoke();InvalidateVisual();}}
-    internal void ApplyStyle()=>ChangeSelected(a=>WithReachableShapeTail(a with {Color=Ink,Thickness=Thickness,Style=InkStyle}));
+    /// <summary>Set by the window: takes style changes while text is being typed, and returns true if it did.</summary>
+    internal Func<bool>? TypingStyleChanged {get;set;}
+    internal void ApplyStyle(){if(TypingStyleChanged?.Invoke()!=true)ApplySelectedStyle();}
+    private void ApplySelectedStyle()=>ChangeSelected(a=>WithReachableShapeTail(a with {Color=Ink,Thickness=Thickness,Style=InkStyle}));
     internal Annotation WithReachableShapeTail(Annotation a)
     {
         if(a.Kind is not (AnnotationKind.Rectangle or AnnotationKind.Ellipse) || !a.Appearance.ShapeTail || a.Tail!=null)return a;
