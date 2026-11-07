@@ -154,6 +154,9 @@ public static class EditorSmokeTest
             Check(rich.Annotations.Count==revisionsWhileTyping && window.ActiveTextEditor!=null,"changing the color while typing keeps the text box open and the document unchanged");
             Check(window.FinishTextEdit(true) && rich.Annotations.Count==countBeforeText+1 && rich.Annotations.Last().Text=="텍스트","leaving the placeholder alone inserts it");
             Check(rich.Annotations.Last().Color==typedInk,"a color chosen while typing reaches the text");
+            rich.Undo();window.BeginTextEdit(editingSurface.NewTextAt(new(30,30)),true);var inkBeforeCancel=editingSurface.Ink;editingSurface.Ink=new ColorRgba(0,255,0,255);editingSurface.ApplyStyle();window.FinishTextEdit(false);
+            Check(editingSurface.Ink==inkBeforeCancel,"cancelling text also discards the format changed while typing");
+            window.BeginTextEdit(editingSurface.NewTextAt(new(30,30)),true);window.FinishTextEdit(true);
             rich.Undo();editingSurface.Selected=keepSelected;editingSurface.Ink=inkBeforeText;
             editingSurface.Tool=AnnotationKind.Step;editingSurface.Selected=null;
             var countBeforeStep=rich.Annotations.Count;

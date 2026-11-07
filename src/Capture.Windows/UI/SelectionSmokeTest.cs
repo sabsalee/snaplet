@@ -79,6 +79,14 @@ internal static class SelectionSmokeTest
         } finally {overlay.Close();}
 
         completed=false;result=null;
+        SelectionResult? modeResult=null;
+        var barred=new SelectionWindow(display,image,null,new SelectionOptions(true,false,null,true,"region"));barred.Completed+=r=>modeResult=r;
+        try {
+            barred.Show();barred.UpdateLayout();Check(barred.HasModeBar,"the all-in-one bar appears when it is turned on");Shot(barred,directory,"selection-modebar");
+            barred.SimulateMode("영역");Check(modeResult is null,"choosing the current mode keeps the overlay open");
+            barred.SimulateMode("창");Check(modeResult?.NextCommand=="pick-window","choosing another mode asks the app to run it");
+        } finally {barred.Close();SelectionWindow.ResetRatioForTest();}
+        Check(!new SelectionWindow(display,image,null,new SelectionOptions()).HasModeBar,"the bar stays off by default");
         var cancel=new SelectionWindow(display,image,null,new SelectionOptions());cancel.Completed+=r=>{result=r;completed=true;};
         try {cancel.Show();cancel.UpdateLayout();cancel.SimulateKey(Key.Escape);Check(completed && result is null,"Esc cancels without a result");}
         finally {cancel.Close();}

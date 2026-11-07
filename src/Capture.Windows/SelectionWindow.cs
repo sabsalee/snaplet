@@ -11,10 +11,10 @@ using Capture.Windows.Platform;
 
 namespace Capture.Windows;
 
-internal sealed record SelectionResult(Int32Rect? Region,nint Window);
+internal sealed record SelectionResult(Int32Rect? Region,nint Window,string? NextCommand=null);
 
 /// <summary>Per-capture options for the selection overlay.</summary>
-internal sealed record SelectionOptions(bool ShowLoupe=true,bool AdjustBeforeCapture=false,string? Purpose=null);
+internal sealed record SelectionOptions(bool ShowLoupe=true,bool AdjustBeforeCapture=false,string? Purpose=null,bool ModeBar=false,string Command="region");
 
 /// <summary>
 /// One physical monitor per overlay avoids one DPI assumption for the virtual desktop.
@@ -43,6 +43,13 @@ internal sealed class SelectionWindow : Window
     private readonly TextBlock loupeText=new() {Foreground=Brushes.White,FontSize=11,FontFamily=new FontFamily("Consolas, Segoe UI"),Margin=new Thickness(6,4,6,5)};
     private readonly System.Windows.Threading.DispatcherTimer toastTimer=new() {Interval=TimeSpan.FromMilliseconds(1400)};
 
+    /// <summary>Capture modes on the all-in-one bar, as commands the app can run.</summary>
+    private static readonly (string Command,string Label)[] Modes=[("region","영역"),("pick-window","창"),("display","화면"),("desktop","전체 화면"),("delayed","3초 후"),("scroll","스크롤"),("ocr","텍스트")];
+    private static readonly (string Label,double? Ratio)[] Ratios=[("자유",null),("1:1",1),("4:3",4d/3),("3:2",3d/2),("16:9",16d/9)];
+    /// <summary>The chosen ratio lasts for the session, so repeated captures keep the same shape.</summary>
+    private static double? sessionRatio;
+    private Border? modeBar;
+    private readonly List<Button> ratioButtons=[];
     private readonly DisplayInfo display;
     private readonly BitmapSource image;
     private readonly BitmapSource pixels;
@@ -71,6 +78,7 @@ internal sealed class SelectionWindow : Window
         var root=new Grid();
         root.Children.Add(new Image {Source=image,Stretch=Stretch.Fill,IsHitTestVisible=false});
         root.Children.Add(dim);root.Children.Add(canvas);
+        if(options.ModeBar){modeBar=BuildModeBar();root.Children.Add(modeBar);}
         canvas.Children.Add(border);
         for(int i=0;i<handles.Length;i++) {handles[i]=new Rectangle {Width=HandleSize,Height=HandleSize,Fill=Brushes.White,Stroke=border.Stroke,StrokeThickness=1,Visibility=Visibility.Collapsed};canvas.Children.Add(handles[i]);}
         canvas.Children.Add(crossX);canvas.Children.Add(crossY);canvas.Children.Add(rulerX);canvas.Children.Add(rulerY);canvas.Children.Add(rulerTag);
@@ -85,7 +93,7 @@ internal sealed class SelectionWindow : Window
         Content=root;
         ((TextBlock)hint.Child).Text=windows is not null?"캡처할 창을 클릭하세요 · Esc 취소"
             :(options.Purpose is string purpose?purpose+" · ":"")+"드래그하여 선택 · Shift 정사각형 · Space 이동 · Tab 색 복사 · R 측정 · Esc 취소";
-        Canvas.SetLeft(hint,24);Canvas.SetTop(hint,24);
+        Canvas.SetLeft(hint,24);Canvas.SetTop(hint,modeBar!=null?74:24);
         toast.Visibility=Visibility.Collapsed;sizeTag.Visibility=Visibility.Collapsed;rulerTag.Visibility=Visibility.Collapsed;
         toastTimer.Tick+=(_,_)=>{toastTimer.Stop();toast.Visibility=Visibility.Collapsed;};
         SourceInitialized+=(_,_)=>{
@@ -101,6 +109,45 @@ internal sealed class SelectionWindow : Window
         PreviewKeyDown+=OnKey;PreviewKeyUp+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Space)spaceHeld=false;};
         Loaded+=(_,_)=>{Focus();Refresh();};
         Closed+=(_,_)=>toastTimer.Stop();
+    }
+
+    // ---- all-in-one bar --------------------------------------------------------------------
+    private Border BuildModeBar()
+    {
+        var row=new StackPanel {Orientation=Orientation.Horizontal};
+        foreach(var (command,label) in Modes) {
+            var button=BarButton(label,command==options.Command);button.Click+=(_,_)=>{if(command!=options.Command)Completed?.Invoke(new(null,0,command));};row.Children.Add(button);
+        }
+        if(windows is null) {
+            row.Children.Add(new Border {Width=1,Margin=new Thickness(6,5,6,5),Background=new SolidColorBrush(Color.FromArgb(90,255,255,255))});
+            foreach(var (label,ratio) in Ratios) {
+                var button=BarButton(label,ratio==sessionRatio);button.Tag=ratio;ratioButtons.Add(button);
+                button.Click+=(_,_)=>{sessionRatio=ratio;foreach(var other in ratioButtons)other.Background=BarBrush((double?)other.Tag==sessionRatio);};row.Children.Add(button);
+            }
+        }
+        var bar=new Border {Child=row,Background=new SolidColorBrush(Color.FromArgb(235,18,22,30)),CornerRadius=new CornerRadius(10),Padding=new Thickness(5),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,20,0,0),Cursor=Cursors.Arrow};
+        // A press on the bar's edge must not start a selection, and the loupe should not cover the bar.
+        bar.MouseLeftButtonDown+=(_,e)=>e.Handled=true;
+        bar.MouseEnter+=(_,_)=>{pointerInside=false;RefreshPointer();};bar.MouseLeave+=(_,_)=>pointerInside=true;
+        return bar;
+    }
+    private static SolidColorBrush BarBrush(bool active)=>new(active?Color.FromRgb(56,110,230):Colors.Transparent);
+    private static Button BarButton(string label,bool active)
+    {
+        var face=new FrameworkElementFactory(typeof(Border));face.SetValue(Border.CornerRadiusProperty,new CornerRadius(6));face.SetValue(Border.PaddingProperty,new Thickness(11,5,11,5));
+        face.SetBinding(Border.BackgroundProperty,new System.Windows.Data.Binding("Background"){RelativeSource=System.Windows.Data.RelativeSource.TemplatedParent});
+        face.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));
+        var button=new Button {Content=new TextBlock {Text=label,Foreground=Brushes.White,FontSize=12},Focusable=false,Background=BarBrush(active),Template=new ControlTemplate(typeof(Button)){VisualTree=face},Cursor=Cursors.Hand};
+        System.Windows.Automation.AutomationProperties.SetName(button,label);return button;
+    }
+    internal bool HasModeBar=>modeBar!=null;
+    internal void SimulateMode(string label){foreach(var button in Descendants(modeBar))if(System.Windows.Automation.AutomationProperties.GetName(button)==label)button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));}
+    internal static void ResetRatioForTest()=>sessionRatio=null;
+    private static IEnumerable<Button> Descendants(DependencyObject? root)
+    {
+        if(root is null)yield break;
+        if(root is Button found)yield return found;
+        foreach(var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())foreach(var button in Descendants(child))yield return button;
     }
 
     // ---- coordinate helpers -------------------------------------------------------------
@@ -148,10 +195,10 @@ internal sealed class SelectionWindow : Window
                     // Space while dragging moves the whole rectangle (anchor follows the pointer).
                     var moved=SelectionMath.Move(selection,edge.X-gesturePointer.X,edge.Y-gesturePointer.Y,bounds);
                     anchor=(anchor.X+moved.X-selection.X,anchor.Y+moved.Y-selection.Y);selection=moved;
-                } else selection=SelectionMath.FromDrag(anchor.X,anchor.Y,edge.X,edge.Y,bounds,Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+                } else selection=modeBar!=null && sessionRatio is double ratio?SelectionMath.FromDragAtRatio(anchor.X,anchor.Y,edge.X,edge.Y,ratio,bounds):SelectionMath.FromDrag(anchor.X,anchor.Y,edge.X,edge.Y,bounds,Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
                 gesturePointer=edge;break;
             case Mode.Moving:selection=SelectionMath.Move(gestureStart,edge.X-gesturePointer.X,edge.Y-gesturePointer.Y,bounds);break;
-            case Mode.Resizing:selection=SelectionMath.Resize(gestureStart,activeHandle,edge.X,edge.Y,bounds);break;
+            case Mode.Resizing:{var resized=SelectionMath.Resize(gestureStart,activeHandle,edge.X,edge.Y,bounds);selection=modeBar!=null && sessionRatio is double fixedRatio?SelectionMath.ResizeAtRatio(gestureStart,resized,fixedRatio,bounds):resized;break;}
             case Mode.Adjusting:Cursor=HandleAt(view) is SelectionHandle h?HandleCursor(h):Contains(selection,view)?Cursors.SizeAll:Cursors.Cross;break;
         }
         Refresh();
@@ -255,6 +302,7 @@ internal sealed class SelectionWindow : Window
             var tagY=view.Bottom+6+sizeTag.DesiredSize.Height<=ActualHeight?view.Bottom+6:Math.Max(0,view.Top-6-sizeTag.DesiredSize.Height);
             Canvas.SetLeft(sizeTag,Math.Clamp(view.X,0,Math.Max(0,ActualWidth-sizeTag.DesiredSize.Width)));Canvas.SetTop(sizeTag,tagY);
         }
+        if(modeBar!=null)modeBar.Visibility=mode is Mode.Drawing or Mode.Moving or Mode.Resizing?Visibility.Hidden:Visibility.Visible;
         var showHandles=mode is Mode.Adjusting or Mode.Moving or Mode.Resizing && !selection.IsEmpty;
         var points=HandlePoints();
         for(int i=0;i<handles.Length;i++) {

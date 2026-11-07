@@ -34,6 +34,15 @@ public enum SelectionHandle { TopLeft, Top, TopRight, Right, BottomRight, Bottom
 /// <summary>Pure selection arithmetic shared by the capture overlay and editor crop tools.</summary>
 public static class SelectionMath
 {
+    /// <summary>Rectangle from a drag anchor to the pointer at a fixed width-to-height ratio, in whole pixels inside the bounds.</summary>
+    public static PixelRect FromDragAtRatio(int anchorX, int anchorY, int x, int y, double ratio, PixelRect bounds) =>
+        Whole(AspectMath.FromDrag(new(anchorX, anchorY), new(x, y), ratio, new(bounds.X, bounds.Y, bounds.Width, bounds.Height)), bounds);
+    /// <summary>Applies a fixed ratio to a rectangle that a resize handle changed.</summary>
+    public static PixelRect ResizeAtRatio(PixelRect before, PixelRect resized, double ratio, PixelRect bounds) =>
+        Whole(AspectMath.Resize(new(before.X, before.Y, before.Width, before.Height), new(resized.X, resized.Y, resized.Width, resized.Height), ratio, new(bounds.X, bounds.Y, bounds.Width, bounds.Height)), bounds);
+    private static PixelRect Whole(RectD r, PixelRect bounds) =>
+        new PixelRect((int)Math.Round(r.X), (int)Math.Round(r.Y), (int)Math.Round(r.Width), (int)Math.Round(r.Height)).Intersect(bounds);
+
     /// <summary>Rectangle from a drag anchor to the pointer. With <paramref name="square"/> the shorter side follows the longer one, clipped to bounds.</summary>
     public static PixelRect FromDrag(int anchorX, int anchorY, int x, int y, PixelRect bounds, bool square = false)
     {

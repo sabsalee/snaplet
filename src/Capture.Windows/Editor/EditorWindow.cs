@@ -49,6 +49,7 @@ public sealed class EditorWindow : Window
     private Annotation? editingText;
     private bool newText,composingText;
     private Guid? selectionBeforeTextEdit;
+    private (ColorRgba Ink,double Thickness,AnnotationStyle Style) styleBeforeTextEdit;
     private readonly HashSet<Key> nudgeKeys=[];
     internal TextBox? ActiveTextEditor=>textEditor;
     internal bool UsesDarkTheme=>darkTheme;
@@ -837,7 +838,7 @@ public sealed class EditorWindow : Window
     }
     internal void BeginTextEdit(Annotation a,bool create)
     {
-        if(!FinishTextEdit(true))return;if(textEditor!=null)return;surface.CancelGesture();selectionBeforeTextEdit=surface.Selected;editingText=a;newText=create;composingText=false;surface.Selected=create?null:a.Id;
+        if(!FinishTextEdit(true))return;if(textEditor!=null)return;surface.CancelGesture();selectionBeforeTextEdit=surface.Selected;styleBeforeTextEdit=(surface.Ink,surface.Thickness,surface.InkStyle);editingText=a;newText=create;composingText=false;surface.Selected=create?null:a.Id;
         surface.SetTextEditing(create?null:a.Id);
         textEditor=new TextBox {Style=(Style)Application.Current.FindResource("EditorInlineTextBox"),Text=create?TextPlaceholder:a.Text,MaxLength=8192,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,
             Foreground=a.Appearance.Bubble?ImageRenderer.Contrast(a.Color):ImageRenderer.BrushOf(a.Color),Background=a.Appearance.Bubble?ImageRenderer.BrushOf(a.Color):Brushes.Transparent,Opacity=a.Appearance.Opacity,BorderBrush=Brushes.DodgerBlue,BorderThickness=new Thickness(2)};
@@ -937,7 +938,7 @@ public sealed class EditorWindow : Window
             }
         } catch(Exception error) when(error is ArgumentException or InvalidOperationException or OverflowException) {status.Text=error.Message;UpdateTextEditorLayout();textEditor.Focus();return false;}
         textLayer.Children.Clear();textLayer.ClearValue(WidthProperty);textLayer.ClearValue(HeightProperty);textEditor=null;editingText=null;composingText=false;surface.SetTextEditing(null);
-        if(!commit)surface.Selected=selectionBeforeTextEdit;
+        if(!commit){surface.Selected=selectionBeforeTextEdit;surface.Ink=styleBeforeTextEdit.Ink;surface.Thickness=styleBeforeTextEdit.Thickness;surface.InkStyle=styleBeforeTextEdit.Style;}
         SyncStage();if(fitMode)Fit();surface.Focus();SyncInspector();return true;
     }
     private void Fit()
