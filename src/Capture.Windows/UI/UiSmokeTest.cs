@@ -62,6 +62,7 @@ internal static class UiSmokeTest
         var popup=new PreviewWindow(image,settings,enableDesktopIntegration:false,nearPointer:true);
         try {
             Shot(popup,"popup");
+            popup.RaiseEvent(new System.Windows.Input.MouseEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0){RoutedEvent=UIElement.MouseEnterEvent});Shot(popup,"popup-hover");
             Check(((FrameworkElement)popup.Content).ActualWidth<=220,"the after-capture popup stays small");
             Check(new[]{"편집","이미지 복사","이미지 저장","텍스트 추출","이미지 고정","미리보기 닫기"}.All(n=>Find<Button>(popup).Any(b=>b.IsVisible && AutomationProperties.GetName(b)==n)),"the popup offers edit, copy, save, text, pin and close");
             Click(popup,"이미지 고정");Check(popup.Pinned,"pinning from the popup switches to a pinned image");

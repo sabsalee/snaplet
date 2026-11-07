@@ -5,7 +5,7 @@ internal sealed record EditorPreset(string Name,ColorRgba Color,double Size,Anno
 {
     internal Annotation Sample(AnnotationKind kind)=>new(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),kind,
         kind==AnnotationKind.Step?new(76,32):new(20,16),kind is AnnotationKind.Arrow or AnnotationKind.Line?new(140,49):new(140,49),Color,Size,
-        kind==AnnotationKind.Text?"좋은 아이디어":kind==AnnotationKind.Step?"3":"",Tail:new(60,64),Style:Style,
+        kind==AnnotationKind.Text?"좋은 생각":kind==AnnotationKind.Step?"3":"",Tail:new(60,64),Style:Style,
         Points:kind==AnnotationKind.Pen?[new(20,46),new(48,24),new(78,38),new(110,20),new(140,30)]:null);
 }
 internal static class EditorPresets
