@@ -90,6 +90,7 @@ internal sealed class HomeWindow : Window
         }
         if(recentImages.Count==0)menu.Items.Add(new MenuItem {Header="아직 캡처가 없습니다",IsEnabled=false});
         menu.Items.Add(new Separator());
+        var all=new MenuItem {Header="캡처 기록 모두 보기"};all.Click+=(_,_)=>command("history");menu.Items.Add(all);
         var sample=new MenuItem {Header="편집 도구 체험"};sample.Click+=(_,_)=>demo();menu.Items.Add(sample);
         menu.IsOpen=true;
     }
