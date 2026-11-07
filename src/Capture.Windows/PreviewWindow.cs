@@ -102,14 +102,15 @@ internal sealed class PreviewWindow : Window
     private void FitPin(double? imageWidth=null)
     {
         var scale=VisualTreeHelper.GetDpi(this).DpiScaleX;if(scale<=0)scale=1;
-        var width=Math.Clamp(imageWidth ?? image.PixelWidth/scale,180,900);var height=width*image.PixelHeight/image.PixelWidth;
+        // Actual size at first, but a large capture starts smaller so it does not cover the screen and can still grow.
+        var width=Math.Clamp(imageWidth ?? Math.Min(image.PixelWidth/scale,PinStartMaxWidth),180,900);var height=width*image.PixelHeight/image.PixelWidth;
         if(height>900){height=900;width=Math.Max(180,height*image.PixelWidth/image.PixelHeight);}
         pinImageWidth=width;
         var bands=height<PinToolsHeight;
         if(imageContainer!=null){imageContainer.Margin=bands?new Thickness(0,34,0,84):new Thickness(0);}
         Width=width+2;Height=height+2+(bands?118:0);
     }
-    private const double PinToolsHeight=120;
+    private const double PinToolsHeight=120,PinStartMaxWidth=640;
     private double pinImageWidth;
     private void Build()
     {
