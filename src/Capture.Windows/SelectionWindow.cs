@@ -125,7 +125,7 @@ internal sealed class SelectionWindow : Window
                 button.Click+=(_,_)=>{sessionRatio=ratio;foreach(var other in ratioButtons)other.Background=BarBrush((double?)other.Tag==sessionRatio);};row.Children.Add(button);
             }
         }
-        var bar=new Border {Child=row,Background=new SolidColorBrush(Color.FromArgb(235,18,22,30)),CornerRadius=new CornerRadius(10),Padding=new Thickness(5),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,20,0,0),Cursor=Cursors.Arrow};
+        var bar=new Border {Child=row,Background=new SolidColorBrush(Color.FromArgb(240,18,22,30)),BorderBrush=new SolidColorBrush(Color.FromArgb(110,255,255,255)),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(5),HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,20,0,0),Cursor=Cursors.Arrow};
         // A press on the bar's edge must not start a selection, and the loupe should not cover the bar.
         bar.MouseLeftButtonDown+=(_,e)=>e.Handled=true;
         bar.MouseEnter+=(_,_)=>{pointerInside=false;RefreshPointer();};bar.MouseLeave+=(_,_)=>pointerInside=true;
@@ -136,8 +136,8 @@ internal sealed class SelectionWindow : Window
     {
         var face=new FrameworkElementFactory(typeof(Border));face.SetValue(Border.CornerRadiusProperty,new CornerRadius(6));face.SetValue(Border.PaddingProperty,new Thickness(11,5,11,5));
         face.SetBinding(Border.BackgroundProperty,new System.Windows.Data.Binding("Background"){RelativeSource=System.Windows.Data.RelativeSource.TemplatedParent});
-        face.AppendChild(new FrameworkElementFactory(typeof(ContentPresenter)));
-        var button=new Button {Content=new TextBlock {Text=label,Foreground=Brushes.White,FontSize=12},Focusable=false,Background=BarBrush(active),Template=new ControlTemplate(typeof(Button)){VisualTree=face},Cursor=Cursors.Hand};
+        var text=new FrameworkElementFactory(typeof(ContentPresenter));text.SetValue(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Center);text.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center);face.AppendChild(text);
+        var button=new Button {Content=new TextBlock {Text=label,Foreground=Brushes.White,FontSize=12},Focusable=false,MinHeight=0,Height=28,Margin=new Thickness(1,0,1,0),Background=BarBrush(active),Template=new ControlTemplate(typeof(Button)){VisualTree=face},Cursor=Cursors.Hand};
         System.Windows.Automation.AutomationProperties.SetName(button,label);return button;
     }
     internal bool HasModeBar=>modeBar!=null;
