@@ -110,6 +110,24 @@ public sealed class EditableDocument
         Width = width; Height = height;
         state = new(new(0, 0, width, height), new(0,0,width,height), Array.AsReadOnly(Array.Empty<Annotation>()));
     }
+    /// <summary>Rebuilds a saved document with an empty undo history. Everything is validated, because project files may come from anywhere.</summary>
+    public static EditableDocument Restore(int width, int height, RectD canvas, RectD crop, IEnumerable<Annotation> annotations, int nextCounter, Backdrop backdrop, double exportScale)
+    {
+        if ((long)width * height > 64_000_000) throw new ArgumentException("Image exceeds 64 million pixels.", nameof(width));
+        var document = new EditableDocument(width, height);
+        if (canvas.IsEmpty || canvas.X > 0 || canvas.Y > 0 || canvas.Right < width || canvas.Bottom < height || canvas.Width > 32768 || canvas.Height > 32768 || canvas.Width * canvas.Height > 64_000_000)
+            throw new ArgumentException("Invalid canvas.", nameof(canvas));
+        if (crop.IsEmpty || crop.Intersect(canvas) != crop) throw new ArgumentException("Crop must lie inside the canvas.", nameof(crop));
+        if (nextCounter is < 0 or > 99) throw new ArgumentOutOfRangeException(nameof(nextCounter));
+        ArgumentNullException.ThrowIfNull(backdrop);
+        if (!backdrop.IsValid) throw new ArgumentException("Backdrop contains invalid values.", nameof(backdrop));
+        if (!double.IsFinite(exportScale) || exportScale < ExportSizing.MinScale || exportScale > ExportSizing.MaxScale) throw new ArgumentOutOfRangeException(nameof(exportScale));
+        var items = annotations.Select(Freeze).ToArray();
+        if (items.Select(a => a.Id).Distinct().Count() != items.Length) throw new ArgumentException("Annotation IDs must be unique.", nameof(annotations));
+        if (ImageBytes(items) > 256_000_000) throw new InvalidOperationException("문서 이미지 한도 256MB를 초과합니다.");
+        document.state = new(canvas, crop, Array.AsReadOnly(items), nextCounter, backdrop, exportScale);
+        return document;
+    }
     public void Add(Annotation annotation)
     {
         var frozen = Freeze(annotation);
