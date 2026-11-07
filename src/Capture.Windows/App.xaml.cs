@@ -25,6 +25,8 @@ public partial class App : Application
     private HotkeyService? hotkeys;
     private TrayIcon? tray;
     private AppSettings settings=new();
+    /// <summary>F or the bar switches frozen/live until the app restarts or the setting is saved.</summary>
+    private bool? liveOverride;
     private readonly CaptureEngine engine=new();
     private readonly List<PreviewWindow> previews=[];
     private readonly List<BitmapSource> history=[];
@@ -111,19 +113,28 @@ public partial class App : Application
             if(command is "region" or "pick-window" or "scroll" or "ocr") {
                 var displays=Native.Displays();
                 var targets=command=="pick-window"?Native.Windows():null;
-                var shots=await Task.WhenAll(displays.Select(d=>engine.CaptureMonitorAsync(d.Handle,token)));
-                diagnostics.Frames(shots);
+                // Live selection takes its shot after the choice is made. Picking a window always captures the window afresh, so it stays frozen.
+                bool live=(liveOverride??settings.LiveSelection) && command!="pick-window";
+                var shots=live?[]:await Task.WhenAll(displays.Select(d=>engine.CaptureMonitorAsync(d.Handle,token)));
+                if(!live)diagnostics.Frames(shots);
                 var purpose=command switch {"ocr"=>"텍스트·QR 인식","scroll"=>"스크롤 캡처 영역","pick-window"=>"캡처할 창을 클릭하세요",_=>destination!=null?"편집 중인 이미지에 추가":null};
                 var options=new SelectionOptions(settings.ShowLoupe,settings.AdjustSelectionBeforeCapture || command=="scroll",purpose,settings.ShowCaptureModeBar && destination==null,command);
                 var selection=await SelectAsync(displays,shots,targets,token,diagnostics,options);
                 if(selection is null)return;
-                if(selection.NextCommand is string chosen){nextCommand=chosen;return;}
+                if(selection.NextCommand is string chosen){if(selection.ToggleLive)liveOverride=!live;nextCommand=chosen;return;}
                 if(selection.Window!=0){result=await engine.CaptureWindowAsync(selection.Window,token);windowCapture=true;}
                 else {
                     var rect=selection.Region!.Value;
-                    var index=Array.FindIndex(shots,f=>Contains(f,rect));
+                    var index=live?displays.ToList().FindIndex(d=>rect.X>=d.Bounds.Left && rect.Y>=d.Bounds.Top && rect.X+rect.Width<=d.Bounds.Right && rect.Y+rect.Height<=d.Bounds.Bottom):Array.FindIndex(shots,f=>Contains(f,rect));
                     if(index<0)throw new InvalidOperationException("선택 영역의 화면 구성이 바뀌었습니다. 다시 캡처해 주세요.");
-                    result=Crop(shots[index],rect);
+                    CapturedFrame source;
+                    if(live) {
+                        // The overlay has just closed: give the app below a moment to repaint as active before the shot.
+                        await Task.Delay(50,token);await Task.Run(()=>Native.DwmFlush(),token);
+                        source=await engine.CaptureMonitorAsync(displays[index].Handle,token);diagnostics.Frames([source]);
+                        if(!Contains(source,rect))throw new InvalidOperationException("선택 영역의 화면 구성이 바뀌었습니다. 다시 캡처해 주세요.");
+                    } else source=shots[index];
+                    result=Crop(source,rect);
                     if(command=="ocr"){_=InstantRecognizeAsync(result.Image);return;}
                     repeatRegion=rect;repeatMonitor=displays[index].Name;repeatMonitorBounds=displays[index].Bounds;
                     if(command=="scroll") {
@@ -168,7 +179,7 @@ public partial class App : Application
             }
             if(destination!=null && !quitting && Windows.Cast<Window>().Contains(destination))destination.ShowDocument();
             // Another mode was chosen on the all-in-one bar; run it now that this capture has fully finished.
-            if(nextCommand!=null)_=RunCommandAsync(nextCommand);
+            if(nextCommand!=null)_=RunCommandAsync(nextCommand,null,destination);
         }
     }
     private Task<SelectionResult?> SelectAsync(IReadOnlyList<DisplayInfo> displays,CapturedFrame[] shots,IReadOnlyList<PickableWindow>? targets,CancellationToken token,CaptureDiagnostics diagnostics,SelectionOptions options) {
@@ -181,7 +192,7 @@ public partial class App : Application
             foreach(var overlay in overlays)overlay.Close();completion.TrySetResult(result);
         }
         for(var i=0;i<displays.Count;i++) {
-            var overlay=new SelectionWindow(displays[i],shots[i].Image,targets,options);overlays.Add(overlay);overlay.Completed+=Finish;
+            var overlay=new SelectionWindow(displays[i],i<shots.Length?shots[i].Image:null,targets,options);overlays.Add(overlay);overlay.Completed+=Finish;
             overlay.SelectionStarted+=()=>{foreach(var other in overlays)if(other!=overlay)other.ClearSelection();};
             overlay.Closed+=(_,_)=>{if(!completed)Finish(null);};
             overlay.ContentRendered+=(_,_)=>{if(++rendered==displays.Count){diagnostics.Mark("overlayContentRenderedMs");diagnostics.Complete("overlay-rendered");}};
@@ -316,6 +327,7 @@ public partial class App : Application
             if(previous.LaunchAtLogin!=next.LaunchAtLogin && !StartupRegistration.Apply(next.LaunchAtLogin))throw new InvalidOperationException("로그인 시 자동 실행을 설정하지 못했습니다. Windows 설정 → 앱 → 시작 프로그램을 확인해 주세요.");
             if(!previous.KeepHistoryOnDisk && next.KeepHistoryOnDisk){var oldestFirst=history.AsEnumerable().Reverse().ToArray();_=Task.Run(()=>{foreach(var image in oldestFirst){try{HistoryStore.Save(image);Thread.Sleep(2);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}}});}
             hotkeys?.Apply(next.Hotkeys);
+            if(previous.LiveSelection!=next.LiveSelection)liveOverride=null;
             try{SettingsStore.Save(next);settings=next;ImageActions.NameTemplate=next.FileNameTemplate;Editor.TextFonts.DefaultName=next.DefaultTextFont;}catch{hotkeys?.Apply(previous.Hotkeys);throw;}
             foreach(var editor in editors.Values){editor.EscapeAction=settings.EscapeAction;editor.EscapeSaveFolder=settings.SaveFolder;}
             home?.UpdateSettings(settings);status.Text="설정을 저장했습니다.";

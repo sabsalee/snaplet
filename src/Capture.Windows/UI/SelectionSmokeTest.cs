@@ -87,6 +87,39 @@ internal static class SelectionSmokeTest
             barred.SimulateMode("창");Check(modeResult?.NextCommand=="pick-window","choosing another mode asks the app to run it");
         } finally {barred.Close();SelectionWindow.ResetRatioForTest();}
         Check(!new SelectionWindow(display,image,null,new SelectionOptions()).HasModeBar,"the bar stays off by default");
+
+        // --- frozen and live selection ------------------------------------------------------
+        SelectionResult? liveResult=null;
+        var live=new SelectionWindow(display,null,null,new SelectionOptions(true,true,"검사"));live.Completed+=r=>liveResult=r;
+        try {
+            live.Show();live.UpdateLayout();
+            Check(live.AllowsTransparency && live.Background is SolidColorBrush {Color.A:>0},"the live overlay shows the screen through it and still takes the mouse");
+            live.SimulatePointer(130,360,showRuler:true);live.UpdateLayout();
+            Check(live.LoupeText=="" && live.RulerText=="","the live overlay has no loupe or ruler because no pixels were captured");
+            live.SimulateKey(Key.Tab);live.SimulateKey(Key.C);live.SimulateKey(Key.R);live.SimulateKey(Key.A);
+            Check(liveResult is null,"pixel tools explain themselves on the live overlay instead of failing");
+            live.SimulatePointer(130,360);
+            live.SimulateSelect(new PixelRect(100,320,340,280),adjust:true);
+            live.SimulateKey(Key.A);Check(live.State.Selection==new PixelRect(100,320,340,280),"A leaves a live selection untouched");
+            live.SimulateKey(Key.F);Check(liveResult is null && live.State.Adjusting,"F does not throw away a selection being adjusted");
+            live.SimulateKey(Key.Right);Check(live.State.Selection.X==101,"arrow keys still adjust a live selection");
+            live.SimulateKey(Key.Enter);Check(liveResult?.Region is Int32Rect {X:101,Y:320,Width:340,Height:280},"a live selection returns its rectangle in desktop pixels");
+        } finally {live.Close();}
+        foreach(var (background,label) in new[]{(image,"frozen"),((BitmapSource?)null,"live")}) {
+            SelectionResult? toggled=null;
+            var overlay2=new SelectionWindow(display,background,null,new SelectionOptions(Command:"scroll"));overlay2.Completed+=r=>toggled=r;
+            try {overlay2.Show();overlay2.UpdateLayout();overlay2.SimulateKey(Key.F);Check(toggled is {NextCommand:"scroll",ToggleLive:true},"F on the "+label+" overlay reopens the same capture with the other mode");}
+            finally {overlay2.Close();}
+        }
+        SelectionResult? barToggle=null;
+        var liveBar=new SelectionWindow(display,null,null,new SelectionOptions(true,false,null,true,"region"));liveBar.Completed+=r=>barToggle=r;
+        try {
+            liveBar.Show();liveBar.UpdateLayout();Shot(liveBar,directory,"selection-live");
+            liveBar.SimulateMode("실시간");Check(barToggle is null,"choosing the current selection mode keeps the overlay open");
+            liveBar.SimulateMode("고정");Check(barToggle is {NextCommand:"region",ToggleLive:true},"the bar switches selection mode");
+        } finally {liveBar.Close();SelectionWindow.ResetRatioForTest();}
+        Check(!SettingsStore.Parse("{}",out _).LiveSelection && SettingsStore.Parse("""{"LiveSelection":true}""",out _).LiveSelection,"selection stays frozen by default and the live choice round-trips");
+
         var cancel=new SelectionWindow(display,image,null,new SelectionOptions());cancel.Completed+=r=>{result=r;completed=true;};
         try {cancel.Show();cancel.UpdateLayout();cancel.SimulateKey(Key.Escape);Check(completed && result is null,"Esc cancels without a result");}
         finally {cancel.Close();}

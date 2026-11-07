@@ -15,7 +15,7 @@ internal sealed class SettingsWindow : Window
     private readonly List<HotkeyBinding> keys;
     private readonly AppSettings original;
     private readonly Action<AppSettings> apply;
-    private readonly CheckBox copy,save,outside,autoUpdate,adjust,modeBar,loupe,joinLines,cursor,keepHistory,deepLinks,launchAtLogin;
+    private readonly CheckBox copy,save,outside,autoUpdate,adjust,modeBar,liveSelection,loupe,joinLines,cursor,keepHistory,deepLinks,launchAtLogin;
     private readonly ComboBox escape,windowStyle,afterCapture;
     private readonly UpdateService updates;
     private readonly Action? restartUpdate;
@@ -34,7 +34,7 @@ internal sealed class SettingsWindow : Window
         copy=Toggle("자동 복사",settings.CopyAfterCapture);save=Toggle("자동 저장",settings.SaveAfterCapture);outside=Toggle("바깥 클릭으로 미리보기 닫기",settings.ClosePreviewOutside);
         launchAtLogin=Toggle("로그인 시 자동 실행",settings.LaunchAtLogin);
         autoUpdate=Toggle("업데이트 자동 확인 및 다운로드",settings.AutoUpdate);
-        adjust=Toggle("영역을 놓은 뒤 조정",settings.AdjustSelectionBeforeCapture);modeBar=Toggle("올인원 캡처 막대",settings.ShowCaptureModeBar);loupe=Toggle("픽셀 확대경 표시",settings.ShowLoupe);joinLines=Toggle("인식한 줄바꿈 합치기",settings.OcrJoinLines);cursor=Toggle("마우스 포인터 포함",settings.IncludeCursor);keepHistory=Toggle("최근 캡처 디스크 보관",settings.KeepHistoryOnDisk);deepLinks=Toggle("snaplet:// 링크 허용",settings.EnableDeepLinks);
+        adjust=Toggle("영역을 놓은 뒤 조정",settings.AdjustSelectionBeforeCapture);modeBar=Toggle("올인원 캡처 막대",settings.ShowCaptureModeBar);liveSelection=Toggle("실시간 선택",settings.LiveSelection);loupe=Toggle("픽셀 확대경 표시",settings.ShowLoupe);joinLines=Toggle("인식한 줄바꿈 합치기",settings.OcrJoinLines);cursor=Toggle("마우스 포인터 포함",settings.IncludeCursor);keepHistory=Toggle("최근 캡처 디스크 보관",settings.KeepHistoryOnDisk);deepLinks=Toggle("snaplet:// 링크 허용",settings.EnableDeepLinks);
         windowStyle=new ComboBox{MinWidth=150,VerticalAlignment=VerticalAlignment.Center,ItemsSource=new[]{"그대로","투명 여백 + 그림자","그라데이션 배경"},SelectedIndex=(int)settings.WindowStyle};AutomationProperties.SetName(windowStyle,"창 캡처 모양");
         escape=new ComboBox{MinWidth=150,VerticalAlignment=VerticalAlignment.Center,ItemsSource=new[]{"아무것도 안 함","이미지 복사","이미지 저장"},SelectedIndex=(int)settings.EscapeAction};AutomationProperties.SetName(escape,"Esc로 편집창을 닫을 때");
         folder=new TextBox{Text=settings.SaveFolder,MinWidth=100,TextWrapping=TextWrapping.Wrap};AutomationProperties.SetName(folder,"저장 폴더 경로");
@@ -80,6 +80,7 @@ internal sealed class SettingsWindow : Window
         var selection=Ui.Header("영역 선택","정밀하게 고를 때 쓰는 도구입니다.");selection.Margin=new Thickness(0,22,0,0);p.Children.Add(selection);
         p.Children.Add(Row("픽셀 확대경","선택 화면에서 포인터 주변 픽셀·좌표·색을 크게 보여 줍니다. Tab은 색상 코드를 복사합니다.",loupe));
         p.Children.Add(Row("올인원 캡처 막대","선택 화면 위쪽에서 영역·창·화면·스크롤·텍스트 캡처를 바로 고르고, 영역의 비율을 고정합니다.",modeBar));
+        p.Children.Add(Row("실시간 선택","화면을 멈추지 않고 영역을 고른 뒤, 고른 순간의 화면을 캡처합니다. 움직이는 영상에 알맞습니다. 확대경과 색 복사는 화면을 고정했을 때만 쓸 수 있습니다. 선택 화면에서 F로 바로 전환합니다.",liveSelection));
         p.Children.Add(Row("놓은 뒤 조정하고 Enter로 캡처","끄면 마우스를 놓는 즉시 캡처합니다. 켜면 조절점·방향키·A(내용에 맞춤)로 다듬을 수 있습니다. 끈 상태에서도 Ctrl을 누른 채 놓으면 조정 단계로 들어갑니다.",adjust));
         var other=Ui.Header("편집과 텍스트","");other.Margin=new Thickness(0,22,0,0);p.Children.Add(other);
         p.Children.Add(Row("Esc로 편집창을 닫을 때","닫으면서 결과를 복사하거나 저장 폴더에 저장할 수 있습니다.",escape));
@@ -171,7 +172,7 @@ internal sealed class SettingsWindow : Window
         try {
             if(!Path.IsPathFullyQualified(folder.Text))throw new InvalidOperationException("저장 폴더를 전체 경로로 입력해 주세요.");
             if(keys.Where(k=>k.Assigned).GroupBy(k=>(k.Key,k.Modifiers)).Any(g=>g.Count()>1))throw new InvalidOperationException("같은 단축키를 두 작업에 지정할 수 없습니다.");
-            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,AfterCapture=(AfterCaptureAction)Math.Max(0,afterCapture.SelectedIndex),CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,FileNameTemplate=fileName.Text,DefaultTextFont=(string?)textFont.SelectedItem??"",LaunchAtLogin=launchAtLogin.IsChecked==true,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowCaptureModeBar=modeBar.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,KeepHistoryOnDisk=keepHistory.IsChecked==true,EnableDeepLinks=deepLinks.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
+            apply(original with{AutoUpdate=autoUpdate.IsChecked==true,AfterCapture=(AfterCaptureAction)Math.Max(0,afterCapture.SelectedIndex),CopyAfterCapture=copy.IsChecked==true,SaveAfterCapture=save.IsChecked==true,ClosePreviewOutside=outside.IsChecked==true,SaveFolder=folder.Text,FileNameTemplate=fileName.Text,DefaultTextFont=(string?)textFont.SelectedItem??"",LaunchAtLogin=launchAtLogin.IsChecked==true,Hotkeys=keys.ToList(),AdjustSelectionBeforeCapture=adjust.IsChecked==true,ShowCaptureModeBar=modeBar.IsChecked==true,LiveSelection=liveSelection.IsChecked==true,ShowLoupe=loupe.IsChecked==true,OcrJoinLines=joinLines.IsChecked==true,EscapeAction=(EscapeAction)Math.Max(0,escape.SelectedIndex),IncludeCursor=cursor.IsChecked==true,KeepHistoryOnDisk=keepHistory.IsChecked==true,EnableDeepLinks=deepLinks.IsChecked==true,WindowStyle=(WindowCaptureStyle)Math.Max(0,windowStyle.SelectedIndex)});Close();
         }catch(Exception ex){error.Text=ex.Message;}
     }
 }
