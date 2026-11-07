@@ -11,7 +11,8 @@ using Capture.Windows.Platform;
 
 namespace Capture.Windows;
 
-internal sealed record SelectionResult(Int32Rect? Region,nint Window,string? NextCommand=null);
+/// <summary><paramref name="ToggleLive"/> asks the app to reopen <paramref name="NextCommand"/> with frozen and live selection swapped.</summary>
+internal sealed record SelectionResult(Int32Rect? Region,nint Window,string? NextCommand=null,bool ToggleLive=false);
 
 /// <summary>Per-capture options for the selection overlay.</summary>
 internal sealed record SelectionOptions(bool ShowLoupe=true,bool AdjustBeforeCapture=false,string? Purpose=null,bool ModeBar=false,string Command="region");
@@ -21,6 +22,8 @@ internal sealed record SelectionOptions(bool ShowLoupe=true,bool AdjustBeforeCap
 /// Selection works in the monitor image's physical pixels; WPF DIPs are used only for drawing.
 /// Precision aids: pixel loupe with coordinates and colour, Tab/Shift+Tab/C colour copy, R ruler,
 /// Shift square, Space move while dragging, adjust handles, arrow/Alt+arrow/[ ] keys and A smart fit.
+/// Without a background image the overlay is live: the real screen keeps moving under a see-through dim,
+/// and the tools that read pixels are unavailable because nothing has been captured yet.
 /// </summary>
 internal sealed class SelectionWindow : Window
 {
@@ -51,8 +54,10 @@ internal sealed class SelectionWindow : Window
     private Border? modeBar;
     private readonly List<Button> ratioButtons=[];
     private readonly DisplayInfo display;
-    private readonly BitmapSource image;
-    private readonly BitmapSource pixels;
+    private readonly BitmapSource? image;
+    private readonly BitmapSource? pixels;
+    private readonly int width,height;
+    private bool Live=>image is null;
     private readonly IReadOnlyList<PickableWindow>? windows;
     private readonly SelectionOptions options;
     private readonly PixelRect bounds;
@@ -66,17 +71,22 @@ internal sealed class SelectionWindow : Window
     /// <summary>Raised when this monitor starts a new selection so the other overlays can clear theirs.</summary>
     public event Action? SelectionStarted;
 
-    public SelectionWindow(DisplayInfo monitor,BitmapSource background,IReadOnlyList<PickableWindow>? pickWindows=null,SelectionOptions? selectionOptions=null) {
+    public SelectionWindow(DisplayInfo monitor,BitmapSource? background,IReadOnlyList<PickableWindow>? pickWindows=null,SelectionOptions? selectionOptions=null) {
         display=monitor;image=background;windows=pickWindows;options=selectionOptions??new();
-        pixels=image.Format==PixelFormats.Bgra32 || image.Format==PixelFormats.Pbgra32?image:new FormatConvertedBitmap(image,PixelFormats.Bgra32,null,0);
-        if(!pixels.IsFrozen && pixels.CanFreeze)pixels.Freeze();
-        bounds=new PixelRect(0,0,image.PixelWidth,image.PixelHeight);
+        width=image?.PixelWidth??display.Bounds.Width;height=image?.PixelHeight??display.Bounds.Height;
+        if(image!=null) {
+            pixels=image.Format==PixelFormats.Bgra32 || image.Format==PixelFormats.Pbgra32?image:new FormatConvertedBitmap(image,PixelFormats.Bgra32,null,0);
+            if(!pixels.IsFrozen && pixels.CanFreeze)pixels.Freeze();
+        }
+        bounds=new PixelRect(0,0,width,height);
         WindowStyle=WindowStyle.None;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;Topmost=true;
-        Background=Brushes.Black;Cursor=Cursors.Cross;Title="Snaplet · 영역 선택";
+        // Fully transparent pixels let the mouse through to the app below, so the live overlay keeps alpha 1.
+        if(Live){AllowsTransparency=true;Background=new SolidColorBrush(Color.FromArgb(1,0,0,0));}else Background=Brushes.Black;
+        Cursor=Cursors.Cross;Title="Snaplet · 영역 선택";
         KeyboardNavigation.SetTabNavigation(this,KeyboardNavigationMode.None);
         UseLayoutRounding=true;
         var root=new Grid();
-        root.Children.Add(new Image {Source=image,Stretch=Stretch.Fill,IsHitTestVisible=false});
+        if(image!=null)root.Children.Add(new Image {Source=image,Stretch=Stretch.Fill,IsHitTestVisible=false});
         root.Children.Add(dim);root.Children.Add(canvas);
         if(options.ModeBar){modeBar=BuildModeBar();root.Children.Add(modeBar);}
         canvas.Children.Add(border);
@@ -92,7 +102,7 @@ internal sealed class SelectionWindow : Window
         loupe.Child=loupeStack;canvas.Children.Add(loupe);
         Content=root;
         ((TextBlock)hint.Child).Text=windows is not null?"캡처할 창을 클릭하세요 · Esc 취소"
-            :(options.Purpose is string purpose?purpose+" · ":"")+"드래그하여 선택 · Shift 정사각형 · Space 이동 · Tab 색 복사 · R 측정 · Esc 취소";
+            :(options.Purpose is string purpose?purpose+" · ":"")+(Live?"실시간 화면 · 드래그하여 선택 · Shift 정사각형 · Space 이동 · F 화면 고정 · Esc 취소":"드래그하여 선택 · Shift 정사각형 · Space 이동 · Tab 색 복사 · R 측정 · F 실시간 · Esc 취소");
         Canvas.SetLeft(hint,24);Canvas.SetTop(hint,modeBar!=null?74:24);
         toast.Visibility=Visibility.Collapsed;sizeTag.Visibility=Visibility.Collapsed;rulerTag.Visibility=Visibility.Collapsed;
         toastTimer.Tick+=(_,_)=>{toastTimer.Stop();toast.Visibility=Visibility.Collapsed;};
@@ -119,7 +129,11 @@ internal sealed class SelectionWindow : Window
             var button=BarButton(label,command==options.Command);button.Click+=(_,_)=>{if(command!=options.Command)Completed?.Invoke(new(null,0,command));};row.Children.Add(button);
         }
         if(windows is null) {
-            row.Children.Add(new Border {Width=1,Margin=new Thickness(6,5,6,5),Background=new SolidColorBrush(Color.FromArgb(90,255,255,255))});
+            row.Children.Add(BarDivider());
+            foreach(var (label,live) in new[]{("고정",false),("실시간",true)}) {
+                var button=BarButton(label,live==Live);button.Click+=(_,_)=>{if(live!=Live)RequestToggleLive();};row.Children.Add(button);
+            }
+            row.Children.Add(BarDivider());
             foreach(var (label,ratio) in Ratios) {
                 var button=BarButton(label,ratio==sessionRatio);button.Tag=ratio;ratioButtons.Add(button);
                 button.Click+=(_,_)=>{sessionRatio=ratio;foreach(var other in ratioButtons)other.Background=BarBrush((double?)other.Tag==sessionRatio);};row.Children.Add(button);
@@ -131,6 +145,8 @@ internal sealed class SelectionWindow : Window
         bar.MouseEnter+=(_,_)=>{pointerInside=false;RefreshPointer();};bar.MouseLeave+=(_,_)=>pointerInside=true;
         return bar;
     }
+    private static Border BarDivider()=>new() {Width=1,Margin=new Thickness(6,5,6,5),Background=new SolidColorBrush(Color.FromArgb(90,255,255,255))};
+    private void RequestToggleLive()=>Completed?.Invoke(new(null,0,options.Command,true));
     private static SolidColorBrush BarBrush(bool active)=>new(active?Color.FromRgb(56,110,230):Colors.Transparent);
     private static Button BarButton(string label,bool active)
     {
@@ -151,11 +167,11 @@ internal sealed class SelectionWindow : Window
     }
 
     // ---- coordinate helpers -------------------------------------------------------------
-    private double ScaleX=>ActualWidth>0?image.PixelWidth/ActualWidth:1;
-    private double ScaleY=>ActualHeight>0?image.PixelHeight/ActualHeight:1;
-    private (int X,int Y) ToPixel(Point p)=>(Math.Clamp((int)Math.Floor(p.X*ScaleX),0,image.PixelWidth-1),Math.Clamp((int)Math.Floor(p.Y*ScaleY),0,image.PixelHeight-1));
+    private double ScaleX=>ActualWidth>0?width/ActualWidth:1;
+    private double ScaleY=>ActualHeight>0?height/ActualHeight:1;
+    private (int X,int Y) ToPixel(Point p)=>(Math.Clamp((int)Math.Floor(p.X*ScaleX),0,width-1),Math.Clamp((int)Math.Floor(p.Y*ScaleY),0,height-1));
     /// <summary>Pointer as a selection edge (0..Width inclusive), so a drag to the far edge includes the last pixel.</summary>
-    private (int X,int Y) ToEdge(Point p)=>(Math.Clamp((int)Math.Round(p.X*ScaleX),0,image.PixelWidth),Math.Clamp((int)Math.Round(p.Y*ScaleY),0,image.PixelHeight));
+    private (int X,int Y) ToEdge(Point p)=>(Math.Clamp((int)Math.Round(p.X*ScaleX),0,width),Math.Clamp((int)Math.Round(p.Y*ScaleY),0,height));
     private Rect ToView(PixelRect r)=>new(r.X/ScaleX,r.Y/ScaleY,r.Width/ScaleX,r.Height/ScaleY);
     private Point ToView(int x,int y)=>new(x/ScaleX,y/ScaleY);
 
@@ -238,6 +254,12 @@ internal sealed class SelectionWindow : Window
                 else if(mode==Mode.Idle){selection=bounds;Finish();}
                 break;
             case System.Windows.Input.Key.Space:spaceHeld=true;break;
+            case System.Windows.Input.Key.F when windows is null:
+                if(mode==Mode.Idle)RequestToggleLive();
+                else if(mode==Mode.Adjusting)ShowToast("선택을 시작하기 전에 전환할 수 있습니다");
+                break;
+            case System.Windows.Input.Key.Tab or System.Windows.Input.Key.C or System.Windows.Input.Key.R or System.Windows.Input.Key.A when Live:
+                ShowToast("실시간 화면에서는 쓸 수 없습니다 · F로 화면을 고정하세요");break;
             case System.Windows.Input.Key.Tab:CopyColor(shift?PixelProbe.Rgb(PixelAt(pointer.X,pointer.Y)):PixelProbe.Hex(PixelAt(pointer.X,pointer.Y)));break;
             case System.Windows.Input.Key.C when !Keyboard.Modifiers.HasFlag(ModifierKeys.Control):
                 CopyColor(PixelProbe.Hex(hasSelection?Average(selection):PixelAt(pointer.X,pointer.Y)),hasSelection?"선택 영역 평균색":null);break;
@@ -268,10 +290,10 @@ internal sealed class SelectionWindow : Window
     // ---- pixels ---------------------------------------------------------------------------
     private ColorRgba PixelAt(int x,int y) {
         var px=new byte[4];
-        pixels.CopyPixels(new Int32Rect(Math.Clamp(x,0,image.PixelWidth-1),Math.Clamp(y,0,image.PixelHeight-1),1,1),px,4,0);
+        pixels!.CopyPixels(new Int32Rect(Math.Clamp(x,0,width-1),Math.Clamp(y,0,height-1),1,1),px,4,0);
         return PixelProbe.At(px,1,0,0);
     }
-    private byte[] Region(PixelRect r) {var px=new byte[r.Width*r.Height*4];pixels.CopyPixels(new Int32Rect(r.X,r.Y,r.Width,r.Height),px,r.Width*4,0);return px;}
+    private byte[] Region(PixelRect r) {var px=new byte[r.Width*r.Height*4];pixels!.CopyPixels(new Int32Rect(r.X,r.Y,r.Width,r.Height),px,r.Width*4,0);return px;}
     private ColorRgba Average(PixelRect r) {
         // Sample at most ~250k pixels so a 4K average stays instant.
         var area=r.Intersect(bounds);if(area.IsEmpty)return PixelAt(pointer.X,pointer.Y);
@@ -318,13 +340,13 @@ internal sealed class SelectionWindow : Window
         crossX.Visibility=crossY.Visibility=precise && options.ShowLoupe?Visibility.Visible:Visibility.Collapsed;
         crossX.X1=0;crossX.X2=ActualWidth;crossX.Y1=crossX.Y2=cy;
         crossY.Y1=0;crossY.Y2=ActualHeight;crossY.X1=crossY.X2=cx;
-        RefreshRuler(precise && ruler);
-        if(!(pointerInside && options.ShowLoupe && windows is null && mode is not Mode.Moving)){loupe.Visibility=Visibility.Collapsed;return;}
+        RefreshRuler(precise && ruler && !Live);
+        if(Live || !(pointerInside && options.ShowLoupe && windows is null && mode is not Mode.Moving)){loupe.Visibility=Visibility.Collapsed;return;}
         var half=LoupeSamples/2;
         var sample=new PixelRect(pointer.X-half,pointer.Y-half,LoupeSamples,LoupeSamples);
         var clipped=sample.Intersect(bounds);
         if(clipped.IsEmpty){loupe.Visibility=Visibility.Collapsed;return;}
-        loupeImage.Source=new CroppedBitmap(image,new Int32Rect(clipped.X,clipped.Y,clipped.Width,clipped.Height));
+        loupeImage.Source=new CroppedBitmap(image!,new Int32Rect(clipped.X,clipped.Y,clipped.Width,clipped.Height));
         loupeImage.Width=clipped.Width*LoupeCell;loupeImage.Height=clipped.Height*LoupeCell;
         Canvas.SetLeft(loupeImage,(clipped.X-sample.X)*LoupeCell);Canvas.SetTop(loupeImage,(clipped.Y-sample.Y)*LoupeCell);
         var color=PixelAt(pointer.X,pointer.Y);
@@ -339,7 +361,7 @@ internal sealed class SelectionWindow : Window
     private void RefreshRuler(bool show) {
         rulerX.Visibility=rulerY.Visibility=rulerTag.Visibility=show?Visibility.Visible:Visibility.Collapsed;
         if(!show)return;
-        var row=Region(new PixelRect(0,pointer.Y,image.PixelWidth,1));var column=Region(new PixelRect(pointer.X,0,1,image.PixelHeight));
+        var row=Region(new PixelRect(0,pointer.Y,width,1));var column=Region(new PixelRect(pointer.X,0,1,height));
         var (left,right)=PixelProbe.Run(row,pointer.X,RulerTolerance);var (up,down)=PixelProbe.Run(column,pointer.Y,RulerTolerance);
         var a=ToView(pointer.X-left,pointer.Y);var b=ToView(pointer.X+right+1,pointer.Y);
         var c=ToView(pointer.X,pointer.Y-up);var d=ToView(pointer.X,pointer.Y+down+1);
@@ -396,7 +418,7 @@ internal sealed class SelectionWindow : Window
     /// <summary>Test hook: current selection in monitor pixels and whether handles are active.</summary>
     internal (PixelRect Selection,bool Adjusting) State=>(selection,mode==Mode.Adjusting);
     /// <summary>Test hook: drives the same code paths as mouse and keyboard input, in monitor pixels.</summary>
-    internal void SimulatePointer(int x,int y,bool showRuler=false){pointer=(Math.Clamp(x,0,image.PixelWidth-1),Math.Clamp(y,0,image.PixelHeight-1));pointerInside=true;ruler=showRuler;RefreshPointer();}
+    internal void SimulatePointer(int x,int y,bool showRuler=false){pointer=(Math.Clamp(x,0,width-1),Math.Clamp(y,0,height-1));pointerInside=true;ruler=showRuler;RefreshPointer();}
     internal string LoupeText=>loupe.Visibility==Visibility.Visible?loupeText.Text:"";
     internal string RulerText=>rulerTag.Visibility==Visibility.Visible?((TextBlock)rulerTag.Child).Text:"";
     internal void SimulateSelect(PixelRect rect,bool adjust){selection=rect.Intersect(bounds);if(adjust)EnterAdjust();else Refresh();}
