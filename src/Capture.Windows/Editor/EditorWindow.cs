@@ -81,13 +81,20 @@ public sealed class EditorWindow : Window
         var toolbar=new DockPanel {LastChildFill=true,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
         var toolbarFrame=new Border {Child=toolbar,BorderThickness=new Thickness(0,0,0,1)};toolbarFrame.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
         DockPanel.SetDock(toolbarFrame,Dock.Top);root.Children.Add(toolbarFrame);
+        // Bottom bar: what the image is on the left, handing it out in the middle, finishing on the right.
+        var bottomGrid=new Grid {Height=44};bottomGrid.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
+        bottomGrid.ColumnDefinitions.Add(new());bottomGrid.ColumnDefinitions.Add(new(){Width=GridLength.Auto});bottomGrid.ColumnDefinitions.Add(new());
+        var bottomLeft=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};bottomGrid.Children.Add(bottomLeft);
+        var bottomCenter=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(bottomCenter,1);bottomGrid.Children.Add(bottomCenter);
+        var bottomRight=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,0,10,0)};Grid.SetColumn(bottomRight,2);bottomGrid.Children.Add(bottomRight);
+        var bottomFrame=new Border {Child=bottomGrid,BorderThickness=new Thickness(0,1,0,0)};bottomFrame.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
+        DockPanel.SetDock(bottomFrame,Dock.Bottom);root.Children.Add(bottomFrame);
         var actions=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,2,0)};DockPanel.SetDock(actions,Dock.Left);toolbar.Children.Add(actions);
-        ToolButton(actions,"⧉","복사 · Ctrl+C",async()=>await CopyAsync());
-        ToolButton(actions,"↧","저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(false));
-        Divider(actions);
-        ToolButton(actions,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
-        Divider(actions);
-        FileDragButton(actions);
+        ToolButton(bottomRight,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
+        ToolButton(bottomRight,"⧉","복사 · Ctrl+C · Alt를 누르면 창 유지",async()=>await CopyAsync());
+        var saveButton=Ui.Button("저장",()=>Save(false),style:"PrimaryButton");saveButton.Margin=new Thickness(6,0,0,0);saveButton.Height=30;saveButton.MinHeight=0;saveButton.MinWidth=64;saveButton.Padding=new Thickness(14,0,14,0);saveButton.VerticalAlignment=VerticalAlignment.Center;saveButton.VerticalContentAlignment=VerticalAlignment.Center;saveButton.Content=new TextBlock {Text="저장",Foreground=Brushes.White,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center};saveButton.ToolTip="저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S · Alt를 누르면 창 유지";bottomRight.Children.Add(saveButton);
+        FileDragButton(bottomCenter);
+        ToolButton(actions,"region","자르기 · C",StartCrop);
         backdropButton=ToolButton(actions,"backdrop","배경 꾸미기 · 여백·그라데이션·그림자·둥근 모서리",()=>{});backdropButton.Click+=(_,_)=>ShowBackdrop(backdropButton);
         Divider(actions);
         var info=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,8,0)};DockPanel.SetDock(info,Dock.Right);toolbar.Children.Add(info);
@@ -96,9 +103,9 @@ public sealed class EditorWindow : Window
         var hoverInfo=InfoBlock(hoverValue,"Tab 복사");hoverInfo.ToolTip="커서 아래 색 · Tab으로 HEX 복사 · I 스포이트·대비 검사";hoverInfo.MinWidth=96;info.Children.Add(hoverInfo);
         System.Windows.Automation.AutomationProperties.SetName(hoverInfo,"커서 아래 색");
         var sizeButton=new Button {Content=InfoBlock(dimensions,"이미지 크기"),ToolTip="내보내기 크기 (배경·내보내기 배율 포함) · 클릭하여 변경",Padding=new Thickness(6,2,6,2),MinHeight=40,Style=(Style)Application.Current.FindResource("EditorIconButton")};
-        System.Windows.Automation.AutomationProperties.SetName(sizeButton,"이미지 크기");info.Children.Add(sizeButton);sizeButton.Click+=(_,_)=>ShowSizePopup(sizeButton);
+        System.Windows.Automation.AutomationProperties.SetName(sizeButton,"이미지 크기");bottomLeft.Children.Add(sizeButton);sizeButton.Click+=(_,_)=>ShowSizePopup(sizeButton);
         var zoomButton=new Button {Content=InfoBlock(zoomText,"확대"),ToolTip="확대율 · 클릭하여 보기 옵션",Padding=new Thickness(6,2,6,2),Margin=new Thickness(2,0,0,0),MinHeight=40,Style=(Style)Application.Current.FindResource("EditorIconButton")};
-        System.Windows.Automation.AutomationProperties.SetName(zoomButton,"확대율");info.Children.Add(zoomButton);
+        System.Windows.Automation.AutomationProperties.SetName(zoomButton,"확대율");bottomLeft.Children.Add(zoomButton);
         zoomButton.Click+=(_,_)=>{
             var menu=Menu();Item(menu,"화면 맞춤 · Ctrl+0",()=>{fitMode=true;Fit();});Item(menu,"100% · Ctrl+1",SetActualSize);Item(menu,"선택 영역 확대 · Ctrl+2",ZoomToSelection);
             Item(menu,"빠른 확대 · Z",QuickZoom);Item(menu,"선택 왼쪽 위 확대 · Q",()=>ZoomToCorner(false));Item(menu,"선택 오른쪽 아래 확대 · W",()=>ZoomToCorner(true));
@@ -253,8 +260,10 @@ public sealed class EditorWindow : Window
     {
         var button=ToolButton(parent,"file","끌어서 파일로 놓기 · 다른 앱이나 폴더에 PNG로 전달",()=>status.Text="이 손잡이를 끌어 다른 앱이나 폴더에 PNG 파일로 놓으세요.");
         var handle=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
-        var glyph=button.Content as UIElement;button.Content=handle;
-        handle.Children.Add(Ui.Grip());if(glyph!=null)handle.Children.Add(glyph);handle.Children.Add(Ui.Grip());
+        var glyph=button.Content as FrameworkElement;var pill=new Border {Child=handle,CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),Padding=new Thickness(6,3,6,3)};
+        pill.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");button.Content=pill;button.Height=34;
+        var caption=new TextBlock {Text="끌어서 놓기",FontSize=12,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,6,0)};caption.SetResourceReference(TextBlock.ForegroundProperty,"TextBrush");
+        if(glyph!=null){glyph.Width=glyph.Height=16;handle.Children.Add(Ui.Grip());handle.Children.Add(glyph);}handle.Children.Add(caption);handle.Children.Add(Ui.Grip());
         button.Cursor=Cursors.SizeAll;
         Point? pressed=null;
         button.PreviewMouseLeftButtonDown+=(_,e)=>pressed=e.GetPosition(button);
@@ -284,6 +293,18 @@ public sealed class EditorWindow : Window
         Item(menu,"선택 객체 복제 · Ctrl+D",surface.DuplicateSelected);Item(menu,"선택 객체 삭제 · Delete",surface.DeleteSelected);
         menu.Items.Add(new Separator());Item(menu,"다른 이름으로 저장 · Ctrl+Shift+S",()=>Save(true));Item(menu,"인쇄 · Ctrl+P",Print);
         Item(menu,"텍스트 추출",()=>{if(!FinishTextEdit(true))return;OcrRequested?.Invoke(ImageRenderer.Render(source,document));});
+        var turn=new MenuItem {Header="회전·뒤집기 (객체를 합쳐 새 편집창)"};
+        foreach(var (label,kind) in new[]{("왼쪽으로 회전",ImageTurn.Left),("오른쪽으로 회전",ImageTurn.Right),("좌우 뒤집기",ImageTurn.FlipHorizontal),("상하 뒤집기",ImageTurn.FlipVertical)}) {
+            var item=new MenuItem {Header=label};var chosen=kind;
+            item.Click+=(_,_)=>{if(!FinishTextEdit(true))return;document.EndEdit();RasterizedRequested?.Invoke(ImageActions.Turn(ImageRenderer.Render(source,document),chosen));Hide();};turn.Items.Add(item);
+        }
+        menu.Items.Add(turn);
+        var aspect=new MenuItem {Header="자르기 비율"};
+        foreach(var (label,ratio) in new (string,double?)[]{("자유",null),("1:1",1d),("4:3",4/3d),("3:2",1.5),("16:9",16/9d),("9:16",9/16d)}) {
+            var item=new MenuItem {Header=label,IsCheckable=true,IsChecked=surface.CropAspect==ratio};var chosen=ratio;
+            item.Click+=(_,_)=>{surface.SetCropAspect(chosen);UpdateCropStatus();};aspect.Items.Add(item);
+        }
+        menu.Items.Add(aspect);
         var scaleMenu=new MenuItem {Header=$"내보내기 크기 · {document.ExportScale:P0}"};
         foreach(var (label,value) in new[]{("400%",4d),("200%",2d),("100% (원본)",1d),("75%",.75),("50% (200% 화면을 1배로)",.5),("33%",1/3d),("25%",.25)}) {
             var item=new MenuItem {Header=label,IsCheckable=true,IsChecked=Math.Abs(document.ExportScale-value)<1e-9};var v=value;
@@ -450,7 +471,7 @@ public sealed class EditorWindow : Window
     private void ShowSizePopup(Button anchor)
     {
         var pad=2*document.Backdrop.PaddingPixels;double baseWidth=document.Crop.Width+pad,baseHeight=document.Crop.Height+pad;
-        var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Bottom,StaysOpen=false,AllowsTransparency=true};
+        var popup=new Popup {PlacementTarget=anchor,Placement=PlacementMode.Top,StaysOpen=false,AllowsTransparency=true};
         var panel=new StackPanel {Width=250};popup.Child=PopupFrame(panel,10);
         void Apply(double scale){if(!FinishTextEdit(true))return;document.SetExportScale(scale);popup.IsOpen=false;}
         var presets=new WrapPanel();panel.Children.Add(presets);
@@ -635,6 +656,7 @@ public sealed class EditorWindow : Window
                 Segment(LetterStyleIcon("B",FontWeights.Bold,FontStyles.Normal,false,icon),"굵게",surface.InkStyle.Bold,()=>ChangeTextStyle(s=>s with {Bold=!s.Bold}));
                 Segment(LetterStyleIcon("I",FontWeights.Normal,FontStyles.Italic,false,icon),"기울임",surface.InkStyle.Italic,()=>ChangeTextStyle(s=>s with {Italic=!s.Italic}));
                 Segment(LetterStyleIcon("U",FontWeights.Normal,FontStyles.Normal,true,icon),"밑줄",surface.InkStyle.Underline,()=>ChangeTextStyle(s=>s with {Underline=!s.Underline}));
+                if(!surface.InkStyle.Bubble)Segment(LetterStyleIcon("O",FontWeights.Bold,FontStyles.Normal,false,icon),"외곽선",surface.InkStyle.Outlined,()=>ChangeTextStyle(s=>s with {Outlined=!s.Outlined}));
                 foreach(var (label,align) in new[]{("왼쪽 정렬",TextAlign.Left),("가운데 정렬",TextAlign.Center),("오른쪽 정렬",TextAlign.Right)})
                     Segment(AlignIcon(align,icon),label,surface.InkStyle.Align==align,()=>ChangeTextStyle(s=>s with {Align=align}));
                 if(a!=null){var edit=ToolButton(propertyDetails,"✎","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));edit.Height=32;}
@@ -761,6 +783,16 @@ public sealed class EditorWindow : Window
             var button=new Button {Style=(Style)Application.Current.FindResource("SwatchButton"),Background=new SolidColorBrush(c),Width=30,Height=28,Margin=new Thickness(3),BorderThickness=new Thickness(1),ToolTip=c.ToString()};palette.Children.Add(button);
             button.Click+=(_,_)=>{surface.Ink=new(c.R,c.G,c.B,c.A);surface.ApplyStyle();popup.IsOpen=false;SyncInspector();};
         }
+        var savedHeader=new TextBlock {Text="내 색상",FontSize=11,Margin=new Thickness(4,8,4,2)};savedHeader.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");panel.Children.Add(savedHeader);
+        var saved=new WrapPanel {Width=220};panel.Children.Add(saved);
+        foreach(var keep in ColorPalette.Colors) {
+            var color=keep;var button=new Button {Style=(Style)Application.Current.FindResource("SwatchButton"),Background=new SolidColorBrush(Color.FromArgb(color.A,color.R,color.G,color.B)),Width=30,Height=28,Margin=new Thickness(3),BorderThickness=new Thickness(1),ToolTip=PixelProbe.Hex(color)+" · 오른쪽 클릭으로 삭제"};saved.Children.Add(button);
+            System.Windows.Automation.AutomationProperties.SetName(button,"저장한 색 "+PixelProbe.Hex(color));
+            button.Click+=(_,_)=>{surface.Ink=color;surface.ApplyStyle();popup.IsOpen=false;SyncInspector();};
+            button.MouseRightButtonUp+=(_,_)=>{ColorPalette.Remove(color);popup.IsOpen=false;ShowColors(anchor);};
+        }
+        var addColor=new Button {Content="＋",Width=30,Height=28,Margin=new Thickness(3),Padding=new Thickness(0),ToolTip="현재 색 저장"};System.Windows.Automation.AutomationProperties.SetName(addColor,"현재 색 저장");
+        addColor.Click+=(_,_)=>{ColorPalette.Add(surface.Ink with {A=255});popup.IsOpen=false;ShowColors(anchor);};saved.Children.Add(addColor);
         var hex=new TextBox {Text=$"#{surface.Ink.R:X2}{surface.Ink.G:X2}{surface.Ink.B:X2}",Margin=new Thickness(3,8,3,3),ToolTip="#RRGGBB 또는 #AARRGGBB · Enter 적용"};panel.Children.Add(hex);
         hex.KeyDown+=(_,e)=>{if(e.Key!=Key.Enter)return;try {var c=(Color)ColorConverter.ConvertFromString(hex.Text);surface.Ink=new(c.R,c.G,c.B,c.A);surface.ApplyStyle();popup.IsOpen=false;SyncInspector();}catch(FormatException){hex.ToolTip="색상 형식을 확인하세요: #FF6633";}e.Handled=true;};
         popup.IsOpen=true;
@@ -1049,22 +1081,24 @@ public sealed class EditorWindow : Window
     }
     private async Task CopyAsync()
     {
+        var keepOpen=Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         if(!FinishTextEdit(true))return;document.EndEdit();exporting++;
         try {
             var copied=revision;var bitmap=BackdropRenderer.Export(source,document);
             if(!await ImageActions.CopyAsync(bitmap)){status.Text="더 최근 복사 요청이 있어 취소했습니다.";return;}
-            status.Text="편집 이미지를 복사했습니다.";if(revision==copied && hideAfterExport)Hide();
+            status.Text="편집 이미지를 복사했습니다.";if(revision==copied && hideAfterExport && !keepOpen)Hide();
         }catch(Exception ex){ShowError("이미지 복사 실패",ex);}
         finally {exporting--;}
     }
     private void Save(bool saveAs)
     {
+        var keepOpen=Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         if(!FinishTextEdit(true))return;document.EndEdit();var path=savedPath;
         if(saveAs || path==null) {
             var dialog=new SaveFileDialog {Filter="PNG 이미지 (*.png)|*.png|JPEG 이미지 (*.jpg)|*.jpg",FileName=path ?? ImageActions.DefaultName(),AddExtension=true,OverwritePrompt=true};
             if(dialog.ShowDialog(this)!=true)return;path=dialog.FileName;
         }
-        try {ImageActions.Save(BackdropRenderer.Export(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport)Hide();}
+        try {ImageActions.Save(BackdropRenderer.Export(source,document),path);savedPath=path;status.Text=$"저장 완료: {path}";if(hideAfterExport && !keepOpen)Hide();}
         catch(Exception ex){ShowError("이미지 저장 실패",ex);}
     }
     /// <summary>Esc on an idle editor closes it like the original, optionally copying or saving first. The document stays reopenable.</summary>

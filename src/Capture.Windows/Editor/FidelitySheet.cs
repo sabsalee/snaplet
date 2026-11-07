@@ -76,7 +76,7 @@ internal static class FidelitySheet
         });
         // S5: text callouts (default preset first) and plain text.
         Scene("s5-text",d=>{
-            for(int i=0;i<texts.Count;i++)d.Add(A(AnnotationKind.Text,120+(i%2)*420,100+(i/2)*250,320+(i%2)*420,140+(i/2)*250,texts[i],"Snaplet test",tail:new PointD(190+(i%2)*420,190+(i/2)*250)));
+            for(int i=0;i<Math.Min(4,texts.Count);i++)d.Add(A(AnnotationKind.Text,120+(i%2)*420,100+(i/2)*250,320+(i%2)*420,140+(i/2)*250,texts[i],"Snaplet test",tail:new PointD(190+(i%2)*420,190+(i/2)*250)));
         });
         // S6: counters with pointers (UX03–UX05 in the investigation) and highlighter/pen.
         Scene("s6-counters-markers",d=>{

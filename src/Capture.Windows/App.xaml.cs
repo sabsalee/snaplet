@@ -36,13 +36,11 @@ public partial class App : Application
     private bool quitting;
     private long captureRevision;
     private ManualScrollWindow? scrollWindow;
-    private nint lastExternalWindow;
     private Int32Rect? repeatRegion;
     private string? repeatMonitor;
     private Native.RECT? repeatMonitorBounds;
     private CancellationTokenSource? activeCapture;
     private readonly CancellationTokenSource commandListener=new();
-    private readonly DispatcherTimer foregroundPoll=new() {Interval=TimeSpan.FromMilliseconds(250)};
     private readonly TextBlock status=new() {Foreground=Brushes.LightSteelBlue,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,16,0,0)};
 
     protected override void OnStartup(StartupEventArgs e) {
@@ -60,7 +58,8 @@ public partial class App : Application
         if(!created){try{using var handle=EventWaitHandle.OpenExisting(@"Local\Snaplet.Windows11.Show");handle.Set();}catch(WaitHandleCannotBeOpenedException){}Shutdown();return;}
         wake=new EventWaitHandle(false,EventResetMode.AutoReset,@"Local\Snaplet.Windows11.Show");
         wakeRegistration=ThreadPool.RegisterWaitForSingleObject(wake,(_,_)=>Dispatcher.BeginInvoke(ShowHome),null,Timeout.Infinite,false);
-        settings=SettingsStore.Load(out var warning);ImageActions.NameTemplate=settings.FileNameTemplate;Editor.TextFonts.DefaultName=settings.DefaultTextFont;
+        settings=SettingsStore.Load(out var warning);ImageActions.NameTemplate=settings.FileNameTemplate;Editor.TextFonts.DefaultName=settings.DefaultTextFont;Editor.ColorPalette.Load(settings.SavedColors);
+        Editor.ColorPalette.Changed+=()=>{try{var next=settings with{SavedColors=Editor.ColorPalette.ToStored().ToList()};SettingsStore.Save(next);settings=next;}catch(Exception error) when(error is IOException or UnauthorizedAccessException){status.Text=error.Message;}};
         _=CommandChannel.ListenAsync(command=>Dispatcher.BeginInvoke(()=>_=RunCommandAsync(command)),commandListener.Token);
         if(settings.EnableDeepLinks)CommandChannel.SetProtocolRegistration(true);
         if(settings.LaunchAtLogin)StartupRegistration.Apply(true);
@@ -72,10 +71,6 @@ public partial class App : Application
             tray=new TrayIcon(hotkeys.Handle);
             try{hotkeys.Apply(settings.Hotkeys);}catch(Exception error){warning=error.Message+"\n설정에서 단축키를 바꿔 주세요. 트레이 메뉴는 사용할 수 있습니다.";}
         } catch(Exception error){Error(error);}
-        foregroundPoll.Tick+=(_,_)=>{
-            var hwnd=Native.GetForegroundWindow();Native.GetWindowThreadProcessId(hwnd,out var pid);
-            if(pid!=Environment.ProcessId && hwnd!=0)lastExternalWindow=hwnd;
-        };foregroundPoll.Start();
         CleanDragFiles();
         if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load());}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
         if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지",true);Edit(demo);}
@@ -222,14 +217,27 @@ public partial class App : Application
         history.Insert(0,image);
         while(history.Count>1 && (history.Count>12 || history.Sum(x=>(long)x.PixelWidth*x.PixelHeight*4)>256_000_000))history.RemoveAt(history.Count-1);
         home?.UpdateRecent(history);status.Text=detail;
-        foreach(var old in previews.Where(p=>!p.Pinned).ToArray())old.Close();
-        if(settings.AfterCapture==AfterCaptureAction.Popup) {
-            var preview=new PreviewWindow(image,settings,nearPointer:true);previews.Add(preview);
-            preview.EditRequested+=Edit;preview.OcrRequested+=source=>_=RecognizeAsync(source);
-            preview.Closed+=(_,_)=>previews.Remove(preview);preview.Show();
-        } else if(settings.AfterCapture==AfterCaptureAction.Editor && !openingEditor)Edit(image);
+        if(settings.AfterCapture==AfterCaptureAction.Popup)ShowPopup(image);
+        else if(settings.AfterCapture==AfterCaptureAction.Editor && !openingEditor)Edit(image);
         _=AfterCaptureAsync(image,settings,revision,copyLease);
         if(settings.KeepHistoryOnDisk)_=Task.Run(()=>{try{HistoryStore.Save(image);}catch(Exception error) when(error is IOException or UnauthorizedAccessException){}});
+    }
+    /// <summary>Popups stack up to a limit; the most recently closed ones can be brought back from the tray.</summary>
+    private const int PopupLimit=5;
+    private readonly List<BitmapSource> closedPopups=[];
+    private void ShowPopup(BitmapSource image)
+    {
+        var open=previews.Where(p=>!p.Pinned).ToArray();
+        foreach(var old in open.Take(Math.Max(0,open.Length-PopupLimit+1)))old.Close();
+        var preview=new PreviewWindow(image,settings,nearPointer:true);previews.Add(preview);
+        preview.Occupied=()=>previews.Where(p=>p!=preview && !p.Pinned).Select(p=>p.ScreenBounds).Where(b=>b.Right>b.Left).ToArray();
+        preview.EditRequested+=Edit;preview.OcrRequested+=source=>_=RecognizeAsync(source);
+        preview.CloseAllRequested+=()=>{foreach(var p in previews.Where(p=>!p.Pinned).ToArray())p.Close();};
+        preview.Closed+=(_,_)=>{
+            previews.Remove(preview);if(preview.Pinned || preview.HandedOff)return;
+            closedPopups.Insert(0,preview.Image);if(closedPopups.Count>PopupLimit)closedPopups.RemoveAt(closedPopups.Count-1);
+        };
+        preview.Show();
     }
     private async Task AfterCaptureAsync(BitmapSource image,AppSettings snapshot,long revision,long copyLease) {
         backgroundExports++;
@@ -327,6 +335,7 @@ public partial class App : Application
         foreach(var (text,command) in new[]{("영역 캡처","region"),("창 캡처","window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
         var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
+        if(closedPopups.Count>0)Add("닫은 캡처 팝업 다시 열기",()=>{var image=closedPopups[0];closedPopups.RemoveAt(0);ShowPopup(image);});
         if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
         menu.Items.Add(new Separator());Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
         menu.IsOpen=true;
@@ -380,6 +389,6 @@ public partial class App : Application
         try {var folder=Path.Combine(SettingsStore.DirectoryPath,"Drag");if(Directory.Exists(folder))foreach(var path in Directory.GetFiles(folder,"*.png"))if(File.GetLastWriteTimeUtc(path)<DateTime.UtcNow.AddDays(-1))File.Delete(path);}catch(IOException){}catch(UnauthorizedAccessException){}
     }
     protected override void OnExit(ExitEventArgs e) {
-        quitting=true;commandListener.Cancel();updates?.Dispose();updatePoll.Stop();activeCapture?.Cancel();foregroundPoll.Stop();wakeRegistration?.Unregister(null);wake?.Dispose();tray?.Dispose();hotkeys?.Dispose();singleton?.Dispose();base.OnExit(e);
+        quitting=true;commandListener.Cancel();updates?.Dispose();updatePoll.Stop();activeCapture?.Cancel();wakeRegistration?.Unregister(null);wake?.Dispose();tray?.Dispose();hotkeys?.Dispose();singleton?.Dispose();base.OnExit(e);
     }
 }

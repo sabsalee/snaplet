@@ -12,7 +12,7 @@ using Capture.Windows.UI;
 namespace Capture.Windows;
 internal sealed class PreviewWindow : Window
 {
-    private readonly BitmapSource image;
+    private BitmapSource image;
     private readonly AppSettings settings;
     private readonly Image thumbnail;
     private readonly TextBlock message=Ui.Label("",11,Ui.Muted);
@@ -28,6 +28,13 @@ internal sealed class PreviewWindow : Window
     private Border? imageContainer;
     private FrameworkElement? pinHeader,pinTools;
     private Slider? pinOpacity;
+    private FrameworkElement? popupChrome;
+    internal BitmapSource Image=>image;
+    /// <summary>The capture moved on to an editor, so closing this popup is not worth offering to undo.</summary>
+    internal bool HandedOff {get;private set;}
+    internal Func<IReadOnlyList<(int Left,int Top,int Right,int Bottom)>>? Occupied {get;set;}
+    internal event Action? CloseAllRequested;
+    internal (int Left,int Top,int Right,int Bottom) ScreenBounds=>Native.GetWindowRect(new WindowInteropHelper(this).Handle,out var r)?(r.Left,r.Top,r.Right,r.Bottom):(0,0,0,0);
     public bool Pinned{get;private set;}
     /// <summary>Pinned images can be made translucent (Shift+wheel or the opacity button) and click-through for overlay comparison.</summary>
     public double PinOpacity{get;private set;}=1;
@@ -55,13 +62,19 @@ internal sealed class PreviewWindow : Window
         SourceInitialized+=(_,_)=>{
             var hwnd=new WindowInteropHelper(this).Handle;Native.SetWindowLongPtr(hwnd,-20,(nint)(Native.GetWindowLongPtr(hwnd,-20).ToInt64()|0x08000000L|0x80L));Native.SetWindowDisplayAffinity(hwnd,0x11);
         };
-        Loaded+=(_,_)=>{if(interactive){Position();outside.Start();}};
+        Loaded+=(_,_)=>{ApplyLayering();if(interactive){Position();outside.Start();}};
         outside.Tick+=(_,_)=>{
             bool pressed=Native.GetAsyncKeyState(1)<0;
-            if(settings.ClosePreviewOutside && !Pinned && !busy && DateTime.UtcNow-shown>TimeSpan.FromMilliseconds(500) && pressed && !previousMouse && !IsMouseOver)Close();
+            if(IsVisible && settings.ClosePreviewOutside && !Pinned && !busy && DateTime.UtcNow-shown>TimeSpan.FromMilliseconds(500) && pressed && !previousMouse && !IsMouseOver)Close();
             previousMouse=pressed;
         };
         MouseWheel+=(_,e)=>{if(!Pinned)return;if(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)){SetPinOpacity(PinOpacity+(e.Delta>0?.1:-.1));e.Handled=true;return;}ResizePin(e.Delta>0?32:-32);e.Handled=true;};
+        PreviewMouseDown+=(_,_)=>{if(Pinned)Activate();};
+        PreviewKeyDown+=(_,e)=>{
+            if(!Pinned)return;var step=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)?10:1;
+            var (dx,dy)=e.Key switch {Key.Left=>(-step,0),Key.Right=>(step,0),Key.Up=>(0,-step),Key.Down=>(0,step),_=>(0,0)};
+            if(dx==0 && dy==0)return;NudgePin(dx,dy);e.Handled=true;
+        };
         MouseEnter+=(_,_)=>SetPinChrome(true);MouseLeave+=(_,_)=>SetPinChrome(false);
         Closed+=(_,_)=>outside.Stop();
     }
@@ -90,12 +103,12 @@ internal sealed class PreviewWindow : Window
     {
         if(imageContainer!=null)imageContainer.Child=null;
         if(message.Parent is Panel old)old.Children.Remove(message);
-        Content=null;thumbnail.Height=double.NaN;thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
+        Content=null;thumbnail.Height=double.NaN;thumbnail.Effect=null;popupChrome=null;message.ClearValue(TextBlock.ForegroundProperty);message.Foreground=Ui.Muted;thumbnail.ContextMenu=Pinned?null:PopupMenu();thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
         var header=new DockPanel{LastChildFill=true};
         var close=Ui.IconButton("close","미리보기 닫기",Close,26);DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);
         var title=Ui.Label(Pinned?"고정 이미지":"캡처",12,Ui.Muted,FontWeights.SemiBold);title.VerticalAlignment=VerticalAlignment.Center;header.Children.Add(title);
         var tools=new DockPanel{LastChildFill=false};
-        var pin=Ui.IconButton("pin",Pinned?"고정 해제":"이미지 고정",()=>{Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;ApplyLayering();}Build();},32);pin.Foreground=Pinned?Ui.Accent:Ui.Text;DockPanel.SetDock(pin,Dock.Right);tools.Children.Add(pin);
+        var pin=Ui.IconButton("pin",Pinned?"고정 해제":"이미지 고정",()=>{Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;}ApplyLayering();Build();},32);pin.Foreground=Pinned?Ui.Accent:Ui.Text;DockPanel.SetDock(pin,Dock.Right);tools.Children.Add(pin);
         Panel left=Pinned?new WrapPanel():new StackPanel{Orientation=Orientation.Horizontal};tools.Children.Add(left);
         left.Children.Add(Ui.IconButton("edit","편집",RequestEdit,34));
         var copy=Ui.IconButton("copy","이미지 복사",()=>{},34);copy.Click+=async (_,_)=>await RunAsync(async()=>message.Text=await ImageActions.CopyAsync(image)?"클립보드에 복사했습니다.":"새 복사 요청이 있어 취소했습니다.");left.Children.Add(copy);
@@ -121,24 +134,29 @@ internal sealed class PreviewWindow : Window
             // Either mouse button moves a pinned image; the file handle in its tools hands out a file.
             thumbnail.MouseRightButtonDown-=MovePinned;thumbnail.MouseRightButtonDown+=MovePinned;
         } else if(nearPointer) {
-            // Image with a close corner, one row of actions and a drag handle, and a line that names the hovered action.
+            // Only the image at rest; hovering dims it and shows copy and save in the middle, with the other actions in the corners.
             // It never takes focus, so Ctrl+V into another app keeps working.
             SizeToContent=SizeToContent.Height;Width=212;Height=double.NaN;pinHeader=pinTools=null;
-            var root=new StackPanel();
-            thumbnail.Height=Math.Clamp(196d*image.PixelHeight/image.PixelWidth,48,120);imageContainer.CornerRadius=new CornerRadius(5);
-            var frame=new Grid();frame.Children.Add(imageContainer);root.Children.Add(frame);
-            ((Panel)close.Parent).Children.Remove(close);close.Width=close.Height=22;close.Padding=new Thickness(4);close.Margin=new Thickness(3);close.Foreground=Brushes.White;close.Background=new SolidColorBrush(Color.FromArgb(150,20,22,26));close.HorizontalAlignment=HorizontalAlignment.Right;close.VerticalAlignment=VerticalAlignment.Top;frame.Children.Add(close);
-            var row=new DockPanel{LastChildFill=false,Margin=new Thickness(0,6,0,0)};root.Children.Add(row);
-            var handle=FileHandle();DockPanel.SetDock(handle,Dock.Right);row.Children.Add(handle);
-            var idle=$"{image.PixelWidth:N0} × {image.PixelHeight:N0}"+(settings.CopyAfterCapture?" · 복사됨 ✓":"");
-            foreach(Button b in new[]{(Button)FindTool(tools,"이미지 복사"),FindTool(tools,"이미지 저장"),FindTool(tools,"편집"),FindTool(tools,"텍스트 추출"),pin}) {
-                ((Panel)b.Parent).Children.Remove(b);b.Width=b.Height=28;b.Padding=new Thickness(5);b.Margin=new Thickness(0,0,1,0);DockPanel.SetDock(b,Dock.Left);row.Children.Add(b);
-                var name=System.Windows.Automation.AutomationProperties.GetName(b);
-                b.MouseEnter+=(_,_)=>message.Text=name;b.MouseLeave+=(_,_)=>message.Text=idle;
+            thumbnail.Height=Math.Clamp(200d*image.PixelHeight/image.PixelWidth,104,150);imageContainer.CornerRadius=new CornerRadius(6);
+            var frame=new Grid();frame.Children.Add(imageContainer);
+            var dim=new Border{Background=new SolidColorBrush(Color.FromArgb(120,10,12,16)),CornerRadius=new CornerRadius(6),IsHitTestVisible=false};
+            var chrome=new Grid();chrome.Children.Add(dim);
+            Button Corner(Button b,HorizontalAlignment x,VerticalAlignment y) {
+                ((Panel)b.Parent).Children.Remove(b);b.Width=b.Height=26;b.Padding=new Thickness(5);b.Margin=new Thickness(4);b.Foreground=Brushes.White;b.Background=new SolidColorBrush(Color.FromArgb(170,20,22,26));b.HorizontalAlignment=x;b.VerticalAlignment=y;chrome.Children.Add(b);return b;
             }
-            message.Text=idle;message.Margin=new Thickness(1,4,0,0);root.Children.Add(message);
-            message.MouseLeftButtonDown+=(_,_)=>DragMove();
-            Content=Ui.CardOf(root,7);
+            Corner(close,HorizontalAlignment.Left,VerticalAlignment.Top);
+            Corner(pin,HorizontalAlignment.Right,VerticalAlignment.Top);
+            Corner(FindTool(tools,"편집"),HorizontalAlignment.Left,VerticalAlignment.Bottom);
+            Corner(FindTool(tools,"텍스트 추출"),HorizontalAlignment.Right,VerticalAlignment.Bottom);
+            var middle=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};chrome.Children.Add(middle);
+            void Pill(Button b,string text) {
+                ((Panel)b.Parent).Children.Remove(b);b.Width=double.NaN;b.MinWidth=62;b.Height=26;b.Padding=new Thickness(10,2,10,2);b.Margin=new Thickness(0,2,0,2);b.Content=new TextBlock{Text=text,FontSize=12,FontWeight=FontWeights.SemiBold,Foreground=Brushes.Black,HorizontalAlignment=HorizontalAlignment.Center};b.Background=new SolidColorBrush(Color.FromArgb(235,255,255,255));middle.Children.Add(b);
+            }
+            Pill(FindTool(tools,"이미지 복사"),"복사");Pill(FindTool(tools,"이미지 저장"),"저장");
+            message.Text=$"{image.PixelWidth:N0} × {image.PixelHeight:N0}"+(settings.CopyAfterCapture?" · 복사됨":"");message.Foreground=Brushes.White;message.TextAlignment=TextAlignment.Center;message.FontSize=10;message.Margin=new Thickness(0,2,0,0);middle.Children.Add(message);
+            var handle=FileHandle();handle.HorizontalAlignment=HorizontalAlignment.Center;handle.VerticalAlignment=VerticalAlignment.Bottom;handle.Margin=new Thickness(0,0,0,3);handle.SetValue(Button.ForegroundProperty,Brushes.White);chrome.Children.Add(handle);
+            popupChrome=chrome;frame.Children.Add(chrome);
+            Content=Ui.CardOf(frame,3);SetPinChrome(IsMouseOver);
         } else {
             SizeToContent=SizeToContent.Height;Width=334;Height=double.NaN;pinHeader=pinTools=null;
             var root=new StackPanel();header.Margin=new Thickness(0,0,0,8);root.Children.Add(header);
@@ -163,6 +181,8 @@ internal sealed class PreviewWindow : Window
         var hwnd=new WindowInteropHelper(this).Handle;if(hwnd==0)return;
         long ex=Native.GetWindowLongPtr(hwnd,-20).ToInt64();
         ex=ClickThrough?ex|0x20L:ex&~0x20L;
+        // A pinned image takes focus when clicked so arrow keys can move it; a popup never does.
+        ex=Pinned?ex&~0x08000000L:ex|0x08000000L;
         Native.SetWindowLongPtr(hwnd,-20,(nint)ex);
     }
     private void MovePinned(object sender,MouseButtonEventArgs e)
@@ -170,7 +190,35 @@ internal sealed class PreviewWindow : Window
         if(!Pinned)return;BeginPinMove();e.Handled=true;
     }
     private void BeginPinMove(){Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();}
-    private void SetPinChrome(bool show){if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;}
+    private void SetPinChrome(bool show){
+        if(popupChrome!=null){popupChrome.Opacity=show?1:0;popupChrome.IsHitTestVisible=show;thumbnail.Effect=show?new System.Windows.Media.Effects.BlurEffect{Radius=4}:null;}
+        if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;
+    }
+    private void NudgePin(int dx,int dy)
+    {
+        var hwnd=new WindowInteropHelper(this).Handle;
+        if(Native.GetWindowRect(hwnd,out var r))Native.SetWindowPos(hwnd,0,r.Left+dx,r.Top+dy,0,0,0x1|0x4|0x10);
+    }
+    private ContextMenu PopupMenu()
+    {
+        var menu=new ContextMenu();
+        void Add(string text,Action action){var item=new MenuItem{Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
+        Add("편집",RequestEdit);
+        Add("복사",()=>_=RunAsync(async()=>message.Text=await ImageActions.CopyAsync(image)?"복사됨":"복사 취소됨"));
+        Add("저장",()=>Run(()=>{if(ImageActions.SaveDialog(image,this)!=null)message.Text="저장됨";}));
+        Add("고정",()=>{Pinned=true;Build();ApplyLayering();});
+        Add("텍스트 추출",()=>OcrRequested?.Invoke(image));
+        menu.Items.Add(new Separator());
+        void Turn(ImageTurn turn){image=ImageActions.Turn(image,turn);thumbnail.Source=image;Build();}
+        Add("왼쪽으로 회전",()=>Turn(ImageTurn.Left));Add("오른쪽으로 회전",()=>Turn(ImageTurn.Right));
+        Add("기본 앱으로 열기",()=>Run(()=>{
+            var path=Path.Combine(SettingsStore.DirectoryPath,"Drag",Guid.NewGuid()+".png");Directory.CreateDirectory(Path.GetDirectoryName(path)!);ImageActions.Save(image,path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path){UseShellExecute=true})?.Dispose();
+        }));
+        menu.Items.Add(new Separator());
+        Add("닫기",Close);Add("팝업 모두 닫기",()=>CloseAllRequested?.Invoke());
+        return menu;
+    }
     private static Button FindTool(Panel tools,string label)=>tools.Children.OfType<Button>().Concat(tools.Children.OfType<Panel>().SelectMany(p=>p.Children.OfType<Button>()))
         .Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)==label);
     private void Position()
@@ -192,6 +240,7 @@ internal sealed class PreviewWindow : Window
         Dispatcher.BeginInvoke(()=>{
             if(!IsVisible || !Native.GetWindowRect(hwnd,out var r))return;
             var p=PopupPlacement(at.X,at.Y,r.Width,r.Height,monitor.Work.Left,monitor.Work.Top,monitor.Work.Right,monitor.Work.Bottom);
+            if(Occupied?.Invoke() is {Count:>0} taken)p=AvoidOverlap(p.X,p.Y,r.Width,r.Height,taken,monitor.Work.Left,monitor.Work.Right,monitor.Work.Bottom);
             Native.SetWindowPos(hwnd,(nint)(-1),p.X,p.Y,0,0,0x1|0x10);
         },DispatcherPriority.ContextIdle);
     }
@@ -202,7 +251,21 @@ internal sealed class PreviewWindow : Window
         int y=pointerY+gap+height<=bottom?pointerY+gap:pointerY-gap-height;
         return (Math.Clamp(x,left,Math.Max(left,right-width)),Math.Clamp(y,top,Math.Max(top,bottom-height)));
     }
-    private void RequestEdit(){if(busy)return;bool opened=false;Run(()=>{EditRequested?.Invoke(image);opened=true;});if(opened && !Pinned)Close();}
+    /// <summary>Moves a new popup clear of those already open: below them, else beside them, else where it was.</summary>
+    internal static (int X,int Y) AvoidOverlap(int x,int y,int width,int height,IReadOnlyList<(int Left,int Top,int Right,int Bottom)> taken,int left,int right,int bottom)
+    {
+        const int gap=8;int startX=x,startY=y;
+        for(int i=0;i<=taken.Count*2;i++) {
+            var hit=taken.FirstOrDefault(t=>x<t.Right && x+width>t.Left && y<t.Bottom && y+height>t.Top);
+            if(hit==default)return (x,y);
+            if(hit.Bottom+gap+height<=bottom)y=hit.Bottom+gap;
+            else if(hit.Left-gap-width>=left){x=hit.Left-gap-width;y=startY;}
+            else if(hit.Right+gap+width<=right){x=hit.Right+gap;y=startY;}
+            else return (startX,startY);
+        }
+        return (startX,startY);
+    }
+    private void RequestEdit(){if(busy)return;bool opened=false;Run(()=>{EditRequested?.Invoke(image);opened=true;});if(opened && !Pinned){HandedOff=true;Close();}}
     private void Run(Action action){if(busy)return;busy=true;try{action();}catch(Exception e){message.Text=e.Message;}finally{busy=false;}}
     private async Task RunAsync(Func<Task> action){if(busy)return;busy=true;try{await action();}catch(Exception e){message.Text=e.Message;}finally{busy=false;}}
 }
