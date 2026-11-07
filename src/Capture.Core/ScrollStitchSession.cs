@@ -101,6 +101,20 @@ public sealed class ScrollStitchSession
         return (top, bottom);
     }
 
+    /// <summary>
+    /// Swaps rows and columns of a BGRA32 image. Sideways scrolling is stitched by transposing each frame: content moving left
+    /// becomes content moving up, so matching and sticky bands work unchanged. Applying it twice gives back the original.
+    /// </summary>
+    public static byte[] Transpose(ReadOnlySpan<byte> bgra, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || (long)width * height * 4 > int.MaxValue || bgra.Length != width * height * 4) throw new ArgumentException("Expected a tightly packed BGRA32 image.", nameof(bgra));
+        var result = new byte[bgra.Length];
+        for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+                bgra.Slice((y * width + x) * 4, 4).CopyTo(result.AsSpan((x * height + y) * 4, 4));
+        return result;
+    }
+
     /// <summary>Returns an owned snapshot; callers cannot mutate the active session.</summary>
     public byte[] ToArray() => output.ToArray();
 }

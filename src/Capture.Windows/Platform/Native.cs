@@ -24,9 +24,10 @@ internal static class Native
     [StructLayout(LayoutKind.Sequential)] private struct INPUT { public uint Type; public MOUSEINPUT Mouse; }
     [DllImport("user32.dll",SetLastError=true)] private static extern uint SendInput(uint count,INPUT[] inputs,int size);
     /// <summary>Scrolls the window under the given desktop point by whole wheel notches (positive = down). Returns false if Windows blocked the input.</summary>
-    public static bool WheelAt(int x,int y,int notches) {
+    /// <summary>Scrolls the content under the point downward, or to the right when <paramref name="horizontal"/> is set.</summary>
+    public static bool WheelAt(int x,int y,int notches,bool horizontal=false) {
         SetCursorPos(x,y);
-        var input=new INPUT[]{new(){Type=0,Mouse=new MOUSEINPUT{MouseData=-120*notches,Flags=0x0800}}};
+        var input=new INPUT[]{new(){Type=0,Mouse=horizontal?new MOUSEINPUT{MouseData=120*notches,Flags=0x1000}:new MOUSEINPUT{MouseData=-120*notches,Flags=0x0800}}};
         return SendInput(1,input,Marshal.SizeOf<INPUT>())==1;
     }
     [DllImport("user32.dll")] public static extern nint GetForegroundWindow();

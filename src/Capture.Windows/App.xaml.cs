@@ -149,7 +149,7 @@ public partial class App : Application
                             var current=Native.Displays().FirstOrDefault(d=>d.Name==monitorName)??throw new InvalidOperationException("캡처 중 모니터가 변경됐습니다.");
                             if(current.Bounds.Left!=monitorBounds.Left || current.Bounds.Top!=monitorBounds.Top || current.Bounds.Right!=monitorBounds.Right || current.Bounds.Bottom!=monitorBounds.Bottom)throw new InvalidOperationException("모니터 위치나 해상도가 바뀌었습니다. 스크롤 캡처를 다시 시작해 주세요.");
                             return Crop(await engine.CaptureMonitorAsync(current.Handle,cancel),rect).Image;
-                        },notches=>Native.WheelAt(rect.X+rect.Width/2,rect.Y+rect.Height/2,notches));
+                        },(notches,horizontal)=>Native.WheelAt(rect.X+rect.Width/2,rect.Y+rect.Height/2,notches,horizontal));
                         Native.GetCursorPos(out var pointerBefore);
                         scrollWindow.Closed+=(_,_)=>Native.SetCursorPos(pointerBefore.X,pointerBefore.Y);
                         scrollWindow.Loaded+=(_,_)=>PlaceBeside(scrollWindow,rect,displays[index]);
