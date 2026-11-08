@@ -29,7 +29,7 @@ internal sealed class GalleryWindow : Window
     private readonly bool dark;
     private readonly StackPanel list=new() {Margin=new Thickness(20,6,20,20)};
     private readonly TextBlock count=new() {FontSize=12,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(10,2,0,0)};
-    private readonly Border notice=new() {Padding=new Thickness(20,9,14,9),BorderThickness=new Thickness(0,0,0,1)};
+    private readonly Border notice=new() {Padding=new Thickness(24,12,16,0)};
     private readonly Button clear;
     private CancellationTokenSource? loading;
     internal Task ThumbnailsLoaded {get;private set;}=Task.CompletedTask;
@@ -51,10 +51,10 @@ internal sealed class GalleryWindow : Window
         clear=new Button {Content="모두 지우기",Margin=new Thickness(0,0,12,0),Padding=new Thickness(10,4,10,5),VerticalAlignment=VerticalAlignment.Center,Style=(Style)Application.Current.FindResource("QuietButton")};
         clear.SetResourceReference(ForegroundProperty,"TextBrush");clear.Click+=(_,_)=>clearAll();DockPanel.SetDock(clear,Dock.Right);toolbar.Children.Add(clear);
 
-        notice.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");DockPanel.SetDock(notice,Dock.Top);root.Children.Add(notice);
+        notice.SetResourceReference(Border.BackgroundProperty,"WorkspaceBrush");DockPanel.SetDock(notice,Dock.Top);root.Children.Add(notice);
         var noticeRow=new DockPanel();notice.Child=noticeRow;
-        var turnOn=new Button {Content="설정 열기",Padding=new Thickness(10,3,10,4),Margin=new Thickness(12,0,0,0),Style=(Style)Application.Current.FindResource("QuietButton")};
-        turnOn.SetResourceReference(ForegroundProperty,"TextBrush");turnOn.Click+=(_,_)=>openSettings();DockPanel.SetDock(turnOn,Dock.Right);noticeRow.Children.Add(turnOn);
+        var turnOn=new Button {Content="설정 열기",Padding=new Thickness(8,2,8,3),MinHeight=0,Margin=new Thickness(8,0,0,0),Style=(Style)Application.Current.FindResource("QuietButton")};
+        turnOn.SetResourceReference(ForegroundProperty,"AccentBrush");turnOn.Click+=(_,_)=>openSettings();noticeRow.HorizontalAlignment=HorizontalAlignment.Left;DockPanel.SetDock(turnOn,Dock.Right);noticeRow.Children.Add(turnOn);
         var noticeText=new TextBlock {Text=$"앱을 닫으면 사라집니다. 설정 → 저장에서 디스크 보관을 켜면 최근 {HistoryStore.DiskLimit}개를 남깁니다.",FontSize=12,VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis};
         noticeText.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");noticeRow.Children.Add(noticeText);
 
@@ -90,12 +90,13 @@ internal sealed class GalleryWindow : Window
     }
     private Button Card(GalleryItem item,List<(string,Image,TextBlock)> pending)
     {
-        var image=new Image {Width=CardWidth,Height=CardHeight,Stretch=Stretch.Uniform,Source=item.Memory};
+        var image=new Image {Width=CardWidth,Height=CardHeight,Stretch=Stretch.UniformToFill,Source=item.Memory};
         RenderOptions.SetBitmapScalingMode(image,BitmapScalingMode.HighQuality);
         var size=new TextBlock {FontSize=11,TextTrimming=TextTrimming.CharacterEllipsis};size.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");
         size.Text=item.Memory is BitmapSource m?Caption(item,m.PixelWidth,m.PixelHeight):item.When.ToString("HH:mm");
         if(item.Memory is null)pending.Add((item.Path!,image,size));
-        var plate=new Border {Child=image,CornerRadius=new CornerRadius(6),BorderThickness=new Thickness(1),Padding=new Thickness(4)};plate.SetResourceReference(Border.BackgroundProperty,"CardBrush");plate.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
+        image.Clip=new RectangleGeometry(new Rect(0,0,CardWidth,CardHeight),6,6);
+        var plate=new Border {Child=image,CornerRadius=new CornerRadius(7),BorderThickness=new Thickness(1)};plate.SetResourceReference(Border.BorderBrushProperty,"DividerBrush");
         var stack=new StackPanel();stack.Children.Add(plate);size.Margin=new Thickness(3,5,0,0);stack.Children.Add(size);
         var card=new Button {Content=stack,Margin=new Thickness(0,0,8,8),Padding=new Thickness(4),HorizontalContentAlignment=HorizontalAlignment.Left,Style=(Style)Application.Current.FindResource("QuietButton"),ToolTip="클릭하여 편집 · 오른쪽 클릭으로 복사·저장·삭제"};
         ToolTipService.SetInitialShowDelay(card,1500);

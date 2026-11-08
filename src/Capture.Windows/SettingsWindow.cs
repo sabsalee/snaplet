@@ -124,9 +124,9 @@ internal sealed class SettingsWindow : Window
     {
         var p=Section("저장");
         folder.TextWrapping=TextWrapping.NoWrap;folder.Width=250;folder.MinWidth=0;folder.VerticalAlignment=VerticalAlignment.Center;
-        var browse=Ui.Button("선택…",()=>{var d=new OpenFolderDialog();if(d.ShowDialog(this)==true)folder.Text=d.FolderName;});browse.Margin=new Thickness(8,0,0,0);
-        var picker=new StackPanel{Orientation=Orientation.Horizontal};picker.Children.Add(folder);picker.Children.Add(browse);
-        fileName.Width=250;fileName.MinWidth=0;
+        var browse=Ui.Button("선택…",()=>{var d=new OpenFolderDialog();if(d.ShowDialog(this)==true)folder.Text=d.FolderName;});browse.Margin=new Thickness(8,0,0,0);browse.VerticalAlignment=VerticalAlignment.Center;
+        var picker=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};picker.Children.Add(folder);picker.Children.Add(browse);
+        fileName.Width=250;fileName.MinWidth=0;fileName.VerticalAlignment=VerticalAlignment.Center;
         Group(p,null,Row("저장 폴더","자동 저장한 PNG가 여기에 남습니다.",picker),Row("파일 이름 규칙","%Y %m %d 날짜, %H %M %S 시각, %f 밀리초, %r 임의 문자 4개",fileName));
         Group(p,"캡처 기록",Row("디스크에 보관",$"최근 {HistoryStore.DiskLimit}개 원본을 이 PC에 남겨 다시 시작해도 열 수 있습니다. 끄면 보관한 파일을 지웁니다.",keepHistory));
         p.Children.Add(Note("편집창의 다른 이름으로 저장에서는 위치와 형식을 따로 고를 수 있습니다."));return p;
