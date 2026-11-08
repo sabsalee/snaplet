@@ -172,6 +172,7 @@ public sealed class EditorWindow : Window
         // A ScrollViewer stretches its content: without these the backdrop fills the whole view and the image sits in its top-left corner.
         backdropFrame.HorizontalAlignment=HorizontalAlignment.Center;backdropFrame.VerticalAlignment=VerticalAlignment.Center;
         scroll=new ScrollViewer {Content=backdropFrame,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
+        AcceptDroppedImages();
         // Floating, icon-only property panel at the top right below the toolbar; it overlays the canvas instead of shifting it.
         var panel=new StackPanel();panel.Children.Add(propertyRow);panel.Children.Add(propertyDetails);
         inspector=new Border {CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Padding=new Thickness(6,4,6,4),MinHeight=44,Child=panel,
@@ -291,7 +292,7 @@ public sealed class EditorWindow : Window
             try {
                 var folder=Path.Combine(Path.GetTempPath(),"Snaplet");Directory.CreateDirectory(folder);
                 var path=Path.Combine(folder,ImageActions.DefaultName());ImageActions.Save(BackdropRenderer.Export(source,document),path);
-                DragDrop.DoDragDrop(button,new DataObject(DataFormats.FileDrop,new[]{path}),DragDropEffects.Copy);
+                draggingOut=true;try{DragDrop.DoDragDrop(button,new DataObject(DataFormats.FileDrop,new[]{path}),DragDropEffects.Copy);}finally{draggingOut=false;}
             } catch(Exception error) when(error is IOException or UnauthorizedAccessException or InvalidOperationException){ShowError("파일 드래그",error);}
         };
     }
@@ -369,7 +370,7 @@ public sealed class EditorWindow : Window
         if(backdropButton!=null){if(b.Enabled)backdropButton.SetResourceReference(BackgroundProperty,"SelectedToolBrush");else backdropButton.ClearValue(BackgroundProperty);}
         if(!b.Enabled){backdropFrame.Padding=new Thickness(0);backdropFrame.Background=null;backdropShadow.Visibility=Visibility.Collapsed;surface.Clip=null;return;}
         backdropFrame.Padding=new Thickness(b.PaddingPixels*z);
-        backdropFrame.Background=b.Fill==BackdropFill.Transparent?CheckerBrush():BackdropRenderer.Fill(b);
+        backdropFrame.Background=b.Fill==BackdropFill.Transparent?CheckerBrush():BackdropRenderer.Fill(b,BackdropRenderer.BlurSource(source,document.Crop));
         var radius=BackdropRenderer.Radius(b,document.Crop.Width,document.Crop.Height)*z;
         surface.Clip=radius>0?new RectangleGeometry(new Rect(0,0,surface.Width,surface.Height),radius,radius):null;
         backdropShadow.Visibility=b.Shadow>0?Visibility.Visible:Visibility.Collapsed;
@@ -424,6 +425,7 @@ public sealed class EditorWindow : Window
             Swatch(swatches,brush,preset.Name,current.Enabled && current.Fill==BackdropFill.Gradient && current.Preset==index,b=>b with {Fill=BackdropFill.Gradient,Preset=index});
         }
         Swatch(swatches,CheckerBrush(),"투명",current.Enabled && current.Fill==BackdropFill.Transparent,b=>b with {Fill=BackdropFill.Transparent});
+        Swatch(swatches,BackdropRenderer.Fill(new Backdrop(Fill:BackdropFill.Blurred),source),"흐린 이미지",current.Enabled && current.Fill==BackdropFill.Blurred,b=>b with {Fill=BackdropFill.Blurred});
         Swatch(swatches,new SolidColorBrush(Color.FromRgb(surface.Ink.R,surface.Ink.G,surface.Ink.B)),"현재 색 단색",current.Enabled && current.Fill==BackdropFill.Solid,b=>b with {Fill=BackdropFill.Solid,Color=surface.Ink with {A=255}});
         void SliderRow(string label,double min,double max,Func<Backdrop,double> read,Func<Backdrop,double,Backdrop> write,string format)
         {
@@ -447,7 +449,7 @@ public sealed class EditorWindow : Window
         Section("내 스타일 · 오른쪽 클릭으로 삭제");
         var saved=new WrapPanel();panel.Children.Add(saved);
         foreach(var style in BackdropStyles.Styles) {
-            var fill=style.Fill==BackdropFill.Transparent?CheckerBrush():BackdropRenderer.Fill(style);
+            var fill=style.Fill==BackdropFill.Transparent?CheckerBrush():BackdropRenderer.Fill(style,source);
             var button=Swatch(saved,fill,$"여백 {style.Padding:0} · 둥글기 {style.CornerRadius:0} · 그림자 {style.Shadow:0.00}",current.Enabled && current==style with {Enabled=true},_=>style);
             button.MouseRightButtonUp+=(_,_)=>{BackdropStyles.Remove(style);BuildBackdropPanel();};
         }
@@ -1105,18 +1107,44 @@ public sealed class EditorWindow : Window
             document.EndEdit();surface.Selected=first;surface.Focus();SyncInspector();status.Text=$"{rectangles.Length}개 글자 영역만 처리했습니다 · Ctrl+Z 취소";
         } catch {document.CancelEdit();throw;}
     }
+    /// <summary>The editor's own export is being dragged out; dropping it back onto itself is ignored.</summary>
+    private bool draggingOut;
+    /// <summary>Image files or pictures dropped on the canvas area become image objects where they land.</summary>
+    private void AcceptDroppedImages()
+    {
+        scroll.AllowDrop=true;scroll.Background=Brushes.Transparent;
+        string[] Files(IDataObject data)=>data.GetData(DataFormats.FileDrop) is string[] files?files.Where(ImageActions.IsImage).ToArray():[];
+        bool Accepts(IDataObject data)=>!draggingOut && (Files(data).Length>0 || data.GetDataPresent(DataFormats.Bitmap));
+        void Over(object sender,DragEventArgs e){e.Effects=Accepts(e.Data)?DragDropEffects.Copy:DragDropEffects.None;e.Handled=true;}
+        scroll.DragEnter+=Over;scroll.DragOver+=Over;
+        scroll.Drop+=(_,e)=>{
+            if(!Accepts(e.Data))return;e.Handled=true;
+            var at=surface.PointerPosition(e.GetPosition(surface));
+            try {
+                var files=Files(e.Data);
+                var images=files.Length>0?files.Select(ImageActions.Load).ToArray():e.Data.GetData(DataFormats.Bitmap) is BitmapSource picture?[picture]:[];
+                for(int i=0;i<images.Length;i++)DropImage(images[i],new(at.X+i*24,at.Y+i*24));
+            } catch(Exception error) when(error is IOException or NotSupportedException or FileFormatException or ArgumentException or InvalidOperationException or UnauthorizedAccessException){ShowError("이미지 추가",error);}
+        };
+    }
+    /// <summary>Test hook and drop target: adds an image centred on a point of the image.</summary>
+    internal void DropImage(BitmapSource image,PointD at)
+    {
+        if(!FinishTextEdit(true))return;surface.CancelGesture();if(!image.IsFrozen && image.CanFreeze)image.Freeze();
+        surface.InsertImage(image,at);status.Text="이미지를 놓은 자리에 추가했습니다 · 가장자리·가운데에 맞춤 · Ctrl+Z 취소";
+    }
     public void AddCapturedImage(BitmapSource image)
     {
         if(!FinishTextEdit(true))return;surface.CancelGesture();surface.InsertImage(image);status.Text="이미지를 추가했습니다 · 큰 이미지는 캡처 크기에 맞춰 줄입니다 · 핸들로 크기 조절 · Ctrl+Z 취소";
     }
     private void PasteImage()
     {
-        try {if(Clipboard.GetImage() is BitmapSource image)AddCapturedImage(image);else if(Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList().Cast<string>().FirstOrDefault(path=>new[]{".png",".jpg",".jpeg",".bmp",".tif",".tiff",".gif"}.Contains(Path.GetExtension(path).ToLowerInvariant())) is string path)AddCapturedImage(ImageActions.Load(path));else status.Text="클립보드에 이미지가 없습니다.";}
+        try {if(Clipboard.GetImage() is BitmapSource image)AddCapturedImage(image);else if(Clipboard.ContainsFileDropList() && Clipboard.GetFileDropList().Cast<string>().FirstOrDefault(ImageActions.IsImage) is string path)AddCapturedImage(ImageActions.Load(path));else status.Text="클립보드에 이미지가 없습니다.";}
         catch(Exception error){ShowError("이미지 붙여넣기",error);}
     }
     private void InsertImageFile()
     {
-        var dialog=new OpenFileDialog {Filter="이미지|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif"};
+        var dialog=new OpenFileDialog {Filter="이미지|"+ImageActions.ImagePattern};
         if(dialog.ShowDialog(this)!=true)return;
         try {AddCapturedImage(ImageActions.Load(dialog.FileName));}catch(Exception error){ShowError("이미지 추가",error);}
     }
