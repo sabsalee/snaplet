@@ -26,7 +26,7 @@ internal static class EditorTheme
         ["CheckBorderBrush"]="#A0A0AA",["HighlightBrush"]="#E5EDFB",["SelectedBrush"]="#D9E5FA",["TrackBrush"]="#C9C9D0",
         ["ThumbBrush"]="#FFFFFF",["ThumbBorderBrush"]="#A8A8B0",["ScrollThumbBrush"]="#BDBDC4",
         ["ToolbarBrush"]="#F6F6F7",["FloatingBrush"]="#FFFFFF",["FloatingBorderBrush"]="#DDDDE2",["SelectedToolBrush"]="#E2E2E7",
-        ["WorkspaceBrush"]="#E7E7EA",["HandleBorderBrush"]="#8E8E93",
+        ["WorkspaceBrush"]="#E7E7EA",["HandleBorderBrush"]="#8E8E93",["SuccessBrush"]="#1E7F52",["WarningBrush"]="#9A5B00",
     });
     private static ResourceDictionary Build(Dictionary<string,string> colors)
     {
@@ -40,6 +40,11 @@ internal static class EditorTheme
         element.Resources.MergedDictionaries.Remove(Light);
         if(!dark)element.Resources.MergedDictionaries.Add(Light);
         return element;
+    }
+    /// <summary>Gives a window the Windows app theme: its palette and its title bar.</summary>
+    internal static void FollowSystem(Window window)
+    {
+        var dark=SystemUsesDark();Themed(window,dark);UI.WindowAppearance.SetDarkChrome(window,dark);UI.WindowAppearance.Apply(window,dark);
     }
     internal static Color Ink(FrameworkElement scope)=>scope.TryFindResource("TextBrush") is SolidColorBrush brush?brush.Color:Colors.White;
 }
