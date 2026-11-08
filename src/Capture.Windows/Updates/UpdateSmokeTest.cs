@@ -32,6 +32,11 @@ internal static class UpdateSmokeTest
             var first=service.CheckAsync();await service.CheckAsync();Check(blocked.Checks==1 && service.Snapshot.Stage==UpdateStage.Checking,"concurrent automatic and manual checks share one operation");
             blocked.CheckGate.SetResult("0.7.1");await first;
         }
+        var silent=new FakeBackend {CheckGate=new(TaskCreationOptions.RunContinuationsAsynchronously)};
+        using(var service=new UpdateService(silent){CheckTimeout=TimeSpan.FromMilliseconds(200)}) {
+            await service.CheckAsync();Check(service.Snapshot.Stage==UpdateStage.Failed && service.Snapshot.Message?.Contains("응답",StringComparison.Ordinal)==true,"a check with no answer stops waiting and says the server did not respond");
+            silent.CheckGate=null;await service.CheckAsync();Check(silent.Checks==2 && service.Snapshot.Stage!=UpdateStage.Failed,"a timed-out check can be retried");
+        }
         var failed=new FakeBackend {FailDownload=true};using(var service=new UpdateService(failed)) {
             await service.CheckAsync(true);Check(service.Snapshot.Stage==UpdateStage.Failed && failed.Applies==0,"failed download leaves the current app running");
             failed.FailDownload=false;await service.CheckAsync(true);Check(service.Snapshot.Stage==UpdateStage.Ready,"a failed download can be retried without restarting the current app");

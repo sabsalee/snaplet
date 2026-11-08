@@ -55,6 +55,8 @@ internal sealed class UpdateService : IDisposable
     private UpdateSnapshot snapshot;
     private int busy;
     internal event Action? Changed;
+    /// <summary>A check that hears nothing back gives up, so the page never stays on "checking" and can be retried.</summary>
+    internal TimeSpan CheckTimeout {get;init;}=TimeSpan.FromSeconds(45);
     internal UpdateSnapshot Snapshot {get {lock(sync)return snapshot;}}
     internal UpdateService(IUpdateBackend backend)
     {
@@ -68,7 +70,7 @@ internal sealed class UpdateService : IDisposable
         try {
             if(backend.PendingVersion is string ready){Publish(new(UpdateStage.Ready,backend.CurrentVersion,ready,100));return;}
             Publish(new(UpdateStage.Checking,backend.CurrentVersion));
-            var version=await backend.CheckAsync();
+            var version=await backend.CheckAsync().WaitAsync(CheckTimeout,lifetime.Token);
             if(lifetime.IsCancellationRequested)return;
             Publish(new(version is null?UpdateStage.UpToDate:UpdateStage.Available,backend.CurrentVersion,version));
             if(version!=null && downloadAutomatically)await DownloadLockedAsync(version);
@@ -111,6 +113,7 @@ internal sealed class UpdateService : IDisposable
     {
         var message=error is Velopack.Exceptions.ChecksumFailedException
             ?"다운로드한 파일 검증에 실패했습니다. 업데이트를 다시 확인하세요."
+            :error is TimeoutException?"업데이트 서버가 응답하지 않습니다. 잠시 후 다시 확인하세요."
             :"업데이트를 완료하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도하세요.";
         Publish(new(UpdateStage.Failed,backend.CurrentVersion,Message:message));
     }
