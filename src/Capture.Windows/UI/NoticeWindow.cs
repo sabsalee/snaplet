@@ -7,6 +7,7 @@ internal sealed class NoticeWindow : Window
 {
     internal NoticeWindow(string title,string message,string? subtitle=null)
     {
+        Editor.EditorTheme.FollowSystem(this);
         Title="Snaplet";Width=480;MinWidth=380;MaxHeight=620;SizeToContent=SizeToContent.Height;ResizeMode=ResizeMode.NoResize;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         var root=new StackPanel();Content=new Border{Background=Ui.Page,Padding=new Thickness(24),Child=root};
         root.Children.Add(Ui.Header(title,subtitle ?? "입력과 화면 상태를 확인한 뒤 다시 시도해 주세요."));

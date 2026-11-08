@@ -27,6 +27,7 @@ internal sealed class SettingsWindow : Window
     private readonly Dictionary<string,UIElement> pages=[];
     internal SettingsWindow(AppSettings settings,Action<AppSettings> applySettings,UpdateService? updateService=null,Action? restartUpdate=null)
     {
+        Editor.EditorTheme.FollowSystem(this);
         updates=updateService ?? new UpdateService(new UninstalledBackend());this.restartUpdate=restartUpdate;
         original=settings;apply=applySettings;keys=settings.Hotkeys.ToList();
         Title="Snaplet 설정";Width=800;Height=660;MinWidth=720;MinHeight=540;WindowStartupLocation=WindowStartupLocation.CenterScreen;
@@ -51,7 +52,7 @@ internal sealed class SettingsWindow : Window
         var sidebar=new StackPanel{Margin=new Thickness(16,24,12,0)};columns.Children.Add(sidebar);
         var brand=Ui.Label("설정",21,weight:FontWeights.SemiBold);brand.Margin=new Thickness(10,0,0,24);sidebar.Children.Add(brand);
         void Nav(string id,string name,string glyph){var b=Ui.Button(name,()=>SelectPage(id),glyph,"QuietButton");b.HorizontalContentAlignment=HorizontalAlignment.Left;b.Margin=new Thickness(0,0,0,5);AutomationProperties.SetAutomationId(b,"settings-"+id);sidebar.Children.Add(b);navigation[id]=b;}
-        Nav("capture","캡처","region");Nav("shortcuts","단축키","clipboard");Nav("storage","저장","folder");Nav("updates","업데이트","spark");Nav("about","정보","spark");
+        Nav("capture","캡처","region");Nav("shortcuts","단축키","keyboard");Nav("storage","저장","folder");Nav("updates","업데이트","sync");Nav("about","정보","info");
         var scroll=new ScrollViewer{Content=page,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Padding=new Thickness(22,24,24,8)};Grid.SetColumn(scroll,1);columns.Children.Add(scroll);
         pages["capture"]=CapturePage();pages["shortcuts"]=ShortcutsPage();pages["storage"]=StoragePage();pages["updates"]=UpdatesPage();pages["about"]=AboutPage();
         SelectPage("capture");
@@ -68,7 +69,6 @@ internal sealed class SettingsWindow : Window
     {
         var p=Section("캡처 후 동작","필요한 작업만 켜 두세요. 각각 독립적으로 동작합니다.");
         var fontNote=Capture.Windows.Editor.TextFonts.IsInstalled(Capture.Windows.Editor.TextFonts.Preferred)?"글자 도구의 기본 글꼴입니다.":"글자 도구의 기본 글꼴입니다. Noto Sans KR이 설치되어 있지 않으면 맑은 고딕으로 표시합니다.";
-        p.Children.Add(Row("기본 글꼴",fontNote,textFont));
         p.Children.Add(Row("캡처 후 표시","작은 팝업은 마우스 포인터 옆에 편집·복사·저장·고정 버튼을 띄우고, 포커스를 가져가지 않아 바로 다른 앱에 붙여넣을 수 있습니다.",afterCapture));
         p.Children.Add(Row("클립보드에 자동 복사","캡처가 끝나면 다른 앱에 바로 붙여넣을 수 있습니다.",copy));
         p.Children.Add(Row("파일로 자동 저장","캡처 원본을 저장 페이지에서 정한 폴더에 남깁니다.",save));
@@ -76,13 +76,14 @@ internal sealed class SettingsWindow : Window
         void Update()=>outside.IsEnabled=afterCapture.SelectedIndex==(int)AfterCaptureAction.Popup;afterCapture.SelectionChanged+=(_,_)=>Update();Update();
         p.Children.Add(Ui.Label("고정한 이미지는 새 캡처 후에도 화면에 남습니다.",11,Ui.Muted));
         p.Children.Add(Row("마우스 포인터 포함","캡처를 시작한 순간의 포인터를 이미지에 넣습니다. 숨겨진 포인터는 넣지 않습니다.",cursor));
-        p.Children.Add(Row("창 캡처 모양","창 캡처에 Windows 11 스타일 그림자나 배경을 더합니다. 편집창의 배경 꾸미기로 이후에도 바꿀 수 있습니다.",windowStyle));
+        p.Children.Add(Row("창 캡처 모양","창 캡처에 Windows 11 스타일 그림자나 배경을 더합니다. 편집창에서 열면 배경 꾸미기로 바꾸거나 끌 수 있습니다.",windowStyle));
         var selection=Ui.Header("영역 선택","정밀하게 고를 때 쓰는 도구입니다.");selection.Margin=new Thickness(0,22,0,0);p.Children.Add(selection);
         p.Children.Add(Row("픽셀 확대경","선택 화면에서 포인터 주변 픽셀·좌표·색을 크게 보여 줍니다. Tab은 색상 코드를 복사합니다.",loupe));
         p.Children.Add(Row("올인원 캡처 막대","선택 화면 위쪽에서 영역·창·화면·스크롤·텍스트 캡처를 바로 고르고, 영역의 비율을 고정합니다.",modeBar));
         p.Children.Add(Row("실시간 선택","화면을 멈추지 않고 영역을 고른 뒤, 고른 순간의 화면을 캡처합니다. 움직이는 영상에 알맞습니다. 확대경과 색 복사는 화면을 고정했을 때만 쓸 수 있습니다. 선택 화면에서 F로 바로 전환합니다.",liveSelection));
         p.Children.Add(Row("놓은 뒤 조정하고 Enter로 캡처","끄면 마우스를 놓는 즉시 캡처합니다. 켜면 조절점·방향키·A(내용에 맞춤)로 다듬을 수 있습니다. 끈 상태에서도 Ctrl을 누른 채 놓으면 조정 단계로 들어갑니다.",adjust));
         var other=Ui.Header("편집과 텍스트","");other.Margin=new Thickness(0,22,0,0);p.Children.Add(other);
+        p.Children.Add(Row("기본 글꼴",fontNote,textFont));
         p.Children.Add(Row("Esc로 편집창을 닫을 때","닫으면서 결과를 복사하거나 저장 폴더에 저장할 수 있습니다.",escape));
         p.Children.Add(Row("텍스트 인식 줄바꿈 합치기","바로 인식·텍스트 추출 결과를 한 줄로 이어 붙여 복사합니다.",joinLines));
         return p;
@@ -165,7 +166,7 @@ internal sealed class SettingsWindow : Window
     }
     internal void SelectPage(string id)
     {
-        page.Content=pages[id];foreach(var entry in navigation)entry.Value.Background=entry.Key==id?Ui.Raised:System.Windows.Media.Brushes.Transparent;
+        page.Content=pages[id];foreach(var entry in navigation)entry.Value.Background=entry.Key==id?Ui.Brush("SelectedToolBrush"):System.Windows.Media.Brushes.Transparent;
     }
     private void Save()
     {

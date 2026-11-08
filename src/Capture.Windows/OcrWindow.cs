@@ -11,6 +11,7 @@ internal sealed class OcrWindow : Window
     private readonly TextBlock feedback=Ui.Label("",11,Ui.Muted);
     internal OcrWindow(string text,string? notice=null)
     {
+        Editor.EditorTheme.FollowSystem(this);
         Title="Snaplet · 텍스트 추출";Width=660;Height=510;MinWidth=480;MinHeight=350;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         var root=new DockPanel();Content=new Border{Background=Ui.Page,Padding=new Thickness(24),Child=root};
         var header=Ui.Header("텍스트 추출","이미지에서 읽은 내용을 확인하고 필요한 부분을 수정하세요.");DockPanel.SetDock(header,Dock.Top);root.Children.Add(header);

@@ -39,6 +39,7 @@ internal sealed class ManualScrollWindow : Window
     private bool auto;
     public event Action<BitmapSource>? Finished;
     public ManualScrollWindow(BitmapSource first,Func<CancellationToken,Task<BitmapSource>> captureFrame,Func<int,bool,bool>? wheelNotches=null) {
+        Editor.EditorTheme.FollowSystem(this);
         capture=captureFrame;wheel=wheelNotches;
         firstPixels=Bytes(first);frameWidth=first.PixelWidth;frameHeight=first.PixelHeight;
         canScrollDown=frameHeight>=MinimumSide;canScrollRight=frameWidth>=MinimumSide;

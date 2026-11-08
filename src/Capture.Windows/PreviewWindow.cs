@@ -15,7 +15,7 @@ internal sealed class PreviewWindow : Window
     private BitmapSource image;
     private readonly AppSettings settings;
     private readonly Image thumbnail;
-    private readonly TextBlock message=Ui.Label("",11,Ui.Muted);
+    private readonly TextBlock message=Ui.Label("",11,Ui.Dark.Muted);
     private readonly DispatcherTimer outside=new(){Interval=TimeSpan.FromMilliseconds(100)};
     private readonly DateTime shown=DateTime.UtcNow;
     private readonly bool interactive;
@@ -87,7 +87,7 @@ internal sealed class PreviewWindow : Window
     private FrameworkElement FileHandle()
     {
         var icon=new StackPanel {Orientation=Orientation.Horizontal};icon.Children.Add(Ui.Grip());icon.Children.Add(Ui.Icon("file",16));icon.Children.Add(Ui.Grip());
-        var handle=new Button {Content=icon,ToolTip="끌어서 파일로 놓기",Height=30,Padding=new Thickness(2),Cursor=Cursors.SizeAll,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Foreground=Ui.Text,Style=(Style)Application.Current.FindResource("EditorIconButton")};
+        var handle=new Button {Content=icon,ToolTip="끌어서 파일로 놓기",Height=30,Padding=new Thickness(2),Cursor=Cursors.SizeAll,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Foreground=Ui.Dark.Text,Style=(Style)Application.Current.FindResource("EditorIconButton")};
         System.Windows.Automation.AutomationProperties.SetName(handle,"끌어서 파일로 놓기");
         Point? start=null;
         handle.PreviewMouseLeftButtonDown+=(_,e)=>start=e.GetPosition(handle);
@@ -119,12 +119,12 @@ internal sealed class PreviewWindow : Window
     {
         if(imageContainer!=null)imageContainer.Child=null;
         if(message.Parent is Panel old)old.Children.Remove(message);
-        Content=null;thumbnail.Height=thumbnail.Width=double.NaN;thumbnail.Effect=null;popupChrome=null;popupCard=null;popupLetterboxed=false;message.ClearValue(TextBlock.ForegroundProperty);message.Foreground=Ui.Muted;thumbnail.ContextMenu=Pinned?null:PopupMenu();thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
+        Content=null;thumbnail.Height=thumbnail.Width=double.NaN;thumbnail.Effect=null;popupChrome=null;popupCard=null;popupLetterboxed=false;message.ClearValue(TextBlock.ForegroundProperty);message.Foreground=Ui.Dark.Muted;thumbnail.ContextMenu=Pinned?null:PopupMenu();thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
         var header=new DockPanel{LastChildFill=true};
         var close=Ui.IconButton("close","미리보기 닫기",Close,26);DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);
-        var title=Ui.Label(Pinned?"고정 이미지":"캡처",12,Ui.Muted,FontWeights.SemiBold);title.VerticalAlignment=VerticalAlignment.Center;header.Children.Add(title);
+        var title=Ui.Label(Pinned?"고정 이미지":"캡처",12,Ui.Dark.Muted,FontWeights.SemiBold);title.VerticalAlignment=VerticalAlignment.Center;header.Children.Add(title);
         var tools=new DockPanel{LastChildFill=false};
-        var pin=Ui.IconButton("pin",Pinned?"고정 해제":"이미지 고정",()=>{Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;}ApplyLayering();Build();},32);pin.Foreground=Pinned?Ui.Accent:Ui.Text;DockPanel.SetDock(pin,Dock.Right);tools.Children.Add(pin);
+        var pin=Ui.IconButton("pin",Pinned?"고정 해제":"이미지 고정",()=>{Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;}ApplyLayering();Build();},32);pin.Foreground=Pinned?Ui.Dark.Accent:Ui.Dark.Text;DockPanel.SetDock(pin,Dock.Right);tools.Children.Add(pin);
         Panel left=Pinned?new WrapPanel():new StackPanel{Orientation=Orientation.Horizontal};tools.Children.Add(left);
         left.Children.Add(Ui.IconButton("edit","편집",RequestEdit,34));
         var copy=Ui.IconButton("copy","이미지 복사",()=>{},34);copy.Click+=async (_,_)=>await RunAsync(async()=>message.Text=await ImageActions.CopyAsync(image)?"클립보드에 복사했습니다.":"새 복사 요청이 있어 취소했습니다.");left.Children.Add(copy);
@@ -141,7 +141,7 @@ internal sealed class PreviewWindow : Window
         imageContainer=new Border{Background=new SolidColorBrush(Color.FromRgb(17,19,23)),CornerRadius=new CornerRadius(6),Child=thumbnail};
         message.Text=Pinned?"":"클릭하여 편집 · 드래그하여 전달";message.TextTrimming=TextTrimming.CharacterEllipsis;message.TextWrapping=TextWrapping.NoWrap;
         if(Pinned) {
-            SizeToContent=SizeToContent.Manual;imageContainer.Background=Brushes.Transparent;imageContainer.CornerRadius=new CornerRadius(0);imageContainer.BorderBrush=Ui.Line;imageContainer.BorderThickness=new Thickness(1);FitPin();
+            SizeToContent=SizeToContent.Manual;imageContainer.Background=Brushes.Transparent;imageContainer.CornerRadius=new CornerRadius(0);imageContainer.BorderBrush=Ui.Dark.Line;imageContainer.BorderThickness=new Thickness(1);FitPin();
             var root=new Grid{Background=Brushes.Transparent};root.Children.Add(imageContainer);
             var top=new Border{Background=new SolidColorBrush(Color.FromArgb(235,25,28,33)),Child=header,Padding=new Thickness(8,4,6,4),VerticalAlignment=VerticalAlignment.Top};root.Children.Add(top);
             var bottom=new Border{Background=new SolidColorBrush(Color.FromArgb(235,25,28,33)),Child=tools,Padding=new Thickness(8,4,8,4),VerticalAlignment=VerticalAlignment.Bottom};root.Children.Add(bottom);
@@ -188,7 +188,7 @@ internal sealed class PreviewWindow : Window
             SizeToContent=SizeToContent.Height;Width=334;Height=double.NaN;pinHeader=pinTools=null;
             var root=new StackPanel();header.Margin=new Thickness(0,0,0,8);root.Children.Add(header);
             thumbnail.Height=Math.Clamp(310d*image.PixelHeight/image.PixelWidth,92,210);root.Children.Add(imageContainer);
-            var dimensions=Ui.Label($"{image.PixelWidth:N0} × {image.PixelHeight:N0} px",10,Ui.Muted);dimensions.Margin=new Thickness(1,8,0,3);root.Children.Add(dimensions);root.Children.Add(tools);
+            var dimensions=Ui.Label($"{image.PixelWidth:N0} × {image.PixelHeight:N0} px",10,Ui.Dark.Muted);dimensions.Margin=new Thickness(1,8,0,3);root.Children.Add(dimensions);root.Children.Add(tools);
             message.Margin=new Thickness(1,5,0,0);root.Children.Add(message);Content=Ui.CardOf(root,11);
             header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};
         }
@@ -223,7 +223,7 @@ internal sealed class PreviewWindow : Window
     private bool popupLetterboxed;
     private Border? popupCard;
     private void SetPinChrome(bool show){
-        if(popupCard!=null && popupChrome!=null && popupLetterboxed){popupCard.Background=show?Ui.Card:PopupClearHitBrush;popupCard.BorderBrush=show?Ui.Line:Brushes.Transparent;}
+        if(popupCard!=null && popupChrome!=null && popupLetterboxed){popupCard.Background=show?Ui.Dark.Card:PopupClearHitBrush;popupCard.BorderBrush=show?Ui.Dark.Line:Brushes.Transparent;}
         if(popupChrome!=null){popupChrome.Opacity=show?1:0;popupChrome.IsHitTestVisible=show;thumbnail.Effect=show?new System.Windows.Media.Effects.BlurEffect{Radius=4}:null;}
         if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;
     }

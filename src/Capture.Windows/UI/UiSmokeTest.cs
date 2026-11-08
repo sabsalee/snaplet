@@ -50,6 +50,20 @@ internal static class UiSmokeTest
             Find<Button>(preferences).Single(b=>AutomationProperties.GetAutomationId(b)=="settings-save").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(saved is {AfterCapture:AfterCaptureAction.None} && saved.Hotkeys.SequenceEqual(settings.Hotkeys),"settings applies changed capture preference and preserves key bindings");
         }finally{if(preferences.IsVisible)preferences.Close();}
+        // Secondary windows follow the Windows app theme like the editor; the capture popup stays dark over images.
+        try {
+            foreach(var dark in new[]{false,true}) {
+                Editor.EditorTheme.Override=dark;
+                var expected=((System.Windows.Media.SolidColorBrush)(dark?Application.Current.FindResource("PageBrush"):Editor.EditorTheme.Light["PageBrush"])).Color;
+                var themed=new SettingsWindow(settings,_=>{});
+                try {
+                    Shot(themed,dark?"settings-dark":"settings-light");
+                    Check(((System.Windows.Media.SolidColorBrush)themed.FindResource("PageBrush")).Color==expected && ((System.Windows.Media.SolidColorBrush)Ui.Page).Color==expected,(dark?"dark":"light")+" Windows theme reaches the settings window and its built-in colours");
+                }finally{themed.Close();}
+            }
+            Editor.EditorTheme.Override=false;
+            Check(((System.Windows.Media.SolidColorBrush)Ui.Dark.Card).Color==((System.Windows.Media.SolidColorBrush)Application.Current.FindResource("CardBrush")).Color,"the capture popup keeps its dark palette in the light theme");
+        }finally{Editor.EditorTheme.Override=null;}
         var preview=new PreviewWindow(image,settings,enableDesktopIntegration:false);
         try {
             Shot(preview,"preview");Click(preview,"이미지 고정");Check(preview.Pinned,"preview pin command switches to pinned presentation");

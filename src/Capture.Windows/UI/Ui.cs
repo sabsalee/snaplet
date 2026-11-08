@@ -36,9 +36,17 @@ public static class EditorChrome
 
 internal static class Ui
 {
-    internal static Brush Brush(string key)=>(Brush)Application.Current.FindResource(key);
+    /// <summary>A palette colour for the Windows app theme, matching windows themed with <see cref="Editor.EditorTheme.FollowSystem"/>.</summary>
+    internal static Brush Brush(string key)=>!Editor.EditorTheme.SystemUsesDark() && Editor.EditorTheme.Light.Contains(key)?(Brush)Editor.EditorTheme.Light[key]:Dark.Brush(key);
     internal static Brush Page=>Brush("PageBrush");internal static Brush Card=>Brush("CardBrush");internal static Brush Raised=>Brush("RaisedBrush");
     internal static Brush Text=>Brush("TextBrush");internal static Brush Muted=>Brush("MutedBrush");internal static Brush Accent=>Brush("AccentBrush");internal static Brush Line=>Brush("BorderBrush");
+    /// <summary>The dark palette whatever the Windows theme, for surfaces that float over images such as the capture popup.</summary>
+    internal static class Dark
+    {
+        internal static Brush Brush(string key)=>(Brush)Application.Current.FindResource(key);
+        internal static Brush Card=>Brush("CardBrush");internal static Brush Text=>Brush("TextBrush");internal static Brush Muted=>Brush("MutedBrush");
+        internal static Brush Accent=>Brush("AccentBrush");internal static Brush Line=>Brush("BorderBrush");
+    }
     internal static TextBlock Label(string text,double size=13,Brush? ink=null,FontWeight? weight=null)=>new(){Text=text,FontSize=size,Foreground=ink??Text,FontWeight=weight??FontWeights.Normal,TextWrapping=TextWrapping.Wrap};
     /// <summary>The physical key. With the Korean IME in Hangul mode WPF reports letter keys as ImeProcessed, which would break letter shortcuts.</summary>
     internal static System.Windows.Input.Key Pressed(System.Windows.Input.KeyEventArgs e)=>e.Key==System.Windows.Input.Key.ImeProcessed?e.ImeProcessedKey:e.Key;

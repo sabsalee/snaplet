@@ -20,6 +20,9 @@
  <SolidColorBrush x:Key="ThumbBrush" Color="#E8EFFC"/>
  <SolidColorBrush x:Key="ThumbBorderBrush" Color="#91A8CF"/>
  <SolidColorBrush x:Key="ScrollThumbBrush" Color="#586474"/>
+ <SolidColorBrush x:Key="SwitchOffBrush" Color="#434D5D"/>
+ <SolidColorBrush x:Key="SwitchOffBorderBrush" Color="#6C788B"/>
+ <SolidColorBrush x:Key="SwitchOffDotBrush" Color="#FFFFFF"/>
  <!-- Editor chrome. EditorTheme.Light overrides these keys when Windows apps use the light theme. -->
  <SolidColorBrush x:Key="ToolbarBrush" Color="#22262D"/>
  <SolidColorBrush x:Key="FloatingBrush" Color="#2B3039"/>
@@ -90,12 +93,12 @@
  </Style>
  <Style x:Key="Switch" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
-   <Border x:Name="Track" Width="36" Height="21" CornerRadius="10.5" Background="#434D5D" BorderBrush="#6C788B" BorderThickness="1">
-    <Ellipse x:Name="Dot" Fill="White" Width="13" Height="13" HorizontalAlignment="Left" Margin="3,0,0,0"/>
+   <Border x:Name="Track" Width="36" Height="21" CornerRadius="10.5" Background="{DynamicResource SwitchOffBrush}" BorderBrush="{DynamicResource SwitchOffBorderBrush}" BorderThickness="1">
+    <Ellipse x:Name="Dot" Fill="{DynamicResource SwitchOffDotBrush}" Width="13" Height="13" HorizontalAlignment="Left" Margin="3,0,0,0"/>
    </Border>
    <ControlTemplate.Triggers>
-    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentFillBrush}"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Dot" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="Dot" Property="Margin" Value="0,0,3,0"/></Trigger>
-    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="White"/></Trigger>
+    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentFillBrush}"/><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Dot" Property="Fill" Value="White"/><Setter TargetName="Dot" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="Dot" Property="Margin" Value="0,0,3,0"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource TextBrush}"/></Trigger>
     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
@@ -126,7 +129,7 @@
     <Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Background="{DynamicResource AccentBrush}" Style="{StaticResource SliderPage}"/></Track.DecreaseRepeatButton>
     <Track.Thumb><Thumb Width="14" Height="14"><Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse Fill="{DynamicResource ThumbBrush}" Stroke="{DynamicResource ThumbBorderBrush}" StrokeThickness="1"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
     <Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Background="{DynamicResource TrackBrush}" Style="{StaticResource SliderPage}"/></Track.IncreaseRepeatButton>
-   </Track></Grid><ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="Background" Value="#334765"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
+   </Track></Grid><ControlTemplate.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="Background" Value="{DynamicResource HighlightBrush}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
  </Style>
  <Style x:Key="ScrollPageBase" TargetType="RepeatButton"><Setter Property="Focusable" Value="False"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></Setter.Value></Setter></Style>
