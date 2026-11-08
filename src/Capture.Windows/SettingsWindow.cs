@@ -166,7 +166,7 @@ internal sealed class SettingsWindow : Window
     }
     internal void SelectPage(string id)
     {
-        page.Content=pages[id];foreach(var entry in navigation)entry.Value.Background=entry.Key==id?Ui.Raised:System.Windows.Media.Brushes.Transparent;
+        page.Content=pages[id];foreach(var entry in navigation)entry.Value.Background=entry.Key==id?Ui.Brush("SelectedToolBrush"):System.Windows.Media.Brushes.Transparent;
     }
     private void Save()
     {
