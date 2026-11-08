@@ -20,6 +20,7 @@
  <SolidColorBrush x:Key="ThumbBrush" Color="#E8EFFC"/>
  <SolidColorBrush x:Key="ThumbBorderBrush" Color="#91A8CF"/>
  <SolidColorBrush x:Key="ScrollThumbBrush" Color="#586474"/>
+ <SolidColorBrush x:Key="DividerBrush" Color="#2F353F"/>
  <SolidColorBrush x:Key="SwitchOffBrush" Color="#434D5D"/>
  <SolidColorBrush x:Key="SwitchOffBorderBrush" Color="#6C788B"/>
  <SolidColorBrush x:Key="SwitchOffDotBrush" Color="#FFFFFF"/>
@@ -31,7 +32,7 @@
  <SolidColorBrush x:Key="WorkspaceBrush" Color="#2E3136"/>
  <SolidColorBrush x:Key="HandleBorderBrush" Color="#8E8E93"/>
  <Style TargetType="Window">
-  <Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="13"/>
+  <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI, Malgun Gothic"/><Setter Property="FontSize" Value="13"/>
   <Setter Property="Background" Value="{DynamicResource PageBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
   <Setter Property="UseLayoutRounding" Value="True"/><Setter Property="SnapsToDevicePixels" Value="True"/>
   <Setter Property="TextOptions.TextFormattingMode" Value="Display"/><Setter Property="ui:WindowAppearance.DarkChrome" Value="True"/>
@@ -40,7 +41,7 @@
  <Style TargetType="Button" x:Key="BaseButton">
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="{DynamicResource RaisedBrush}"/>
   <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/>
-  <Setter Property="Padding" Value="14,9"/><Setter Property="MinHeight" Value="36"/><Setter Property="Cursor" Value="Hand"/>
+  <Setter Property="Padding" Value="12,5"/><Setter Property="MinHeight" Value="32"/><Setter Property="Cursor" Value="Hand"/>
   <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/>
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
    <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
@@ -55,7 +56,20 @@
   </ControlTemplate></Setter.Value></Setter>
  </Style>
  <Style TargetType="Button" BasedOn="{StaticResource BaseButton}"/>
- <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}"><Setter Property="Background" Value="{DynamicResource AccentFillBrush}"/><Setter Property="BorderBrush" Value="#6490ED"/></Style>
+ <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
+  <Setter Property="Background" Value="{DynamicResource AccentFillBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource AccentFillBrush}"/><Setter Property="Foreground" Value="White"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+   <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True"/>
+   </Border>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Opacity" Value="0.9"/></Trigger>
+    <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Opacity" Value="0.8"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource TextBrush}"/></Trigger>
+    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.4"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
  <Style x:Key="QuietButton" TargetType="Button" BasedOn="{StaticResource BaseButton}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/></Style>
  <Style x:Key="EditorIconButton" TargetType="Button" BasedOn="{StaticResource QuietButton}"><Setter Property="Padding" Value="8"/><Setter Property="MinHeight" Value="34"/></Style>
  <Style x:Key="SwatchButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
@@ -86,7 +100,7 @@
    </StackPanel>
    <ControlTemplate.Triggers>
     <Trigger Property="IsChecked" Value="True"><Setter TargetName="Tick" Property="Visibility" Value="Visible"/><Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentFillBrush}"/><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
-    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="White"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
     <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>

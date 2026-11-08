@@ -29,7 +29,7 @@ internal sealed class HomeWindow : Window
         command=capture;edit=editImage;openPath=openFile;this.clipboard=clipboard;this.open=open;
         Title="Snaplet";Width=1180;Height=800;MinWidth=660;MinHeight=450;WindowStartupLocation=WindowStartupLocation.CenterScreen;AllowDrop=true;
         var dark=EditorTheme.SystemUsesDark();EditorTheme.Themed(this,dark);WindowAppearance.SetDarkChrome(this,dark);WindowAppearance.Apply(this,dark);
-        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=new FontFamily("Segoe UI");
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=Ui.Font;
         var root=new DockPanel();Content=root;
 
         // Same toolbar band as the editor; capture and image sources sit where the editor keeps its tools.
@@ -46,9 +46,10 @@ internal sealed class HomeWindow : Window
         recentButton=Ui.IconButton("history","캡처 기록",()=>{},36);recentButton.Margin=new Thickness(2);recentButton.Click+=(_,_)=>ShowRecentMenu(demo);right.Children.Add(recentButton);
         Tool(right,"settings","설정 열기",preferences);
 
-        var footer=new DockPanel {Margin=new Thickness(14,6,14,7)};DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
-        var version=Muted("v"+typeof(HomeWindow).Assembly.GetName().Version?.ToString(3),11);DockPanel.SetDock(version,Dock.Right);footer.Children.Add(version);
-        status.FontSize=11;status.Margin=new Thickness(0);status.TextTrimming=TextTrimming.CharacterEllipsis;status.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");
+        // The status line sits on the workspace colour, so it reads as part of the window rather than a separate strip.
+        var footer=new DockPanel();footer.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
+        var version=Muted("v"+typeof(HomeWindow).Assembly.GetName().Version?.ToString(3),11);version.Margin=new Thickness(0,6,14,8);DockPanel.SetDock(version,Dock.Right);footer.Children.Add(version);
+        status.FontSize=11;status.Margin=new Thickness(14,6,0,8);status.TextTrimming=TextTrimming.CharacterEllipsis;status.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");
         if(status.Parent is Panel previous)previous.Children.Remove(status);footer.Children.Add(status);
 
         var workspace=new Grid();workspace.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");root.Children.Add(workspace);
@@ -86,7 +87,7 @@ internal sealed class HomeWindow : Window
     {
         var menu=EditorTheme.Themed(new ContextMenu {PlacementTarget=recentButton,Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom},!IsLightTheme);
         foreach(var image in recentImages) {
-            var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image {Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};
+            var bitmap=image;var item=new MenuItem {Header=Ui.Thumbnail(bitmap,$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px")};
             item.Click+=(_,_)=>edit(bitmap);menu.Items.Add(item);
         }
         if(recentImages.Count==0)menu.Items.Add(new MenuItem {Header="아직 캡처가 없습니다",IsEnabled=false});

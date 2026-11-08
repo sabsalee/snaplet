@@ -41,7 +41,7 @@ internal sealed class GalleryWindow : Window
         source=items;edit=editImage;delete=deleteItem;clearAll=deleteAll;openSettings=settings;keptOnDisk=onDisk;
         Title="Snaplet · 캡처 기록";Width=984;Height=680;MinWidth=520;MinHeight=380;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         dark=EditorTheme.SystemUsesDark();EditorTheme.Themed(this,dark);WindowAppearance.SetDarkChrome(this,dark);WindowAppearance.Apply(this,dark);
-        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=new FontFamily("Segoe UI");
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=Ui.Font;
         var root=new DockPanel();Content=root;
 
         var toolbar=new DockPanel {LastChildFill=false,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");

@@ -65,6 +65,12 @@ public sealed class EditorWindow : Window
     public EscapeAction EscapeAction {get;set;}
     public string? EscapeSaveFolder {get;set;}
     private string? projectPath;
+    /// <summary>The ".snaplet" file this editor saves to; its name stays in the title bar so a save is visible afterwards.</summary>
+    internal string? ProjectPath
+    {
+        get=>projectPath;
+        set{projectPath=value;Title=value is null?"Snaplet — 이미지 편집":$"{Path.GetFileNameWithoutExtension(value)} — Snaplet";}
+    }
     // Secondary tools, shown inline while the toolbar has room. Once it runs out they fold behind ··· from the end,
     // and the last one chosen there takes the slot before ··· like the reference app.
     private static readonly AnnotationKind[] MoreTools=[AnnotationKind.Blur,AnnotationKind.Highlight,AnnotationKind.Spotlight,AnnotationKind.Step,AnnotationKind.Ellipse,AnnotationKind.Line,AnnotationKind.Magnifier,AnnotationKind.Solid];
@@ -87,7 +93,7 @@ public sealed class EditorWindow : Window
             var now=new PixelRect(r.Left,r.Top,r.Width,r.Height);var fit=WindowPlacement.FitInside(now,new PixelRect(info.Work.Left,info.Work.Top,info.Work.Width,info.Work.Height));
             if(fit!=now)Native.SetWindowPos(hwnd,0,fit.X,fit.Y,fit.Width,fit.Height,0x4|0x10);
         };
-        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=new FontFamily("Segoe UI");
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=Ui.Font;
         var root=new DockPanel();Content=root;
         // One toolbar row like the reference: export · pin · file drag | tools ··· | colour under cursor · image size · zoom.
         var toolbar=new DockPanel {LastChildFill=true,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
@@ -1183,7 +1189,7 @@ public sealed class EditorWindow : Window
         var name=projectPath ?? Path.ChangeExtension(ImageActions.DefaultName(),ProjectFile.Extension);
         var dialog=new SaveFileDialog {Filter=ProjectFileIO.DialogFilter,FileName=name,DefaultExt=ProjectFile.Extension,AddExtension=true,OverwritePrompt=true};
         if(dialog.ShowDialog(this)!=true)return;
-        try{ProjectFileIO.Save(source,document,dialog.FileName);projectPath=dialog.FileName;status.Text=$"프로젝트 저장 완료: {dialog.FileName}";}
+        try{ProjectFileIO.Save(source,document,dialog.FileName);ProjectPath=dialog.FileName;status.Text=$"프로젝트를 저장했습니다 · {Path.GetFileName(dialog.FileName)}";}
         catch(Exception ex){ShowError("프로젝트 저장 실패",ex);}
     }
     /// <summary>Esc on an idle editor closes it like the original, optionally copying or saving first. The document stays reopenable.</summary>
