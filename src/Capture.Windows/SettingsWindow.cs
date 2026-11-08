@@ -50,7 +50,7 @@ internal sealed class SettingsWindow : Window
         var submit=Ui.Button("변경 사항 저장",Save,style:"PrimaryButton");AutomationProperties.SetAutomationId(submit,"settings-save");buttons.Children.Add(submit);footer.Children.Add(error);
         var columns=new Grid();columns.ColumnDefinitions.Add(new(){Width=new GridLength(166)});columns.ColumnDefinitions.Add(new());root.Children.Add(columns);
         var sidebar=new StackPanel{Margin=new Thickness(16,24,12,0)};columns.Children.Add(sidebar);
-        var brand=Ui.Label("설정",21,weight:FontWeights.SemiBold);brand.Margin=new Thickness(10,0,0,24);sidebar.Children.Add(brand);
+        var brand=Ui.Label("설정",20,weight:FontWeights.SemiBold);brand.Margin=new Thickness(12,0,0,18);sidebar.Children.Add(brand);
         void Nav(string id,string name,string glyph){var b=Ui.Button(name,()=>SelectPage(id),glyph,"QuietButton");b.HorizontalContentAlignment=HorizontalAlignment.Left;b.Margin=new Thickness(0,0,0,5);AutomationProperties.SetAutomationId(b,"settings-"+id);sidebar.Children.Add(b);navigation[id]=b;}
         Nav("capture","캡처","region");Nav("shortcuts","단축키","keyboard");Nav("storage","저장","folder");Nav("updates","업데이트","sync");Nav("about","정보","info");
         var scroll=new ScrollViewer{Content=page,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Padding=new Thickness(22,24,24,8)};Grid.SetColumn(scroll,1);columns.Children.Add(scroll);
@@ -58,44 +58,49 @@ internal sealed class SettingsWindow : Window
         SelectPage("capture");
     }
     private static CheckBox Toggle(string name,bool value){var c=new CheckBox{IsChecked=value,Style=(Style)Application.Current.FindResource("Switch"),VerticalAlignment=VerticalAlignment.Center};AutomationProperties.SetName(c,name);c.ToolTip=name;return c;}
-    private static StackPanel Section(string title,string subtitle){var p=new StackPanel();p.Children.Add(Ui.Header(title,subtitle));return p;}
-    private static Border Row(string title,string detail,UIElement control)
+    private static StackPanel Section(string title,string subtitle=""){var p=new StackPanel{Margin=new Thickness(0,0,0,12)};p.Children.Add(Ui.Header(title,subtitle));return p;}
+    /// <summary>One rounded list per group with hairlines between rows, instead of a card around every setting.</summary>
+    private static Border Group(StackPanel page,string? label,params FrameworkElement[] rows)
     {
-        var grid=new DockPanel();DockPanel.SetDock(control,Dock.Right);grid.Children.Add(control);
-        var text=new StackPanel{Margin=new Thickness(0,0,18,0)};text.Children.Add(Ui.Label(title,13,weight:FontWeights.SemiBold));text.Children.Add(new TextBlock{Text=detail,Foreground=Ui.Muted,FontSize=11,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,5,0,0)});grid.Children.Add(text);
-        var card=Ui.CardOf(grid,16);card.Margin=new Thickness(0,0,0,9);return card;
+        if(label!=null){var caption=Ui.Label(label,12,Ui.Muted,FontWeights.SemiBold);caption.Margin=new Thickness(4,20,0,8);page.Children.Add(caption);}
+        var list=new StackPanel();
+        for(int i=0;i<rows.Length;i++) {
+            if(i>0)list.Children.Add(new Border{Height=1,Background=Ui.Brush("DividerBrush"),Margin=new Thickness(16,0,0,0)});
+            list.Children.Add(rows[i]);
+        }
+        var card=new Border{Child=list,Background=Ui.Card,BorderBrush=Ui.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8)};
+        if(label==null)card.Margin=new Thickness(0,page.Children.Count>1?12:0,0,0);
+        page.Children.Add(card);return card;
     }
+    private static FrameworkElement Row(string title,string? detail,UIElement control)
+    {
+        var row=new DockPanel{Margin=new Thickness(16,10,14,10),MinHeight=30};DockPanel.SetDock(control,Dock.Right);row.Children.Add(control);
+        var text=new StackPanel{Margin=new Thickness(0,0,20,0),VerticalAlignment=VerticalAlignment.Center};text.Children.Add(Ui.Label(title,14));
+        if(!string.IsNullOrEmpty(detail))text.Children.Add(new TextBlock{Text=detail,Foreground=Ui.Muted,FontSize=12,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,2,0,0)});
+        row.Children.Add(text);return row;
+    }
+    private static TextBlock Note(string text){var t=Ui.Label(text,12,Ui.Muted);t.Margin=new Thickness(4,8,0,0);return t;}
     private UIElement CapturePage()
     {
-        var p=Section("캡처 후 동작","필요한 작업만 켜 두세요. 각각 독립적으로 동작합니다.");
-        var fontNote=Capture.Windows.Editor.TextFonts.IsInstalled(Capture.Windows.Editor.TextFonts.Preferred)?"글자 도구의 기본 글꼴입니다.":"글자 도구의 기본 글꼴입니다. Noto Sans KR이 설치되어 있지 않으면 맑은 고딕으로 표시합니다.";
-        p.Children.Add(Row("캡처 후 표시","작은 팝업은 마우스 포인터 옆에 편집·복사·저장·고정 버튼을 띄우고, 포커스를 가져가지 않아 바로 다른 앱에 붙여넣을 수 있습니다.",afterCapture));
-        p.Children.Add(Row("클립보드에 자동 복사","캡처가 끝나면 다른 앱에 바로 붙여넣을 수 있습니다.",copy));
-        p.Children.Add(Row("파일로 자동 저장","캡처 원본을 저장 페이지에서 정한 폴더에 남깁니다.",save));
-        p.Children.Add(Row("바깥 클릭으로 닫기","고정하지 않은 팝업만 닫습니다.",outside));
+        var p=Section("캡처");
+        var fontNote=Capture.Windows.Editor.TextFonts.IsInstalled(Capture.Windows.Editor.TextFonts.Preferred)?null:"Noto Sans KR이 없으면 맑은 고딕으로 표시합니다.";
+        var outsideRow=Row("바깥을 클릭하면 팝업 닫기","고정한 이미지는 남습니다.",outside);
+        Group(p,"캡처한 뒤",Row("캡처 후 표시",null,afterCapture),Row("클립보드에 복사",null,copy),Row("파일로 저장","저장 탭에서 정한 폴더에 원본을 남깁니다.",save),outsideRow);
         void Update()=>outside.IsEnabled=afterCapture.SelectedIndex==(int)AfterCaptureAction.Popup;afterCapture.SelectionChanged+=(_,_)=>Update();Update();
-        p.Children.Add(Ui.Label("고정한 이미지는 새 캡처 후에도 화면에 남습니다.",11,Ui.Muted));
-        p.Children.Add(Row("마우스 포인터 포함","캡처를 시작한 순간의 포인터를 이미지에 넣습니다. 숨겨진 포인터는 넣지 않습니다.",cursor));
-        p.Children.Add(Row("창 캡처 모양","창 캡처에 Windows 11 스타일 그림자나 배경을 더합니다. 편집창에서 열면 배경 꾸미기로 바꾸거나 끌 수 있습니다.",windowStyle));
-        var selection=Ui.Header("영역 선택","정밀하게 고를 때 쓰는 도구입니다.");selection.Margin=new Thickness(0,22,0,0);p.Children.Add(selection);
-        p.Children.Add(Row("픽셀 확대경","선택 화면에서 포인터 주변 픽셀·좌표·색을 크게 보여 줍니다. Tab은 색상 코드를 복사합니다.",loupe));
-        p.Children.Add(Row("올인원 캡처 막대","선택 화면 위쪽에서 영역·창·화면·스크롤·텍스트 캡처를 바로 고르고, 영역의 비율을 고정합니다.",modeBar));
-        p.Children.Add(Row("실시간 선택","화면을 멈추지 않고 영역을 고른 뒤, 고른 순간의 화면을 캡처합니다. 움직이는 영상에 알맞습니다. 확대경과 색 복사는 화면을 고정했을 때만 쓸 수 있습니다. 선택 화면에서 F로 바로 전환합니다.",liveSelection));
-        p.Children.Add(Row("놓은 뒤 조정하고 Enter로 캡처","끄면 마우스를 놓는 즉시 캡처합니다. 켜면 조절점·방향키·A(내용에 맞춤)로 다듬을 수 있습니다. 끈 상태에서도 Ctrl을 누른 채 놓으면 조정 단계로 들어갑니다.",adjust));
-        var other=Ui.Header("편집과 텍스트","");other.Margin=new Thickness(0,22,0,0);p.Children.Add(other);
-        p.Children.Add(Row("기본 글꼴",fontNote,textFont));
-        p.Children.Add(Row("Esc로 편집창을 닫을 때","닫으면서 결과를 복사하거나 저장 폴더에 저장할 수 있습니다.",escape));
-        p.Children.Add(Row("텍스트 인식 줄바꿈 합치기","바로 인식·텍스트 추출 결과를 한 줄로 이어 붙여 복사합니다.",joinLines));
+        Group(p,"캡처 내용",Row("마우스 포인터 포함",null,cursor),Row("창 캡처 모양","편집창에서 열면 바꾸거나 끌 수 있습니다.",windowStyle));
+        Group(p,"영역 선택",Row("픽셀 확대경","Tab으로 색상 코드를 복사합니다.",loupe),Row("올인원 캡처 막대","선택 화면 위에서 캡처 모드와 비율을 고릅니다.",modeBar),
+            Row("실시간 선택","화면을 멈추지 않고 고릅니다. 선택 화면에서 F로 전환합니다.",liveSelection),Row("놓은 뒤 조정","조절점과 방향키로 다듬고 Enter로 캡처합니다. 꺼져 있어도 Ctrl을 누른 채 놓으면 조정합니다.",adjust));
+        Group(p,"편집과 텍스트",Row("기본 글꼴",fontNote,textFont),Row("Esc로 편집창을 닫을 때",null,escape),Row("인식한 텍스트의 줄바꿈 합치기",null,joinLines));
         return p;
     }
     private UIElement ShortcutsPage()
     {
         var p=Section("단축키","조합을 클릭하고 새 키를 누르세요. Esc는 취소, Backspace는 해제입니다.");
         var names=AppSettings.Commands.ToDictionary(c=>c.Command,c=>c.Name);
+        var rows=new List<FrameworkElement>();
         for(int index=0;index<keys.Count;index++) {
-            var i=index;var b=Ui.Button(keys[i].ToString(),()=>{});b.MinWidth=160;b.FontSize=12;b.Padding=new Thickness(10,7,10,7);AutomationProperties.SetName(b,names[keys[i].Command]+" 단축키");
-            var row=new DockPanel();DockPanel.SetDock(b,Dock.Right);row.Children.Add(b);row.Children.Add(new TextBlock{Text=names[keys[i].Command],VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,12,0)});
-            var card=Ui.CardOf(row,12);card.Margin=new Thickness(0,0,0,8);p.Children.Add(card);bool recording=false;
+            var i=index;var b=Ui.Button(keys[i].ToString(),()=>{});b.MinWidth=150;b.FontSize=12;b.MinHeight=28;b.Padding=new Thickness(10,4,10,4);AutomationProperties.SetName(b,names[keys[i].Command]+" 단축키");
+            rows.Add(Row(names[keys[i].Command],null,b));bool recording=false;
             b.Click+=(_,_)=>{recording=true;b.Content="새 조합을 누르세요";b.BorderBrush=Ui.Accent;b.Focus();};
             b.PreviewKeyDown+=(_,e)=>{
                 if(!recording)return;e.Handled=true;var key=e.Key==Key.System?e.SystemKey:e.Key;
@@ -106,38 +111,40 @@ internal sealed class SettingsWindow : Window
                 keys[i]=keys[i] with{Key=key,Modifiers=Keyboard.Modifiers};Reset();
             };
             b.LostKeyboardFocus+=(_,_)=>Reset();
-            void Reset(){recording=false;b.Content=keys[i].ToString();b.BorderBrush=Ui.Line;}
+            void Reset(){recording=false;b.Content=keys[i].ToString();b.ClearValue(BorderBrushProperty);}
         }
-        p.Children.Add(Ui.Label("다른 앱과 겹치는 조합은 저장할 때 알려 드립니다.",11,Ui.Muted));
-        var automation=Ui.Header("자동화","런처·스크립트에서 같은 작업을 실행합니다.");automation.Margin=new Thickness(0,22,0,0);p.Children.Add(automation);
-        p.Children.Add(Row("로그인 시 자동 실행","Windows에 로그인하면 Snaplet이 창 없이 트레이에서 시작해 단축키를 바로 받습니다.",launchAtLogin));
-        p.Children.Add(Row("snaplet:// 링크 허용","켜면 snaplet://region 같은 링크로 캡처를 시작할 수 있습니다. 명령줄 Snaplet.exe --command region 은 항상 사용할 수 있습니다.",deepLinks));
-        var list=Ui.Label("명령: "+string.Join(", ",AppSettings.Commands.Select(c=>c.Command)),11,Ui.Muted);list.Margin=new Thickness(0,4,0,0);p.Children.Add(list);
+        Group(p,null,rows.ToArray());
+        p.Children.Add(Note("다른 앱과 겹치는 조합은 저장할 때 알려 드립니다."));
+        Group(p,"자동화",Row("로그인 시 자동 실행","창 없이 트레이에서 시작해 단축키를 바로 받습니다.",launchAtLogin),
+            Row("snaplet:// 링크 허용","snaplet://region 같은 링크로 캡처를 시작합니다. 명령줄 Snaplet.exe --command region은 항상 쓸 수 있습니다.",deepLinks));
+        p.Children.Add(Note("명령: "+string.Join(", ",AppSettings.Commands.Select(c=>c.Command))));
         return p;
     }
     private UIElement StoragePage()
     {
-        var p=Section("저장","자동 저장 이미지의 위치를 정합니다.");
-        var card=new StackPanel();card.Children.Add(Ui.Label("캡처 저장 폴더",13,weight:FontWeights.SemiBold));folder.Margin=new Thickness(0,12,0,10);card.Children.Add(folder);
-        var browse=Ui.Button("폴더 선택",()=>{var d=new OpenFolderDialog();if(d.ShowDialog(this)==true)folder.Text=d.FolderName;},"folder");browse.HorizontalAlignment=HorizontalAlignment.Left;card.Children.Add(browse);p.Children.Add(Ui.CardOf(card));
-        p.Children.Add(Row("파일 이름 규칙","%Y %m %d 날짜, %H %M %S 시각, %f 밀리초, %r 임의 문자 4개. 시각이 같아도 덮어쓰지 않으려면 %f나 %r을 넣으세요.",fileName));
-        var history=Row("최근 캡처를 디스크에 보관",$"최근 {HistoryStore.DiskLimit}개 원본을 이 PC의 앱 데이터 폴더에 PNG로 남겨 다시 시작·업데이트 후에도 열 수 있습니다. 끄면 보관한 파일을 지웁니다. 편집 객체는 포함하지 않습니다.",keepHistory);history.Margin=new Thickness(0,16,0,0);p.Children.Add(history);
-        var text=Ui.Label("자동 저장을 켠 경우 PNG 원본이 이 폴더에 저장됩니다. 편집창의 다른 이름으로 저장에서는 위치와 형식을 따로 고를 수 있습니다.",12,Ui.Muted);text.Margin=new Thickness(0,16,0,0);p.Children.Add(text);return p;
+        var p=Section("저장");
+        folder.TextWrapping=TextWrapping.NoWrap;folder.Width=250;folder.MinWidth=0;folder.VerticalAlignment=VerticalAlignment.Center;
+        var browse=Ui.Button("선택…",()=>{var d=new OpenFolderDialog();if(d.ShowDialog(this)==true)folder.Text=d.FolderName;});browse.Margin=new Thickness(8,0,0,0);browse.VerticalAlignment=VerticalAlignment.Center;
+        var picker=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};picker.Children.Add(folder);picker.Children.Add(browse);
+        fileName.Width=250;fileName.MinWidth=0;fileName.VerticalAlignment=VerticalAlignment.Center;
+        Group(p,null,Row("저장 폴더","자동 저장한 PNG가 여기에 남습니다.",picker),Row("파일 이름 규칙","%Y %m %d 날짜, %H %M %S 시각, %f 밀리초, %r 임의 문자 4개",fileName));
+        Group(p,"캡처 기록",Row("디스크에 보관",$"최근 {HistoryStore.DiskLimit}개 원본을 이 PC에 남겨 다시 시작해도 열 수 있습니다. 끄면 보관한 파일을 지웁니다.",keepHistory));
+        p.Children.Add(Note("편집창의 다른 이름으로 저장에서는 위치와 형식을 따로 고를 수 있습니다."));return p;
     }
     private UIElement UpdatesPage()
     {
-        var p=Section("업데이트","새 버전은 미리 받아 두고, 준비됐을 때 다시 시작하세요.");
-        p.Children.Add(Row("자동 확인·다운로드","앱 시작 후와 6시간마다 확인합니다. 자동으로 앱을 종료하지 않습니다.",autoUpdate));
-        var card=new StackPanel();var version=Ui.Label("",13,weight:FontWeights.SemiBold);
-        var message=Ui.Label("",12,Ui.Muted);message.Margin=new Thickness(0,12,0,12);card.Children.Add(version);card.Children.Add(message);
+        var p=Section("업데이트");
+        Group(p,null,Row("자동 확인·다운로드","앱 시작 후와 6시간마다 확인합니다. 앱을 마음대로 종료하지 않습니다.",autoUpdate));
+        var card=new StackPanel{Margin=new Thickness(16,14,16,14)};var version=Ui.Label("",14,weight:FontWeights.SemiBold);
+        var message=Ui.Label("",12,Ui.Muted);message.Margin=new Thickness(0,4,0,12);card.Children.Add(version);card.Children.Add(message);
         var progress=new ProgressBar {Minimum=0,Maximum=100,Height=5,Margin=new Thickness(0,0,0,16)};card.Children.Add(progress);
         var actions=new WrapPanel();var check=Ui.Button("업데이트 확인",async()=>await updates.CheckAsync());
         var install=Ui.Button("",async()=>{if(updates.Snapshot.Stage==UpdateStage.Ready)restartUpdate?.Invoke();else await updates.DownloadAsync();},style:"PrimaryButton");
         AutomationProperties.SetAutomationId(check,"updates-check");AutomationProperties.SetAutomationId(install,"updates-install");
-        check.Margin=new Thickness(0,0,8,8);install.Margin=new Thickness(0,0,0,8);actions.Children.Add(check);actions.Children.Add(install);card.Children.Add(actions);p.Children.Add(Ui.CardOf(card));
-        var download=Ui.Button("다운로드 및 변경 사항",()=>{try{Process.Start(new ProcessStartInfo(UpdateDistribution.Releases){UseShellExecute=true});}catch{error.Text="브라우저를 열지 못했습니다.";}},style:"QuietButton");
-        download.HorizontalAlignment=HorizontalAlignment.Left;download.Margin=new Thickness(0,12,0,10);p.Children.Add(download);
-        p.Children.Add(Ui.Label("현재 개발 버전 채널을 사용합니다. 업데이트를 적용하면 최근 캡처와 저장하지 않은 편집은 사라지므로 먼저 저장해 주세요.",11,Ui.Muted));
+        check.Margin=new Thickness(0,0,8,0);actions.Children.Add(check);actions.Children.Add(install);card.Children.Add(actions);Group(p,null,card);
+        var download=Ui.Link("다운로드 및 변경 사항",()=>{try{Process.Start(new ProcessStartInfo(UpdateDistribution.Releases){UseShellExecute=true});}catch{error.Text="브라우저를 열지 못했습니다.";}});
+        download.HorizontalAlignment=HorizontalAlignment.Left;download.Margin=new Thickness(0,10,0,0);p.Children.Add(download);
+        p.Children.Add(Note("개발 버전 채널입니다. 업데이트하면 저장하지 않은 편집은 사라지므로 먼저 저장해 주세요."));
         void Refresh()
         {
             if(!Dispatcher.CheckAccess()){Dispatcher.BeginInvoke(Refresh);return;}
@@ -159,10 +166,12 @@ internal sealed class SettingsWindow : Window
     }
     private static UIElement AboutPage()
     {
-        var p=Section("Snaplet","단축키로 캡처하고, 필요한 내용만 빠르게 전달하세요.");
-        var notes=new StackPanel();notes.Children.Add(Ui.Label("Windows 11 · x64",15,weight:FontWeights.SemiBold));
-        foreach(var line in new[]{"버전 "+typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3),"캡처·한국어/영어 OCR은 PC 안에서 처리합니다.","최근 이미지는 메모리에 보관하며 앱 종료 시 사라집니다.","현재는 SDR 캡처를 지원합니다. HDR 색 보존·자동 스크롤은 아직 지원하지 않습니다."}) {var t=Ui.Label(line,12,Ui.Muted);t.Margin=new Thickness(0,12,0,0);notes.Children.Add(t);}
-        p.Children.Add(Ui.CardOf(notes));return p;
+        var p=Section("정보");
+        var head=new StackPanel{Margin=new Thickness(16,14,16,14)};head.Children.Add(Ui.Label("Snaplet",14,weight:FontWeights.SemiBold));
+        var version=Ui.Label($"버전 {typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3)} · Windows 11 x64",12,Ui.Muted);version.Margin=new Thickness(0,2,0,0);head.Children.Add(version);
+        Group(p,null,head);
+        Group(p,null,Row("캡처와 텍스트 인식","모두 이 PC 안에서 처리합니다. 한국어와 영어를 읽습니다.",new FrameworkElement()),Row("화면 색","SDR로 캡처합니다. HDR 색은 아직 보존하지 않습니다.",new FrameworkElement()));
+        return p;
     }
     internal void SelectPage(string id)
     {

@@ -47,10 +47,12 @@ internal static class Ui
         internal static Brush Card=>Brush("CardBrush");internal static Brush Text=>Brush("TextBrush");internal static Brush Muted=>Brush("MutedBrush");
         internal static Brush Accent=>Brush("AccentBrush");internal static Brush Line=>Brush("BorderBrush");
     }
+    /// <summary>Windows 11's UI typeface, falling back to Segoe UI and the Korean system font.</summary>
+    internal static readonly FontFamily Font=new("Segoe UI Variable Text, Segoe UI, Malgun Gothic");
     internal static TextBlock Label(string text,double size=13,Brush? ink=null,FontWeight? weight=null)=>new(){Text=text,FontSize=size,Foreground=ink??Text,FontWeight=weight??FontWeights.Normal,TextWrapping=TextWrapping.Wrap};
     /// <summary>The physical key. With the Korean IME in Hangul mode WPF reports letter keys as ImeProcessed, which would break letter shortcuts.</summary>
     internal static System.Windows.Input.Key Pressed(System.Windows.Input.KeyEventArgs e)=>e.Key==System.Windows.Input.Key.ImeProcessed?e.ImeProcessedKey:e.Key;
-    internal static Border CardOf(UIElement child,double padding=18)=>new(){Child=child,Background=Card,BorderBrush=Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),Padding=new Thickness(padding)};
+    internal static Border CardOf(UIElement child,double padding=18)=>new(){Child=child,Background=Card,BorderBrush=Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8),Padding=new Thickness(padding)};
     internal static Border Keycap(string value)=>new(){Child=new TextBlock{Text=value,FontSize=11,Foreground=Muted,VerticalAlignment=VerticalAlignment.Center},Background=Page,CornerRadius=new CornerRadius(4),BorderBrush=Line,BorderThickness=new Thickness(1),Padding=new Thickness(7,4,7,4),VerticalAlignment=VerticalAlignment.Center};
     internal static Button Button(string title,Action action,string? glyph=null,string style="BaseButton")
     {
@@ -58,6 +60,12 @@ internal static class Ui
         if(glyph==null)b.Content=title;
         else {var row=new StackPanel{Orientation=Orientation.Horizontal};var icon=Icon(glyph);icon.Margin=new Thickness(0,0,8,0);row.Children.Add(icon);row.Children.Add(new TextBlock{Text=title,VerticalAlignment=VerticalAlignment.Center});b.Content=row;}
         AutomationProperties.SetName(b,title);b.Click+=(_,_)=>action();return b;
+    }
+    /// <summary>A text link in the accent colour. Its label is its own TextBlock, because the app-wide TextBlock style would otherwise paint it like body text.</summary>
+    internal static Button Link(string title,Action action)
+    {
+        var label=new TextBlock {Text=title};label.SetResourceReference(TextBlock.ForegroundProperty,"AccentBrush");
+        var b=Button(title,action,style:"QuietButton");b.Content=label;b.MinHeight=0;b.Padding=new Thickness(6,3,6,3);return b;
     }
     internal static Button IconButton(string glyph,string label,Action action,double size=34)
     {
@@ -93,7 +101,17 @@ internal static class Ui
     }
     internal static DockPanel Header(string title,string subtitle)
     {
-        var row=new DockPanel{Margin=new Thickness(0,0,0,22)};var labels=new StackPanel();labels.Children.Add(Label(title,24,weight:FontWeights.SemiBold));labels.Children.Add(new TextBlock{Text=subtitle,Foreground=Muted,Margin=new Thickness(0,7,0,0),TextWrapping=TextWrapping.Wrap});row.Children.Add(labels);return row;
+        // Windows 11 type ramp: a 20 px semibold title and a 12 px caption.
+        var row=new DockPanel{Margin=new Thickness(0,0,0,16)};var labels=new StackPanel();labels.Children.Add(Label(title,20,weight:FontWeights.SemiBold));
+        if(!string.IsNullOrEmpty(subtitle))labels.Children.Add(new TextBlock{Text=subtitle,Foreground=Muted,FontSize=12,Margin=new Thickness(0,4,0,0),TextWrapping=TextWrapping.Wrap});
+        row.Children.Add(labels);return row;
+    }
+    /// <summary>A menu row with a small picture before its label; a menu's icon column is too narrow for a thumbnail.</summary>
+    internal static StackPanel Thumbnail(System.Windows.Media.Imaging.BitmapSource image,string label)
+    {
+        var row=new StackPanel {Orientation=Orientation.Horizontal};
+        row.Children.Add(new Border {Width=44,Height=28,CornerRadius=new CornerRadius(3),ClipToBounds=true,Margin=new Thickness(0,1,10,1),Child=new Image {Source=image,Stretch=Stretch.UniformToFill}});
+        row.Children.Add(new TextBlock {Text=label,VerticalAlignment=VerticalAlignment.Center});return row;
     }
     internal static void Exclude(Window w)=>w.SourceInitialized+=(_,_)=>Platform.Native.SetWindowDisplayAffinity(new WindowInteropHelper(w).Handle,0x11);
 }

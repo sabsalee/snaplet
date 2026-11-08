@@ -40,7 +40,7 @@ internal sealed class SelectionWindow : Window
     private readonly Line crossX=Cross(),crossY=Cross();
     private readonly Line rulerX=Ruler(),rulerY=Ruler();
     private readonly Border rulerTag=Chip();
-    private readonly Border loupe=new() {Width=LoupeSamples*LoupeCell+2,BorderBrush=Brushes.White,BorderThickness=new Thickness(1),Background=Brushes.Black,Visibility=Visibility.Collapsed,SnapsToDevicePixels=true};
+    private readonly Border loupe=new() {Width=LoupeSamples*LoupeCell+2,BorderBrush=new SolidColorBrush(Color.FromArgb(170,255,255,255)),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8),Background=Brushes.Black,Visibility=Visibility.Collapsed,SnapsToDevicePixels=true};
     private readonly Canvas loupeCanvas=new() {Width=LoupeSamples*LoupeCell,Height=LoupeSamples*LoupeCell,ClipToBounds=true};
     private readonly Image loupeImage=new() {Stretch=Stretch.Fill};
     private readonly TextBlock loupeText=new() {Foreground=Brushes.White,FontSize=11,FontFamily=new FontFamily("Consolas, Segoe UI"),Margin=new Thickness(6,4,6,5)};
@@ -99,6 +99,8 @@ internal sealed class SelectionWindow : Window
         var center=new Rectangle {Width=LoupeCell+2,Height=LoupeCell+2,Stroke=Brushes.White,StrokeThickness=1.5};
         Canvas.SetLeft(center,LoupeSamples/2*LoupeCell-1);Canvas.SetTop(center,LoupeSamples/2*LoupeCell-1);loupeCanvas.Children.Add(center);
         var loupeStack=new StackPanel();loupeStack.Children.Add(loupeCanvas);loupeStack.Children.Add(new Border {Background=new SolidColorBrush(Color.FromArgb(235,18,22,30)),Child=loupeText});
+        // The rounded frame does not clip its content, so the pixels are cut to the same corners.
+        loupeStack.SizeChanged+=(_,e)=>loupeStack.Clip=new RectangleGeometry(new Rect(e.NewSize),7,7);
         loupe.Child=loupeStack;canvas.Children.Add(loupe);
         Content=root;
         ((TextBlock)hint.Child).Text=windows is not null?"캡처할 창을 클릭하세요 · Esc 취소"
@@ -424,8 +426,8 @@ internal sealed class SelectionWindow : Window
     internal void SimulateSelect(PixelRect rect,bool adjust){selection=rect.Intersect(bounds);if(adjust)EnterAdjust();else Refresh();}
     internal void SimulateKey(System.Windows.Input.Key key)=>OnKey(this,new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(this)!,0,key){RoutedEvent=Keyboard.PreviewKeyDownEvent});
 
-    private static Border Chip()=>new() {Background=new SolidColorBrush(Color.FromArgb(225,15,22,34)),CornerRadius=new CornerRadius(5),Padding=new Thickness(9,5,9,6),IsHitTestVisible=false,
-        Child=new TextBlock {Foreground=Brushes.White,FontSize=12}};
+    private static Border Chip()=>new() {Background=new SolidColorBrush(Color.FromArgb(230,22,26,34)),BorderBrush=new SolidColorBrush(Color.FromArgb(40,255,255,255)),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8),Padding=new Thickness(11,6,11,7),IsHitTestVisible=false,
+        Child=new TextBlock {Foreground=Brushes.White,FontSize=12,FontFamily=UI.Ui.Font}};
     private static Line Cross()=>new() {Stroke=new SolidColorBrush(Color.FromArgb(150,255,255,255)),StrokeThickness=1,IsHitTestVisible=false,SnapsToDevicePixels=true};
     private static Line Ruler()=>new() {Stroke=new SolidColorBrush(Color.FromRgb(255,72,120)),StrokeThickness=1.5,IsHitTestVisible=false};
     private static DrawingBrush GridBrush() {

@@ -27,7 +27,7 @@ internal static class EditorTheme
         ["ThumbBrush"]="#FFFFFF",["ThumbBorderBrush"]="#A8A8B0",["ScrollThumbBrush"]="#BDBDC4",
         ["ToolbarBrush"]="#F6F6F7",["FloatingBrush"]="#FFFFFF",["FloatingBorderBrush"]="#DDDDE2",["SelectedToolBrush"]="#E2E2E7",
         ["WorkspaceBrush"]="#E7E7EA",["HandleBorderBrush"]="#8E8E93",["SuccessBrush"]="#1E7F52",["WarningBrush"]="#9A5B00",
-        ["SwitchOffBrush"]="#FFFFFF",["SwitchOffBorderBrush"]="#8A8A93",["SwitchOffDotBrush"]="#5F5F68",
+        ["DividerBrush"]="#E8E8EC",["SwitchOffBrush"]="#FFFFFF",["SwitchOffBorderBrush"]="#8A8A93",["SwitchOffDotBrush"]="#5F5F68",
     });
     private static ResourceDictionary Build(Dictionary<string,string> colors)
     {

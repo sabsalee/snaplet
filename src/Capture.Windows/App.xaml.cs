@@ -306,7 +306,7 @@ public partial class App : Application
     private void Edit(BitmapSource image)=>Edit(image,null);
     /// <summary>Opens an image or a ".snaplet" project in a new editor.</summary>
     private void OpenPath(string path) {
-        if(ProjectFileIO.IsProject(path)){var (image,document)=ProjectFileIO.Load(path);Edit(image,document);}
+        if(ProjectFileIO.IsProject(path)){var (image,document)=ProjectFileIO.Load(path);Edit(image,document);if(editors.TryGetValue(image,out var opened))opened.ProjectPath=path;}
         else Edit(ImageActions.Load(path));
     }
     private void Edit(BitmapSource image,Capture.Core.EditableDocument? document) {
@@ -331,7 +331,17 @@ public partial class App : Application
         };
         window.Closed+=(_,_)=>editors.Remove(image);Exclude(window);
         // An image opened from the empty main window takes its place, so the window appears to fill in.
-        if(home is {IsVisible:true,WindowState:not WindowState.Minimized}){window.WindowStartupLocation=WindowStartupLocation.Manual;window.Left=home.Left;window.Top=home.Top;window.Width=home.Width;window.Height=home.Height;window.WindowState=home.WindowState;home.Hide();}
+        // Closing it brings the main window back where the editor was, instead of leaving only the tray.
+        if(home is {IsVisible:true,WindowState:not WindowState.Minimized}) {
+            window.WindowStartupLocation=WindowStartupLocation.Manual;window.Left=home.Left;window.Top=home.Top;window.Width=home.Width;window.Height=home.Height;window.WindowState=home.WindowState;home.Hide();
+            window.Closing+=(_,_)=>{
+                if(quitting || home is null || home.IsVisible || editors.Values.Any(e=>e!=window && e.IsVisible))return;
+                if(window.WindowState==WindowState.Normal){home.Left=window.Left;home.Top=window.Top;home.Width=window.Width;home.Height=window.Height;}
+                home.WindowState=window.WindowState==WindowState.Maximized?WindowState.Maximized:WindowState.Normal;home.Show();
+            };
+        }
+        // Unpinned popups would float over the editor; they can be brought back from the tray.
+        foreach(var popup in previews.Where(p=>!p.Pinned).ToArray())popup.Close();
         window.ShowDocument();
     }
     /// <summary>OCR button in preview/editor: decoded QR codes first, then recognised text.</summary>
@@ -401,7 +411,7 @@ public partial class App : Application
         void Add(string text,Action action){var item=new MenuItem {Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
         foreach(var (text,command) in new[]{("영역 캡처","region"),("창 캡처","window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
-        var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px",Icon=new Image{Source=bitmap,Width=40,Height=26,Stretch=Stretch.Uniform}};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
+        var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=UI.Ui.Thumbnail(bitmap,$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px")};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
         if(closedPopups.Count>0)Add("닫은 캡처 팝업 다시 열기",()=>{var image=closedPopups[0];closedPopups.RemoveAt(0);ShowPopup(image);});
         if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
         if(previews.Any(p=>p.Pinned))Add("고정 이미지 모두 닫기",()=>{foreach(var p in previews.Where(p=>p.Pinned).ToArray())p.Close();});
