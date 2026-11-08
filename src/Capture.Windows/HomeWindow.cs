@@ -107,7 +107,9 @@ internal sealed class HomeWindow : Window
         recentImages=images;recent.Children.Clear();
         foreach(var image in images.Take(4)) {
             var bitmap=image;
-            var b=new Button {Content=new Image {Source=bitmap,Height=56,MaxWidth=96,Stretch=Stretch.Uniform},ToolTip=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px · 클릭하여 편집",Margin=new Thickness(4),Padding=new Thickness(4),Style=(Style)Application.Current.FindResource("QuietButton")};
+            var thumb=new Border {Width=96,Height=60,CornerRadius=new CornerRadius(6),BorderThickness=new Thickness(1),Child=new Image {Source=bitmap,Stretch=Stretch.UniformToFill}};thumb.SetResourceReference(Border.BorderBrushProperty,"DividerBrush");
+            ((Image)thumb.Child).Clip=new RectangleGeometry(new Rect(0,0,94,58),5,5);
+            var b=new Button {Content=thumb,ToolTip=$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px · 클릭하여 편집",Margin=new Thickness(4),Padding=new Thickness(4),Style=(Style)Application.Current.FindResource("QuietButton")};
             System.Windows.Automation.AutomationProperties.SetName(b,"캡처 편집");b.Click+=(_,_)=>edit(bitmap);recent.Children.Add(b);
         }
     }
