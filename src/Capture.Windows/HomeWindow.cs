@@ -17,15 +17,16 @@ internal sealed class HomeWindow : Window
 {
     private readonly Action<string> command;
     private readonly Action<BitmapSource> edit;
+    private readonly Action<string> openPath;
     private readonly Action clipboard;
     private readonly Action open;
     private readonly Border regionKeycap;
     private readonly WrapPanel recent=new() {HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,26,0,0)};
     private readonly Button recentButton;
     private IReadOnlyList<BitmapSource> recentImages=[];
-    internal HomeWindow(AppSettings settings,Action<string> capture,Action open,Action clipboard,Action demo,Action preferences,Action<BitmapSource> editImage,TextBlock status)
+    internal HomeWindow(AppSettings settings,Action<string> capture,Action open,Action clipboard,Action demo,Action preferences,Action<BitmapSource> editImage,Action<string> openFile,TextBlock status)
     {
-        command=capture;edit=editImage;this.clipboard=clipboard;this.open=open;
+        command=capture;edit=editImage;openPath=openFile;this.clipboard=clipboard;this.open=open;
         Title="Snaplet";Width=1180;Height=800;MinWidth=660;MinHeight=450;WindowStartupLocation=WindowStartupLocation.CenterScreen;AllowDrop=true;
         var dark=EditorTheme.SystemUsesDark();EditorTheme.Themed(this,dark);WindowAppearance.SetDarkChrome(this,dark);WindowAppearance.Apply(this,dark);
         SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=new FontFamily("Segoe UI");
@@ -62,7 +63,7 @@ internal sealed class HomeWindow : Window
         Drop+=(_,e)=>{
             if(e.Data.GetData(DataFormats.FileDrop) is not string[] files)return;
             foreach(var path in files.Where(File.Exists)) {
-                try{edit(ImageActions.Load(path));}catch(Exception error) when(error is IOException or NotSupportedException or ArgumentException or InvalidOperationException or UnauthorizedAccessException){status.Text=error.Message;}
+                try{openPath(path);}catch(Exception error) when(error is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException or UnauthorizedAccessException){status.Text=error.Message;}
             }
         };
         PreviewKeyDown+=(_,e)=>{
