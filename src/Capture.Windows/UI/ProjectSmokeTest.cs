@@ -23,7 +23,12 @@ internal static class ProjectSmokeTest
             ProjectFileIO.Save(image,document,path);
             Check(File.Exists(path) && !File.Exists(path+".tmp"),"saving leaves the project and no temporary file");
             var (loadedImage,loaded)=ProjectFileIO.Load(path);
-            Check(Bytes(BackdropRenderer.Export(image,document)).SequenceEqual(Bytes(BackdropRenderer.Export(loadedImage,loaded))),"a reopened project exports exactly the same pixels");
+            // Each comparison isolates one cause, so a failure names it: rendering itself, the stored image, or the stored objects.
+            var expected=Bytes(BackdropRenderer.Export(image,document));
+            Check(Same(expected,Bytes(BackdropRenderer.Export(image,document)),out var noise),"exporting the same document twice gives the same pixels"+noise);
+            Check(Same(Bytes(image),Bytes(loadedImage),out var stored),$"the reopened original image keeps its pixels ({loadedImage.Format}, {loadedImage.DpiX:0.###} dpi){stored}");
+            Check(Same(expected,Bytes(BackdropRenderer.Export(image,loaded)),out var objects),"reopened objects render the same pixels"+objects);
+            Check(Same(expected,Bytes(BackdropRenderer.Export(loadedImage,loaded)),out var whole),"a reopened project exports exactly the same pixels"+whole);
             ProjectFileIO.Save(image,document,path);Check(ProjectFileIO.Load(path).Document.Annotations.Count==3,"saving over an existing project replaces it");
             var editor=new EditorWindow(loadedImage,loaded);
             try {editor.Show();editor.UpdateLayout();Check(editor.IsVisible && loaded.Annotations.Count==3,"the editor opens a project with its objects");}
@@ -34,6 +39,14 @@ internal static class ProjectSmokeTest
             Check(ProjectFileIO.IsProject(@"C:\a\B.SNAPLET") && !ProjectFileIO.IsProject(@"C:\a\b.png"),"projects are told apart from images by extension");
         } finally {try{Directory.Delete(folder,true);}catch(IOException){}}
         File.WriteAllText(Path.Combine(directory,"project-smoke.json"),System.Text.Json.JsonSerializer.Serialize(checks));
+    }
+    private static bool Same(byte[] a,byte[] b,out string detail)
+    {
+        detail="";if(a.AsSpan().SequenceEqual(b))return true;
+        if(a.Length!=b.Length){detail=$" (sizes {a.Length} vs {b.Length} bytes)";return false;}
+        int count=0,first=-1,worst=0;
+        for(int i=0;i<a.Length;i++){int d=Math.Abs(a[i]-b[i]);if(d==0)continue;count++;if(first<0)first=i;worst=Math.Max(worst,d);}
+        detail=$" ({count} bytes differ, largest by {worst}, first at byte {first})";return false;
     }
     private static byte[] Bytes(BitmapSource image)
     {

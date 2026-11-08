@@ -30,7 +30,8 @@ internal static class ProjectFileIO
         BitmapSource image;
         try {
             using var stream=new MemoryStream(contents.SourceImage);
-            image=BitmapDecoder.Create(stream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad).Frames[0];image.Freeze();
+            // The project wrote this PNG itself, so its pixels are taken as stored, without colour-profile conversion.
+            image=BitmapDecoder.Create(stream,BitmapCreateOptions.PreservePixelFormat|BitmapCreateOptions.IgnoreColorProfile,BitmapCacheOption.OnLoad).Frames[0];image.Freeze();
         } catch(Exception error) when(error is NotSupportedException or FileFormatException or ArgumentException or InvalidOperationException) {throw new InvalidDataException("프로젝트의 원본 이미지를 읽을 수 없습니다.",error);}
         if(image.PixelWidth!=contents.Document.Width || image.PixelHeight!=contents.Document.Height)throw new InvalidDataException("프로젝트의 원본 이미지 크기가 맞지 않습니다.");
         return (image,contents.Document);
