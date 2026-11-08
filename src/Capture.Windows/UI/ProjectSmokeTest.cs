@@ -28,7 +28,8 @@ internal static class ProjectSmokeTest
             Check(Same(expected,Bytes(BackdropRenderer.Export(image,document)),out var noise),"exporting the same document twice gives the same pixels"+noise);
             Check(Same(Bytes(image),Bytes(loadedImage),out var stored),$"the reopened original image keeps its pixels ({loadedImage.Format}, {loadedImage.DpiX:0.###} dpi){stored}");
             Check(Same(expected,Bytes(BackdropRenderer.Export(image,loaded)),out var objects),"reopened objects render the same pixels"+objects);
-            Check(Same(expected,Bytes(BackdropRenderer.Export(loadedImage,loaded)),out var whole),"a reopened project exports exactly the same pixels"+whole);
+            // PNG stores straight alpha and WPF composites premultiplied, so a channel may round by one step; anything more is a real change.
+            Check(Same(expected,Bytes(BackdropRenderer.Export(loadedImage,loaded)),out var whole,tolerance:1),"a reopened project exports the same pixels, within one rounding step"+whole);
             ProjectFileIO.Save(image,document,path);Check(ProjectFileIO.Load(path).Document.Annotations.Count==3,"saving over an existing project replaces it");
             var editor=new EditorWindow(loadedImage,loaded);
             try {editor.Show();editor.UpdateLayout();Check(editor.IsVisible && loaded.Annotations.Count==3,"the editor opens a project with its objects");}
@@ -40,13 +41,13 @@ internal static class ProjectSmokeTest
         } finally {try{Directory.Delete(folder,true);}catch(IOException){}}
         File.WriteAllText(Path.Combine(directory,"project-smoke.json"),System.Text.Json.JsonSerializer.Serialize(checks));
     }
-    private static bool Same(byte[] a,byte[] b,out string detail)
+    private static bool Same(byte[] a,byte[] b,out string detail,int tolerance=0)
     {
         detail="";if(a.AsSpan().SequenceEqual(b))return true;
         if(a.Length!=b.Length){detail=$" (sizes {a.Length} vs {b.Length} bytes)";return false;}
         int count=0,first=-1,worst=0;
         for(int i=0;i<a.Length;i++){int d=Math.Abs(a[i]-b[i]);if(d==0)continue;count++;if(first<0)first=i;worst=Math.Max(worst,d);}
-        detail=$" ({count} bytes differ, largest by {worst}, first at byte {first})";return false;
+        detail=$" ({count} bytes differ, largest by {worst}, first at byte {first})";return worst<=tolerance;
     }
     private static byte[] Bytes(BitmapSource image)
     {
