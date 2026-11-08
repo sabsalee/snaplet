@@ -61,6 +61,12 @@ internal static class Ui
         else {var row=new StackPanel{Orientation=Orientation.Horizontal};var icon=Icon(glyph);icon.Margin=new Thickness(0,0,8,0);row.Children.Add(icon);row.Children.Add(new TextBlock{Text=title,VerticalAlignment=VerticalAlignment.Center});b.Content=row;}
         AutomationProperties.SetName(b,title);b.Click+=(_,_)=>action();return b;
     }
+    /// <summary>A text link in the accent colour. Its label is its own TextBlock, because the app-wide TextBlock style would otherwise paint it like body text.</summary>
+    internal static Button Link(string title,Action action)
+    {
+        var label=new TextBlock {Text=title};label.SetResourceReference(TextBlock.ForegroundProperty,"AccentBrush");
+        var b=Button(title,action,style:"QuietButton");b.Content=label;b.MinHeight=0;b.Padding=new Thickness(6,3,6,3);return b;
+    }
     internal static Button IconButton(string glyph,string label,Action action,double size=34)
     {
         var b=Button(label,action,style:"EditorIconButton");var icon=Icon(glyph);b.Content=icon;BindIcon(icon,b);b.ToolTip=label;b.Width=size;b.Height=size;b.MinHeight=0;b.Padding=new Thickness(7);return b;

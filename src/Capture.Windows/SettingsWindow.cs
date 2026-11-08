@@ -142,7 +142,7 @@ internal sealed class SettingsWindow : Window
         var install=Ui.Button("",async()=>{if(updates.Snapshot.Stage==UpdateStage.Ready)restartUpdate?.Invoke();else await updates.DownloadAsync();},style:"PrimaryButton");
         AutomationProperties.SetAutomationId(check,"updates-check");AutomationProperties.SetAutomationId(install,"updates-install");
         check.Margin=new Thickness(0,0,8,0);actions.Children.Add(check);actions.Children.Add(install);card.Children.Add(actions);Group(p,null,card);
-        var download=Ui.Button("다운로드 및 변경 사항",()=>{try{Process.Start(new ProcessStartInfo(UpdateDistribution.Releases){UseShellExecute=true});}catch{error.Text="브라우저를 열지 못했습니다.";}},style:"QuietButton");
+        var download=Ui.Link("다운로드 및 변경 사항",()=>{try{Process.Start(new ProcessStartInfo(UpdateDistribution.Releases){UseShellExecute=true});}catch{error.Text="브라우저를 열지 못했습니다.";}});
         download.HorizontalAlignment=HorizontalAlignment.Left;download.Margin=new Thickness(0,10,0,0);p.Children.Add(download);
         p.Children.Add(Note("개발 버전 채널입니다. 업데이트하면 저장하지 않은 편집은 사라지므로 먼저 저장해 주세요."));
         void Refresh()

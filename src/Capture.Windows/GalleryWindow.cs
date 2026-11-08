@@ -53,8 +53,7 @@ internal sealed class GalleryWindow : Window
 
         notice.SetResourceReference(Border.BackgroundProperty,"WorkspaceBrush");DockPanel.SetDock(notice,Dock.Top);root.Children.Add(notice);
         var noticeRow=new DockPanel();notice.Child=noticeRow;
-        var turnOn=new Button {Content="설정 열기",Padding=new Thickness(8,2,8,3),MinHeight=0,Margin=new Thickness(8,0,0,0),Style=(Style)Application.Current.FindResource("QuietButton")};
-        turnOn.SetResourceReference(ForegroundProperty,"AccentBrush");turnOn.Click+=(_,_)=>openSettings();noticeRow.HorizontalAlignment=HorizontalAlignment.Left;DockPanel.SetDock(turnOn,Dock.Right);noticeRow.Children.Add(turnOn);
+        var turnOn=Ui.Link("설정 열기",()=>openSettings());turnOn.Margin=new Thickness(6,0,0,0);noticeRow.HorizontalAlignment=HorizontalAlignment.Left;DockPanel.SetDock(turnOn,Dock.Right);noticeRow.Children.Add(turnOn);
         var noticeText=new TextBlock {Text=$"앱을 닫으면 사라집니다. 설정 → 저장에서 디스크 보관을 켜면 최근 {HistoryStore.DiskLimit}개를 남깁니다.",FontSize=12,VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis};
         noticeText.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");noticeRow.Children.Add(noticeText);
 
