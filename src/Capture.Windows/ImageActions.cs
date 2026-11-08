@@ -63,11 +63,40 @@ internal static class ImageActions
         try {using(var file=File.Create(temp))encoder.Save(file);File.Move(temp,path,true);}
         finally {if(File.Exists(temp))File.Delete(temp);}
     }
+    /// <summary>Image files Snaplet opens. WebP and HEIC are decoded by the codecs Windows provides as Store extensions.</summary>
+    internal static readonly string[] ImageExtensions=[".png",".jpg",".jpeg",".bmp",".tif",".tiff",".gif",".webp",".heic",".heif"];
+    internal static readonly string ImagePattern=string.Join(";",ImageExtensions.Select(e=>"*"+e));
+    internal static bool IsImage(string path)=>ImageExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
     public static BitmapSource Load(string path) {
         using var stream=File.OpenRead(path);
-        var decoder=BitmapDecoder.Create(stream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad);
-        BitmapSource result=decoder.Frames[0];result.Freeze();return result;
+        BitmapFrame frame;
+        try {frame=BitmapDecoder.Create(stream,BitmapCreateOptions.PreservePixelFormat,BitmapCacheOption.OnLoad).Frames[0];}
+        catch(Exception error) when(error is NotSupportedException or FileFormatException or COMException && MissingCodec(path) is string message) {throw new NotSupportedException(message,error);}
+        BitmapSource result=Upright(frame,Orientation(frame));result.Freeze();return result;
     }
+    /// <summary>The Store extension to install when Windows cannot decode a format it only supports through one.</summary>
+    internal static string? MissingCodec(string path)=>Path.GetExtension(path).ToLowerInvariant() switch {
+        ".webp"=>"WebP 이미지를 열 수 없습니다. Microsoft Store에서 'WebP 이미지 확장'을 설치한 뒤 다시 열어 주세요.",
+        ".heic" or ".heif"=>"HEIC 이미지를 열 수 없습니다. Microsoft Store에서 'HEIF 이미지 확장'과 'HEVC 비디오 확장'을 설치한 뒤 다시 열어 주세요.",
+        _=>null};
+    /// <summary>The EXIF orientation (1–8) a camera stored instead of rotating the pixels; 1 when there is none.</summary>
+    private static int Orientation(BitmapFrame frame)
+    {
+        try {
+            if(frame.Metadata is BitmapMetadata metadata && metadata.ContainsQuery("System.Photo.Orientation") && metadata.GetQuery("System.Photo.Orientation") is ushort value && value is >= 1 and <= 8)return value;
+        } catch(Exception error) when(error is NotSupportedException or InvalidOperationException or ArgumentException or COMException) {}
+        return 1;
+    }
+    /// <summary>Applies an EXIF orientation, so a phone photo opens the way it was taken.</summary>
+    internal static BitmapSource Upright(BitmapSource image,int orientation)=>orientation switch {
+        2=>Turn(image,ImageTurn.FlipHorizontal),
+        3=>Turn(Turn(image,ImageTurn.Right),ImageTurn.Right),
+        4=>Turn(image,ImageTurn.FlipVertical),
+        5=>Turn(Turn(image,ImageTurn.Right),ImageTurn.FlipHorizontal),
+        6=>Turn(image,ImageTurn.Right),
+        7=>Turn(Turn(image,ImageTurn.Left),ImageTurn.FlipHorizontal),
+        8=>Turn(image,ImageTurn.Left),
+        _=>image};
     public static BitmapSource Demo() {
         var visual=new DrawingVisual();using(var dc=visual.RenderOpen()) {
             dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(22,29,44)),null,new Rect(0,0,1200,760));

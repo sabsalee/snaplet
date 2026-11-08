@@ -32,6 +32,17 @@ internal static class BackdropSmokeTest
         doc.SetExportScale(2);Check(BackdropRenderer.Export(content,doc).PixelWidth==(200+2*40)*2,"export scale doubles the framed output");doc.Undo();
         doc.SetExportScale(.5);Check(BackdropRenderer.Export(content,doc).PixelWidth==(200+2*40)/2,"export scale halves the framed output");doc.Undo();
         doc.Undo();doc.Undo();doc.Undo();Check(!doc.Backdrop.Enabled,"backdrop changes undo back to the plain image");
+        // A blurred fill takes its colours from the image: red on the left side, blue on the right.
+        var halves=new DrawingVisual();using(var dc=halves.RenderOpen()){dc.DrawRectangle(Brushes.Red,null,new Rect(0,0,100,100));dc.DrawRectangle(Brushes.Blue,null,new Rect(100,0,100,100));}
+        var halvesImage=new RenderTargetBitmap(200,100,96,96,PixelFormats.Pbgra32);halvesImage.Render(halves);halvesImage.Freeze();
+        var soft=new EditableDocument(200,100);soft.SetBackdrop(new Backdrop(Enabled:true,Fill:BackdropFill.Blurred,Padding:40,CornerRadius:0,Shadow:0));
+        var softImage=BackdropRenderer.Export(halvesImage,soft);Save(softImage,Path.Combine(directory,"editor-backdrop-blurred.png"));
+        var left=Pixel(softImage,3,90);var right=Pixel(softImage,276,90);
+        Check(softImage.PixelWidth==280 && left.A==255 && right.A==255,"a blurred backdrop is opaque to the edges");
+        Check(left.R>left.B+60 && right.B>right.R+60,"a blurred backdrop takes its colours from the image beneath it");
+        Check(Pixel(softImage,60,90) is {R:255,G:0,B:0},"a blurred backdrop leaves the image itself sharp");
+        soft.CropTo(new RectD(100,0,100,100));var cropped=Pixel(BackdropRenderer.Export(halvesImage,soft),3,3);
+        Check(cropped.B>cropped.R+60,"a blurred backdrop follows the crop");
         // Eyedropper samples the composited image and computes contrast between the two picks.
         var split=new DrawingVisual();using(var dc=split.RenderOpen()){dc.DrawRectangle(Brushes.Black,null,new Rect(0,0,100,80));dc.DrawRectangle(Brushes.White,null,new Rect(100,0,100,80));}
         var splitImage=new RenderTargetBitmap(200,80,96,96,PixelFormats.Pbgra32);splitImage.Render(split);splitImage.Freeze();

@@ -39,6 +39,8 @@ internal static class ProjectFileChecks
         restored.Delete(rich.Id); check(restored.CanUndo && restored.Annotations.Count == 5, "A restored project stays editable."); restored.Undo();
         check(restored.Annotations.Count == 6, "Edits after opening can be undone.");
         check(RoundTrip([9], new EditableDocument(3, 4)).Document.Annotations.Count == 0, "An untouched document is a valid project.");
+        var soft = new EditableDocument(3, 4); soft.SetBackdrop(new Backdrop(true, BackdropFill.Blurred));
+        check(RoundTrip([9], soft).Document.Backdrop.Fill == BackdropFill.Blurred, "A project keeps a blurred backdrop.");
 
         void Rejects(byte[] file, string message)
         {

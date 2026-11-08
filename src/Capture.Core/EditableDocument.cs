@@ -28,8 +28,8 @@ public static class ExportSizing
     }
 }
 
-/// <summary>Background behind the exported image: gradient/solid/transparent fill, padding, rounded corners and a soft shadow.</summary>
-public enum BackdropFill { Gradient, Solid, Transparent }
+/// <summary>Background behind the exported image: gradient/solid/transparent fill or a blurred copy of the image, padding, rounded corners and a soft shadow.</summary>
+public enum BackdropFill { Gradient, Solid, Transparent, Blurred }
 public sealed record Backdrop(bool Enabled = false, BackdropFill Fill = BackdropFill.Gradient, int Preset = 0, ColorRgba Color = default,
     double Padding = 56, double CornerRadius = 12, double Shadow = .5)
 {

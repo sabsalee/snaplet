@@ -393,13 +393,17 @@ internal sealed class EditorSurface : FrameworkElement
     {
         guideX=guideY=null;
         if(!SnapToObjects || pointerModifiers.HasFlag(ModifierKeys.Control))return moving;
-        var others=Document.Annotations.Where(a=>a.Id!=original?.Id).Select(ImageRenderer.BoundsOf).ToArray();
-        var b=ImageRenderer.BoundsOf(moving);
-        var xs=others.SelectMany(r=>new[]{r.Left,r.Left+r.Width/2,r.Right});
-        var ys=others.SelectMany(r=>new[]{r.Top,r.Top+r.Height/2,r.Bottom});
+        var b=ImageRenderer.BoundsOf(moving);var (xs,ys)=SnapTargets(original?.Id);
         var x=AnnotationGeometry.SnapAxis(b.Left,b.Right,xs,5/Zoom);
         var y=AnnotationGeometry.SnapAxis(b.Top,b.Bottom,ys,5/Zoom);
         guideX=x.Guide;guideY=y.Guide;return moving.Move(x.Offset,y.Offset);
+    }
+    /// <summary>Edges and centres an object lines up with: the canvas, then every other object.</summary>
+    private (double[] Xs,double[] Ys) SnapTargets(Guid? except)
+    {
+        var crop=Document.Crop;var canvas=new Rect(crop.X,crop.Y,crop.Width,crop.Height);
+        var boxes=Document.Annotations.Where(a=>a.Id!=except).Select(ImageRenderer.BoundsOf).Prepend(canvas).ToArray();
+        return (boxes.SelectMany(r=>new[]{r.Left,r.Left+r.Width/2,r.Right}).ToArray(),boxes.SelectMany(r=>new[]{r.Top,r.Top+r.Height/2,r.Bottom}).ToArray());
     }
     private PointD Constrained(PointD anchor,PointD p,AnnotationKind? kind=null)
     {
@@ -459,7 +463,8 @@ internal sealed class EditorSurface : FrameworkElement
         var ratio=InkStyle.Magnification;var x=sample.Right+24;var y=sample.Bottom+24;
         return new(Guid.NewGuid(),AnnotationKind.Magnifier,new(x,y),new(x+sample.Width*ratio,y+sample.Height*ratio),Ink,Thickness,Style:InkStyle,SampleRegion:sample);
     }
-    internal void InsertImage(BitmapSource image)
+    /// <param name="at">Where the image was dropped, in image coordinates; the centre of the view when omitted.</param>
+    internal void InsertImage(BitmapSource image,PointD? at=null)
     {
         if((long)image.PixelWidth*image.PixelHeight>64_000_000)throw new InvalidOperationException("추가 이미지가 64MP 한도를 초과합니다.");
         var bytes=Document.Annotations.Where(a=>a.Image!=null).Select(a=>a.Image!).Distinct().Sum(a=>(long)a.Width*a.Height*4);
@@ -469,6 +474,12 @@ internal sealed class EditorSurface : FrameworkElement
         var fit=Math.Min(1,Math.Min(crop.Width/image.PixelWidth,crop.Height/image.PixelHeight));
         double width=image.PixelWidth*fit,height=image.PixelHeight*fit;
         var x=crop.X+(crop.Width-width)/2;var y=crop.Y+(crop.Height-height)/2;
+        if(at is PointD drop) {
+            // Centred where it was dropped, kept on the canvas, then lined up with the canvas or another object when close.
+            x=Math.Max(crop.X,Math.Min(drop.X-width/2,crop.Right-width));y=Math.Max(crop.Y,Math.Min(drop.Y-height/2,crop.Bottom-height));
+            var targets=SnapTargets(null);
+            x+=AnnotationGeometry.SnapAxis(x,x+width,targets.Xs,12/Zoom).Offset;y+=AnnotationGeometry.SnapAxis(y,y+height,targets.Ys,12/Zoom).Offset;
+        }
         var a=new Annotation(Guid.NewGuid(),AnnotationKind.Image,new(x,y),new(x+width,y+height),new(255,255,255),Image:asset);
         CommitAnnotation(a,true);Tool=null;Selected=a.Id;SelectionChanged?.Invoke();InvalidateVisual();
     }

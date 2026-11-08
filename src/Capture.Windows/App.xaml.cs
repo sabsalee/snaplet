@@ -35,6 +35,9 @@ public partial class App : Application
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<BitmapSource,HistoryRecord> historyRecords=[];
     private GalleryWindow? gallery;
     private readonly Dictionary<BitmapSource,EditorWindow> editors=[];
+    /// <summary>A framed window capture remembers the bare window, so the editor can still change or remove its background.</summary>
+    private sealed record FramedWindow(BitmapSource Window,Capture.Core.Backdrop Backdrop);
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<BitmapSource,FramedWindow> framedWindows=[];
     private HomeWindow? home;
     private SettingsWindow? preferences;
     private bool capturing;
@@ -170,7 +173,10 @@ public partial class App : Application
             if(command is not ("region" or "pick-window" or "scroll" or "ocr")) {diagnostics.Frames([result]);diagnostics.Complete("snapshot-ready");}
             if(command=="delayed")cursor=settings.IncludeCursor?CursorSnapshot.Capture():null;
             if(cursor!=null)result=cursor.DrawOnto(result);
-            if(windowCapture && settings.WindowStyle!=WindowCaptureStyle.Plain)result=result with{Image=BackdropRenderer.Compose(result.Image,WindowBackdrop(settings.WindowStyle))};
+            if(windowCapture && settings.WindowStyle!=WindowCaptureStyle.Plain) {
+                var frame=WindowBackdrop(settings.WindowStyle);var framed=BackdropRenderer.Compose(result.Image,frame);
+                framedWindows.AddOrUpdate(framed,new(result.Image,frame));result=result with{Image=framed};
+            }
             if(destination!=null)destination.AddCapturedImage(result.Image);
             else Received(result.Image,$"{result.Engine} · {result.Image.PixelWidth} × {result.Image.PixelHeight} px · 처리 {clock.ElapsedMilliseconds}ms (선택 시간 포함)");
         } catch(OperationCanceledException) {diagnostics.Complete("cancelled");status.Text="캡처를 취소했습니다.";}
@@ -213,7 +219,7 @@ public partial class App : Application
         _=completion.Task.ContinueWith(_=>registration.Dispose(),TaskScheduler.Default);
         return completion.Task;
     }
-    /// <summary>Window framing presets; the editor's backdrop panel can refine them afterwards on a new capture.</summary>
+    /// <summary>Window framing presets; the editor opens the bare window with this as its backdrop, so it can be changed or turned off.</summary>
     internal static Capture.Core.Backdrop WindowBackdrop(WindowCaptureStyle style)=>style==WindowCaptureStyle.Shadow
         ?new(Enabled:true,Fill:Capture.Core.BackdropFill.Transparent,Padding:36,CornerRadius:8,Shadow:.7)
         :new(Enabled:true,Fill:Capture.Core.BackdropFill.Gradient,Preset:4,Padding:56,CornerRadius:8,Shadow:.6);
@@ -310,7 +316,13 @@ public partial class App : Application
             if(editors.Count<12 && editors.Values.Sum(window=>window.EstimatedImageBytes)<256_000_000)break;
             pair.Value.CloseForExit();editors.Remove(pair.Key);
         }
-        var window=new EditorWindow(image,document){EscapeAction=settings.EscapeAction,EscapeSaveFolder=settings.SaveFolder};editors[image]=window;
+        // A framed window opens as the bare window with its frame as an editable backdrop.
+        var opened=image;
+        if(document is null && framedWindows.TryGetValue(image,out var framed)) {
+            opened=framed.Window;var w=opened.PixelWidth;var h=opened.PixelHeight;
+            document=Capture.Core.EditableDocument.Restore(w,h,new(0,0,w,h),new(0,0,w,h),[],1,framed.Backdrop,1);
+        }
+        var window=new EditorWindow(opened,document){EscapeAction=settings.EscapeAction,EscapeSaveFolder=settings.SaveFolder};editors[image]=window;
         window.OcrRequested+=source=>_=RecognizeAsync(source);window.RasterizedRequested+=Edit;
         window.AddCaptureRequested+=()=>RunCommandAsync("region",null,window);
         window.PinRequested+=bitmap=>{
@@ -350,7 +362,7 @@ public partial class App : Application
     }
     private string JoinIfWanted(string text)=>settings.OcrJoinLines?System.Text.RegularExpressions.Regex.Replace(text.Trim(),@"\s*\r?\n\s*"," "):text;
     private void OpenImage() {
-        var dialog=new OpenFileDialog {Filter="이미지와 프로젝트|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif;*.snaplet|이미지|*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif|"+ProjectFileIO.DialogFilter};
+        var dialog=new OpenFileDialog {Filter=$"이미지와 프로젝트|{ImageActions.ImagePattern};*{Capture.Core.ProjectFile.Extension}|이미지|{ImageActions.ImagePattern}|"+ProjectFileIO.DialogFilter};
         if(dialog.ShowDialog()!=true)return;
         try{OpenPath(dialog.FileName);}catch(Exception error){Error(error);}
     }
@@ -421,6 +433,7 @@ public partial class App : Application
             UI.SelectionSmokeTest.Run(path);
             await UI.GallerySmokeTest.RunAsync(path);
             UI.ProjectSmokeTest.Run(path);
+            UI.ImportSmokeTest.Run(path);
             BackdropSmokeTest.Run(path);
             await UI.ScrollSmokeTest.RunAsync(path);
             FidelitySheet.Run(path);
