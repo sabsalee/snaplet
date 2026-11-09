@@ -176,7 +176,7 @@ public sealed class CaptureEngine
         }
     }
 
-    private static GraphicsCaptureItem CreateItem(nint target, bool window)
+    internal static GraphicsCaptureItem CreateItem(nint target, bool window)
     {
         nint className = 0, factoryPointer = 0, itemPointer = 0;
         object? factoryObject = null;
