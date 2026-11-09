@@ -1,0 +1,1 @@
+{"component":"automatic scroll capture (simulated page)","passed":3,"wheelCalls":12,"checks":["auto loop reaches the end and finishes","sticky header appears once","content is continuous without duplicates"]}
