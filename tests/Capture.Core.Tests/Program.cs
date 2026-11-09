@@ -239,6 +239,7 @@ BackdropChecks.Run(Check);
 ColorChecks.Run(Check);
 ScrollBandChecks.Run(Check);
 ProjectFileChecks.Run(Check);
+RecordingChecks.Run(Check);
 byte[] twoByThree = Enumerable.Range(0, 24).Select(i => (byte)i).ToArray();
 var turned = ScrollStitchSession.Transpose(twoByThree, 2, 3);
 Check(turned.AsSpan(4, 4).SequenceEqual(twoByThree.AsSpan(8, 4)) && turned.AsSpan(12, 4).SequenceEqual(twoByThree.AsSpan(4, 4)), "Transposing swaps rows and columns.");

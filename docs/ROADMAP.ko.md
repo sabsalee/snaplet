@@ -104,7 +104,7 @@
 
 | 기능 | 상태 |
 | --- | --- |
-| 동영상 녹화 | 계획 보강(CleanShot X 공개 자료 대조, 빠른 녹화·Studio 녹화 분리, 0~9단계). 다음은 0단계 기술 시험 (`recording-plan.ko.md`). 기준 앱에 없는 독자 기능 |
+| 동영상 녹화 | 계획 보강(CleanShot X 공개 자료 대조, 빠른 녹화·Studio 녹화 분리, 0~9단계). 0단계 시험 도구(`--record-probe`)와 CI 합성 녹화 검사 추가, 실제 PC 측정 대기 (`recording-plan.ko.md`). 기준 앱에 없는 독자 기능 |
 
 ## CleanShot X 벤치마크 후속
 
