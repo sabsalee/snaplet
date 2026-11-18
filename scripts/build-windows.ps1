@@ -16,6 +16,12 @@ try {
         $results = Join-Path $projectRoot 'artifacts/smoke-results'
         $process = Start-Process -FilePath (Join-Path $projectRoot 'artifacts/snaplet-win-x64/Snaplet.exe') -ArgumentList @('--self-test', "`"$results`"") -PassThru -Wait
         if ($process.ExitCode -ne 0) { throw "Windows 렌더러 검증 실패: $results/result.txt" }
+        # Recording phase 0: a real-screen probe for information only. A runner may have no capture or encoder.
+        $probe = Join-Path $results 'record-probe'
+        $recording = Start-Process -FilePath (Join-Path $projectRoot 'artifacts/snaplet-win-x64/Snaplet.exe') -ArgumentList @('--record-probe', "`"$probe`"", '--seconds', '4', '--pause-at', '1.8', '--pause-for', '1') -PassThru
+        if (-not $recording.WaitForExit(90000)) { $recording.Kill(); Write-Host 'Recording probe did not finish within 90 s.' }
+        if (Test-Path "$probe/probe-report.txt") { Get-Content "$probe/probe-report.txt" | Write-Host }
+        Remove-Item "$probe/probe.mp4" -ErrorAction SilentlyContinue
     }
     Compress-Archive -Path artifacts/snaplet-win-x64/* -DestinationPath artifacts/Snaplet-Windows-x64.zip -Force
     & ./scripts/package-updates.ps1 -PreviousRelease:($env:GITHUB_REF_TYPE -eq 'tag')

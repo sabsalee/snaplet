@@ -13,6 +13,7 @@
     <StartupObject>Capture.Windows.Program</StartupObject>
     <Description>Local screenshots and annotations for Windows 11</Description>
     <RootNamespace>Capture.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Capture.Core/Capture.Core.csproj" /></ItemGroup>
   <ItemGroup><PackageReference Include="Tesseract" Version="5.2.0" /><PackageReference Include="Velopack" Version="1.2.161" /><PackageReference Include="ZXing.Net" Version="0.16.9" /></ItemGroup>

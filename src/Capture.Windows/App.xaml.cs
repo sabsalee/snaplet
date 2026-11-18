@@ -56,6 +56,7 @@ public partial class App : Application
         base.OnStartup(e);
         // Rendering smoke tests run without global shortcuts, tray or screen capture permission.
         if(e.Args.FirstOrDefault() is "--update-integration" or "--verify-update"){_=UpdateIntegration.RunAsync(e.Args,Shutdown);return;}
+        if(e.Args.FirstOrDefault() is "--record-probe" or "--record-inspect"){_=Recording.RecordingProbe.RunAsync(e.Args,Shutdown);return;}
         if(e.Args.Contains("--self-test")) {RunSelfTests(e.Args);return;}
         if(e.Args.Contains("--editor-demo")) {
             var editor=new EditorWindow(ImageActions.Demo(),closeOnDismiss:true);
@@ -446,6 +447,7 @@ public partial class App : Application
             UI.ImportSmokeTest.Run(path);
             BackdropSmokeTest.Run(path);
             await UI.ScrollSmokeTest.RunAsync(path);
+            File.WriteAllText(Path.Combine(path,"recording-synthetic.txt"),await Recording.RecordingProbe.SyntheticAsync(path));
             FidelitySheet.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();
