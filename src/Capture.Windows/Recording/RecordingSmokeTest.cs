@@ -164,6 +164,70 @@ internal static class RecordingSmokeTest
         return FormattableString.Invariant($"PASS: video {video.Duration.TotalSeconds:0.00}s, sound {sound.Duration.TotalSeconds:0.00}s after a 0.5s pause; problems: {(result.SoundProblems is { Count: > 0 } p ? string.Join(" / ", p) : "none")}");
     }
 
+    /// <summary>
+    /// Drawing while recording: the bar turns drawing on, tools add marks, undo removes one, the layer passes clicks
+    /// through when drawing is off, and the marks are on the captured screen while the bar is not.
+    /// </summary>
+    internal static async Task<string> RunSketchAsync(string folder)
+    {
+        if (!GraphicsCaptureSession.IsSupported()) return "SKIP: Windows Graphics Capture가 없어 그리기 검사를 건너뜁니다.";
+        var output = Path.Combine(folder, "recordings-sketch");
+        if (Directory.Exists(output)) Directory.Delete(output, true);
+        var window = new Window { WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Width = 480, Height = 320, Left = 60, Top = 60, Background = new WpfBrush(WpfColor.FromRgb(246, 246, 248)) };
+        window.Show();
+        try
+        {
+            var display = Native.Displays()[0];
+            var target = RecordingTarget.ForArea(new PixelRect(display.Bounds.Left + 60, display.Bounds.Top + 60, 480, 320)) ?? throw new InvalidOperationException("영역 대상을 만들지 못했습니다.");
+            var desktop = new PixelRect(display.Bounds.Left + target.Region.X, display.Bounds.Top + target.Region.Y, target.Region.Width, target.Region.Height);
+            var controller = new RecordingController(target, desktop, display, new(output, () => "sketch", 30, false, 0));
+            var run = controller.RunAsync();
+            for (int i = 0; i < 300 && controller.Elapsed <= TimeSpan.Zero; i++) await Task.Delay(50);
+            var sketch = controller.Sketch ?? throw new InvalidOperationException("영역 녹화에 그리기 층이 없습니다.");
+            var handle = new WindowInteropHelper(sketch).Handle;
+            if ((GetWindowLongPtr(handle, -20) & 0x20) == 0) throw new InvalidOperationException("그리기를 켜기 전에는 클릭이 아래 앱으로 지나가야 합니다.");
+            controller.Bar.Click("화면에 그리기");
+            if (!sketch.Drawing || (GetWindowLongPtr(handle, -20) & 0x20) != 0) throw new InvalidOperationException("그리기 버튼이 그리기 층을 켜지 않았습니다.");
+            var canvas = sketch.Canvas;
+            void Drag(string tool, double x1, double y1, double x2, double y2)
+            {
+                controller.Bar.Click(tool);
+                canvas.Begin(new(x1, y1)); canvas.Extend(new((x1 + x2) / 2, (y1 + y2) / 2)); canvas.Extend(new(x2, y2)); canvas.End();
+            }
+            Drag("사각형", 40, 40, 200, 140);
+            Drag("화살표", 300, 260, 220, 160);
+            Drag("펜", 260, 60, 420, 100);
+            Drag("형광펜", 60, 220, 220, 230);
+            controller.Bar.Click("번호"); canvas.Begin(new(400, 200)); canvas.Begin(new(440, 250));
+            Drag("스포트라이트", 30, 30, 210, 150);
+            if (canvas.Count != 7) throw new InvalidOperationException($"그린 개수가 {canvas.Count}개입니다(기대 7).");
+            controller.Bar.Click("마지막 그림 지우기 (Ctrl+Z)");
+            if (canvas.Count != 6) throw new InvalidOperationException("되돌리기가 마지막 그림을 지우지 않았습니다.");
+            controller.Bar.Click("색 바꾸기");
+            if (sketch.Color == new ColorRgba(255, 59, 48)) throw new InvalidOperationException("색 바꾸기가 색을 바꾸지 않았습니다.");
+            await Task.Delay(400);
+            var shot = await new CaptureEngine().CaptureMonitorAsync(display.Handle);
+            var crop = new System.Windows.Media.Imaging.CroppedBitmap(shot.Image, new Int32Rect(desktop.X - shot.X, desktop.Y - shot.Y, desktop.Width, desktop.Height));
+            var pixels = new byte[desktop.Width * desktop.Height * 4]; crop.CopyPixels(pixels, desktop.Width * 4, 0);
+            var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(sketch);
+            (byte B, byte G, byte R) At(double x, double y) { int px = (int)(x * dpi.DpiScaleX), py = (int)(y * dpi.DpiScaleY), i = (py * desktop.Width + px) * 4; return (pixels[i], pixels[i + 1], pixels[i + 2]); }
+            var edge = At(120, 40); var outside = At(320, 40);
+            if (!(edge.R > 180 && edge.G < 110 && edge.B < 110)) throw new InvalidOperationException($"사각형 테두리가 캡처 화면에 없습니다: {edge}");
+            if (outside.R > 200 && outside.G > 200) throw new InvalidOperationException($"스포트라이트 바깥이 어둡지 않습니다: {outside}");
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(crop));
+            using (var file = File.Create(Path.Combine(folder, "ui-recording-sketch.png"))) encoder.Save(file);
+            Save(controller.Bar, Path.Combine(folder, "ui-recording-bar-drawing.png"));
+            sketch.Drawing = false;
+            if ((GetWindowLongPtr(handle, -20) & 0x20) == 0) throw new InvalidOperationException("그리기를 끄면 클릭이 다시 아래 앱으로 지나가야 합니다.");
+            controller.Stop();
+            var result = await run.WaitAsync(TimeSpan.FromSeconds(30)) ?? throw new InvalidOperationException("그리기 녹화가 저장되지 않았습니다.");
+            return $"PASS: 7 marks drawn with 6 tools, undo, colour change; marks on the captured screen, spotlight dims outside; click-through toggles; saved {Path.GetFileName(result.Path)}";
+        }
+        finally { window.Close(); }
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
+
     private static void Save(Window window, string path)
     {
         // The whole window, so the content's margin and shadow are included rather than cropped.

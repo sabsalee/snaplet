@@ -6,7 +6,7 @@ using Capture.Windows.Platform;
 
 namespace Capture.Windows.Recording;
 
-internal sealed record RecordingOptions(string Folder, Func<string> Stem, int Fps = 30, bool Cursor = true, int CountdownSeconds = 0, bool SystemSound = false, bool Microphone = false);
+internal sealed record RecordingOptions(string Folder, Func<string> Stem, int Fps = 30, bool Cursor = true, int CountdownSeconds = 0, bool SystemSound = false, bool Microphone = false, TimeSpan SketchFade = default);
 
 /// <summary>
 /// One recording as the user sees it: corner marks and the bar appear, an optional countdown runs, then
@@ -19,7 +19,10 @@ internal sealed class RecordingController
     private readonly PixelRect desktop;
     private readonly DisplayInfo display;
     private readonly RecordingOptions options;
-    private readonly RecordingBar bar = new();
+    private readonly RecordingBar bar;
+    private readonly RecordingSketch? sketch;
+    private static readonly ColorRgba[] Palette = [new(255, 59, 48), new(10, 132, 255), new(52, 199, 89), new(255, 214, 10), new(255, 255, 255)];
+    private int colorIndex;
     private readonly DispatcherTimer tick = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private RecordingFrame? frame;
     private RecordingJob? job;
@@ -34,6 +37,17 @@ internal sealed class RecordingController
     public RecordingController(RecordingTarget target, PixelRect desktop, DisplayInfo display, RecordingOptions options)
     {
         this.target = target; this.desktop = desktop; this.display = display; this.options = options;
+        // A window recording captures only that window, so marks on top of it would not be in the video.
+        if (target.Kind != RecordingKind.Window) sketch = new RecordingSketch(desktop) { FadeAfter = options.SketchFade };
+        bar = new RecordingBar(sketch is not null);
+        if (sketch is not null)
+        {
+            bar.DrawToggled += ToggleDrawing;
+            bar.ToolChosen += tool => { sketch.Tool = tool; sketch.Drawing = true; ShowDrawing(); };
+            bar.ColorCycled += () => { colorIndex = (colorIndex + 1) % Palette.Length; sketch.Color = Palette[colorIndex]; ShowDrawing(); };
+            bar.UndoRequested += sketch.Undo;
+            sketch.DrawingChanged += _ => ShowDrawing();
+        }
         bar.PauseToggled += TogglePause;
         bar.StopRequested += Stop;
         bar.RestartRequested += () => { restart = true; job?.Stop(); };
@@ -42,6 +56,19 @@ internal sealed class RecordingController
     }
 
     internal RecordingBar Bar => bar;
+    internal RecordingSketch? Sketch => sketch;
+
+    /// <summary>Turns drawing on or off; while off, clicks go to the app being recorded.</summary>
+    public void ToggleDrawing() { if (sketch is null) return; sketch.Drawing = !sketch.Drawing; ShowDrawing(); }
+
+    private void ShowDrawing()
+    {
+        if (sketch is null) return;
+        bar.ShowDrawing(sketch.Drawing, sketch.Tool, System.Windows.Media.Color.FromRgb(sketch.Color.R, sketch.Color.G, sketch.Color.B));
+        // Activating the drawing layer raises it; keep the bar above it.
+        var handle = new System.Windows.Interop.WindowInteropHelper(bar).Handle;
+        if (handle != 0) Native.SetWindowPos(handle, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+    }
     public TimeSpan Elapsed => job?.Duration ?? TimeSpan.Zero;
     public bool Paused => job?.State == RecordingState.Paused;
 
@@ -57,7 +84,9 @@ internal sealed class RecordingController
         {
             // The full screen needs no marks: the bar and the tray already say it is recording.
             if (target.Kind != RecordingKind.Screen) { frame = new RecordingFrame(desktop); frame.Show(); }
+            sketch?.Show();
             bar.Show();
+            ShowDrawing();
             RecordingLook.PlacePhysical(bar, (w, h) => RecordingControls.Place(desktop, w, h, new(display.Work.Left, display.Work.Top, display.Work.Width, display.Work.Height)));
             for (int left = options.CountdownSeconds; left > 0 && !stopBeforeStart; left--) { bar.Countdown(left); await Task.Delay(1000); }
             if (stopBeforeStart) return null;
@@ -71,7 +100,7 @@ internal sealed class RecordingController
                 tick.Start(); Refresh();
                 var result = await run;
                 tick.Stop();
-                if (restart && !discard) { Delete(result); continue; }
+                if (restart && !discard) { Delete(result); sketch?.Clear(); continue; }
                 if (discard) { Delete(result); return null; }
                 return result;
             }
@@ -80,7 +109,7 @@ internal sealed class RecordingController
         {
             tick.Stop();
             Active = null;
-            bar.Close(); frame?.Close();
+            bar.Close(); frame?.Close(); sketch?.Close();
             Progress?.Invoke(null);
         }
     }

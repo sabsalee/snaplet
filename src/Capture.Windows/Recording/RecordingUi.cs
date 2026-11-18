@@ -18,19 +18,19 @@ internal static class RecordingLook
 {
     public static readonly SolidColorBrush Surface = Frozen(Color.FromArgb(242, 18, 22, 30)), Edge = Frozen(Color.FromArgb(90, 255, 255, 255)),
         Hover = Frozen(Color.FromArgb(38, 255, 255, 255)), Text = Frozen(Colors.White), Muted = Frozen(Color.FromArgb(170, 255, 255, 255)),
-        Live = Frozen(Color.FromRgb(255, 69, 58)), Paused = Frozen(Color.FromRgb(255, 179, 64));
+        Live = Frozen(Color.FromRgb(255, 69, 58)), Paused = Frozen(Color.FromRgb(255, 179, 64)), Selected = Frozen(Color.FromRgb(56, 110, 230));
     private static SolidColorBrush Frozen(Color color) { var brush = new SolidColorBrush(color); brush.Freeze(); return brush; }
 
     public static Button Button(string glyph, string label, Action action, Brush? foreground = null)
     {
         var face = new FrameworkElementFactory(typeof(Border), "face");
         face.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-        face.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+        face.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
         var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         face.AppendChild(content);
         var template = new ControlTemplate(typeof(Button)) { VisualTree = face };
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true }; hover.Setters.Add(new Setter(Border.BackgroundProperty, Hover, "face")); template.Triggers.Add(hover);
-        var button = new Button { Template = template, Width = 30, Height = 30, Focusable = false, Cursor = Cursors.Hand, Foreground = foreground ?? Text, ToolTip = label, Content = Ui.Icon(glyph, 16) };
+        var button = new Button { Template = template, Background = Brushes.Transparent, Width = 30, Height = 30, Focusable = false, Cursor = Cursors.Hand, Foreground = foreground ?? Text, ToolTip = label, Content = Ui.Icon(glyph, 16) };
         System.Windows.Automation.AutomationProperties.SetName(button, label);
         button.Click += (_, _) => action();
         return button;
@@ -65,9 +65,14 @@ internal sealed class RecordingBar : Window
     private readonly TextBlock warning = new() { Text = "마이크 소리 없음", Foreground = RecordingLook.Paused, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0), Visibility = Visibility.Collapsed };
     private bool paused;
 
-    public event Action? PauseToggled, StopRequested, RestartRequested, DiscardRequested;
+    public event Action? PauseToggled, StopRequested, RestartRequested, DiscardRequested, DrawToggled, UndoRequested, ColorCycled;
+    public event Action<SketchTool>? ToolChosen;
+    private readonly StackPanel tools = new() { Orientation = Orientation.Horizontal, Visibility = Visibility.Collapsed };
+    private readonly Dictionary<SketchTool, Button> toolButtons = new();
+    private readonly Ellipse swatch = new() { Width = 14, Height = 14, Stroke = RecordingLook.Edge, StrokeThickness = 1 };
+    private Button? draw;
 
-    public RecordingBar()
+    public RecordingBar(bool canDraw = false)
     {
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         Topmost = true; ShowInTaskbar = false; ShowActivated = false; SizeToContent = SizeToContent.WidthAndHeight; FontFamily = Ui.Font;
@@ -79,6 +84,22 @@ internal sealed class RecordingBar : Window
         row.Children.Add(grip); row.Children.Add(light); row.Children.Add(time); row.Children.Add(sound); row.Children.Add(warning);
         row.Children.Add(RecordingLook.Divider());
         row.Children.Add(pause); row.Children.Add(stop);
+        if (canDraw)
+        {
+            row.Children.Add(RecordingLook.Divider());
+            draw = RecordingLook.Button("edit", "화면에 그리기", () => DrawToggled?.Invoke());
+            row.Children.Add(draw);
+            foreach (var (tool, glyph, label) in new[] { (SketchTool.Arrow, "arrow", "화살표"), (SketchTool.Rectangle, "■", "사각형"), (SketchTool.Pen, "edit", "펜"), (SketchTool.Highlight, "highlight", "형광펜"), (SketchTool.Step, "step", "번호"), (SketchTool.Spotlight, "spotlight", "스포트라이트") })
+            {
+                var chosen = tool;
+                var button = RecordingLook.Button(glyph, label, () => ToolChosen?.Invoke(chosen));
+                if (glyph == "■") button.Content = new Border { Width = 14, Height = 11, BorderBrush = RecordingLook.Text, BorderThickness = new Thickness(1.6), CornerRadius = new CornerRadius(2) };
+                toolButtons[tool] = button; tools.Children.Add(button);
+            }
+            var color = RecordingLook.Button("■", "색 바꾸기", () => ColorCycled?.Invoke()); color.Content = swatch; tools.Children.Add(color);
+            tools.Children.Add(RecordingLook.Button("undo", "마지막 그림 지우기 (Ctrl+Z)", () => UndoRequested?.Invoke()));
+            row.Children.Add(tools);
+        }
         row.Children.Add(RecordingLook.Divider());
         row.Children.Add(RecordingLook.Button("sync", "처음부터 다시", () => RestartRequested?.Invoke()));
         row.Children.Add(RecordingLook.Button("close", "취소하고 버리기", () => DiscardRequested?.Invoke()));
@@ -88,6 +109,15 @@ internal sealed class RecordingBar : Window
     }
 
     public bool Paused => paused;
+
+    /// <summary>Shows the drawing tools with the chosen one and colour marked.</summary>
+    public void ShowDrawing(bool on, SketchTool tool, Color color)
+    {
+        tools.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        if (draw is not null) { draw.Background = on ? RecordingLook.Selected : Brushes.Transparent; draw.ToolTip = on ? "그리기 끝내기 (Esc)" : "화면에 그리기"; }
+        foreach (var (key, button) in toolButtons) button.Background = on && key == tool ? RecordingLook.Selected : Brushes.Transparent;
+        swatch.Fill = new SolidColorBrush(color);
+    }
 
     public void Update(TimeSpan elapsed, bool isPaused, bool blink, float? soundLevel = null, bool microphoneQuiet = false)
     {

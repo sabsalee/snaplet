@@ -68,13 +68,15 @@ public sealed record AppSettings
     public bool RecordSystemAudio {get;init;}
     /// <summary>Record the default microphone.</summary>
     public bool RecordMicrophone {get;init;}
+    /// <summary>Seconds after which marks drawn during a recording fade away; 0 keeps them until cleared.</summary>
+    public int RecordSketchFadeSeconds {get;init;}
 
     /// <summary>Every command that can own a global shortcut, in display order. New commands start unassigned to avoid stealing keys from other apps.</summary>
     public static readonly IReadOnlyList<(string Command,string Name)> Commands=[
         ("region","영역 캡처"),("window","창 캡처"),("display","현재 화면 캡처"),("delayed","3초 후 화면 캡처"),
         ("last","최근 캡처 편집"),("repeat","직전 영역 반복"),("desktop","모든 화면 캡처"),("pick-window","창 캡처 (추가 단축키)"),
         ("scroll","스크롤 캡처"),("ocr","텍스트·QR 바로 인식"),("home","Snaplet 열기"),("history","캡처 기록"),
-        ("record","영역 녹화 (녹화 중이면 정지)"),("record-window","창 녹화"),("record-screen","현재 화면 녹화"),("record-pause","녹화 일시정지·이어서")];
+        ("record","영역 녹화 (녹화 중이면 정지)"),("record-window","창 녹화"),("record-screen","현재 화면 녹화"),("record-pause","녹화 일시정지·이어서"),("record-draw","녹화 중 그리기 켜기·끄기")];
     public static List<HotkeyBinding> DefaultHotkeys()=>[
         new("region",Key.D1,ModifierKeys.Control|ModifierKeys.Shift),
         new("window",Key.D2,ModifierKeys.Control|ModifierKeys.Shift),
@@ -91,7 +93,8 @@ public sealed record AppSettings
         new("record",Key.None,ModifierKeys.None),
         new("record-window",Key.None,ModifierKeys.None),
         new("record-screen",Key.None,ModifierKeys.None),
-        new("record-pause",Key.None,ModifierKeys.None)];
+        new("record-pause",Key.None,ModifierKeys.None),
+        new("record-draw",Key.None,ModifierKeys.None)];
 }
 
 internal static class SettingsStore
@@ -145,7 +148,7 @@ internal static class SettingsStore
         var windowStyle=Enum.IsDefined(stored.WindowStyle)?stored.WindowStyle:WindowCaptureStyle.Plain;
         // Files without SchemaVersion deserialize with the current one, so the legacy field itself marks an old file.
         var after=stored.ShowPreview==false?AfterCaptureAction.None:Enum.IsDefined(stored.AfterCapture)?stored.AfterCapture:AfterCaptureAction.Popup;
-        return stored with{SchemaVersion=AppSettings.CurrentSchema,RecordFps=stored.RecordFps==60?60:30,Hotkeys=hotkeys,SaveFolder=folder,FileNameTemplate=string.IsNullOrWhiteSpace(stored.FileNameTemplate)?Capture.Core.FileNameTemplate.Default:stored.FileNameTemplate,EscapeAction=escape,WindowStyle=windowStyle,AfterCapture=after,ShowPreview=null};
+        return stored with{SchemaVersion=AppSettings.CurrentSchema,RecordFps=stored.RecordFps==60?60:30,RecordSketchFadeSeconds=stored.RecordSketchFadeSeconds is 3 or 6?stored.RecordSketchFadeSeconds:0,Hotkeys=hotkeys,SaveFolder=folder,FileNameTemplate=string.IsNullOrWhiteSpace(stored.FileNameTemplate)?Capture.Core.FileNameTemplate.Default:stored.FileNameTemplate,EscapeAction=escape,WindowStyle=windowStyle,AfterCapture=after,ShowPreview=null};
     }
 
     public static void Save(AppSettings settings) {
