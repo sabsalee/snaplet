@@ -227,6 +227,55 @@ internal static class RecordingSmokeTest
         finally { window.Close(); }
     }
 
+    /// <summary>Editing a saved recording: trim with sound, mute and shrink, a looping GIF, one frame, and the edit window's own save.</summary>
+    internal static async Task<string> RunEditAsync(string folder)
+    {
+        var source = Path.Combine(folder, "recording-synthetic.mp4");
+        if (!File.Exists(source)) return "SKIP: 합성 녹화가 없어(인코더 없음) 편집 검사를 건너뜁니다.";
+        var output = Path.Combine(folder, "recordings-edit"); if (Directory.Exists(output)) Directory.Delete(output, true); Directory.CreateDirectory(output);
+        var probe = await RecordingExport.ProbeAsync(source);
+        if (probe.Width != 640 || probe.Height != 360 || Math.Abs(probe.Duration.TotalSeconds - 2.4) > .15) throw new InvalidOperationException($"합성 녹화 정보가 다릅니다: {probe}");
+        Mp4Info Read(string path) { using var file = File.OpenRead(path); return Mp4Reader.Read(file) ?? throw new InvalidOperationException(path + "에 MP4 색인이 없습니다."); }
+        TimeSpan S(double s) => TimeSpan.FromSeconds(s);
+
+        var trimmed = Path.Combine(output, "trimmed.mp4");
+        await RecordingExport.SaveVideoAsync(source, trimmed, new(S(.5), S(1.7)), false, 0, null, CancellationToken.None);
+        var t = Read(trimmed); var tv = t.Tracks.First(x => x.Handler == "vide"); var ts = t.Tracks.FirstOrDefault(x => x.Handler == "soun");
+        if (Math.Abs(tv.Duration.TotalSeconds - 1.2) > .15 || ts is null || Math.Abs(ts.Duration.TotalSeconds - 1.2) > .15 || tv.Width != 640) throw new InvalidOperationException($"잘라낸 영상이 기대와 다릅니다: {Describe(t)}");
+
+        var small = Path.Combine(output, "small-muted.mp4");
+        await RecordingExport.SaveVideoAsync(source, small, new(TimeSpan.Zero, probe.Duration), true, 320, null, CancellationToken.None);
+        var m = Read(small); var mv = m.Tracks.First(x => x.Handler == "vide");
+        if (m.Tracks.Any(x => x.Handler == "soun") || mv.Width != 320 || mv.Height != 180) throw new InvalidOperationException($"소리 빼고 줄인 영상이 기대와 다릅니다: {Describe(m)}");
+
+        var gifPath = Path.Combine(output, "clip.gif");
+        await RecordingExport.SaveGifAsync(source, gifPath, new(TimeSpan.Zero, S(1)), 10, 320, null, CancellationToken.None);
+        var gif = GifTiming.Describe(await File.ReadAllBytesAsync(gifPath));
+        if (gif != (10, 10, true)) throw new InvalidOperationException($"GIF 정보가 다릅니다: {gif}");
+
+        var still = await RecordingExport.FrameAsync(source, S(1));
+        if (still.PixelWidth != 640 || still.PixelHeight != 360) throw new InvalidOperationException("장면 이미지 크기가 다릅니다.");
+
+        BitmapSourceOpened = null;
+        var window = new RecordingEditWindow(source, true, image => BitmapSourceOpened = image);
+        window.Show();
+        try
+        {
+            for (int i = 0; i < 100 && window.Duration <= TimeSpan.Zero; i++) await Task.Delay(50);
+            window.Trim.Range = new(S(.4), S(1.4));
+            await Task.Delay(300);
+            Save(window, Path.Combine(folder, "ui-recording-edit.png"));
+            var saved = await window.SaveAsync(false) ?? throw new InvalidOperationException("편집 창의 MP4 저장이 실패했습니다: " + window.Status);
+            if (Path.GetFileName(saved) != "recording-synthetic-편집.mp4" || Math.Abs(Read(saved).Duration.TotalSeconds - 1.0) > .15) throw new InvalidOperationException("편집 창이 고른 구간대로 저장하지 않았습니다: " + Describe(Read(saved)));
+            File.Delete(saved);
+        }
+        finally { window.Close(); }
+        return FormattableString.Invariant($"PASS: trim 0.5–1.7s → {tv.Duration.TotalSeconds:0.00}s with sound; muted 320x180 without sound; GIF {gif.Frames} frames at {gif.DelayCentiseconds}/100s looping ({new FileInfo(gifPath).Length / 1024} KB); frame 640x360; edit window saved its range");
+    }
+
+    private static System.Windows.Media.Imaging.BitmapSource? BitmapSourceOpened;
+    private static string Describe(Mp4Info info) => string.Join(", ", info.Tracks.Select(t => FormattableString.Invariant($"{t.Handler} {t.Width}x{t.Height} {t.Duration.TotalSeconds:0.00}s")));
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
 
     private static void Save(Window window, string path)

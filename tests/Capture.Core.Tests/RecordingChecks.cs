@@ -154,3 +154,34 @@ internal static class RecordingAudioChecks
         check(Math.Abs(AudioMixer.Peak([.1f, -.8f, .3f]) - .8f) < 1e-6f, "Peak level for the indicator.");
     }
 }
+
+internal static class RecordingEditChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        TimeSpan S(double s) => TimeSpan.FromSeconds(s);
+        var duration = S(10);
+        check(TrimRange.Clamp(S(-1), S(12), duration, true) == new TrimRange(TimeSpan.Zero, duration), "Trim range stays inside the video.");
+        check(TrimRange.Clamp(S(5), S(5.1), duration, true) == new TrimRange(S(4.9), S(5.1)), "Dragging the start too close keeps the minimum before the end.");
+        check(TrimRange.Clamp(S(9.95), S(9.97), duration, false) == new TrimRange(S(9.8), S(10)), "Dragging the end near the edge keeps the minimum inside.");
+        check(TrimRange.Clamp(S(0), S(.1), S(.1), true) == new TrimRange(TimeSpan.Zero, S(.1)), "A video shorter than the minimum is kept whole.");
+        check(new TrimRange(TimeSpan.Zero, duration).IsWhole(duration) && !new TrimRange(S(1), duration).IsWhole(duration), "Whole-range detection.");
+
+        var frames = GifPlan.Frames(new(S(1), S(3)), 15, out int delay);
+        check(delay == 7 && frames.Count == 29 && frames[0] == S(1) && frames[1] == S(1.07), "15 fps GIF uses 7/100 s frames: " + frames.Count);
+        GifPlan.Frames(new(TimeSpan.Zero, S(120)), 15, out int longDelay);
+        check(GifPlan.Frames(new(TimeSpan.Zero, S(120)), 15, out _).Count <= GifPlan.MaxFrames && longDelay == 20, "Long GIFs lower the rate to stay under the frame cap.");
+        check(GifPlan.Size(1920, 1080, 800) == (800, 450) && GifPlan.Size(400, 300, 800) == (400, 300), "GIF size caps the long side, never enlarges.");
+
+        // Minimal GIF87a: 1×1, global table of 2 colours, two images without control blocks.
+        byte[] image = [0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 0x01, 0];
+        byte[] gif = [.. "GIF87a"u8.ToArray(), 1, 0, 1, 0, 0x80, 0, 0, 0, 0, 0, 255, 255, 255, .. image, .. image, 0x3B];
+        var timed = GifTiming.Apply(gif, 7);
+        check(System.Text.Encoding.ASCII.GetString(timed, 0, 6) == "GIF89a", "Timed GIF is GIF89a.");
+        check(GifTiming.Describe(timed) == (2, 7, true), "Delay and loop added to every frame: " + GifTiming.Describe(timed));
+        check(GifTiming.Describe(GifTiming.Apply(timed, 12)) == (2, 12, true), "Applying again replaces the delay and keeps one loop block.");
+        check(GifTiming.Apply(timed, 12).Length == timed.Length, "Re-timing does not grow the file.");
+        bool rejected = false; try { GifTiming.Apply([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], 5); } catch (InvalidDataException) { rejected = true; }
+        check(rejected, "Non-GIF data rejected.");
+    }
+}
