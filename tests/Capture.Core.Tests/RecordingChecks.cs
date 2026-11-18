@@ -91,5 +91,11 @@ internal static class RecordingEngineChecks
         var taken = new HashSet<string> { Path.Combine("v", "a.mp4"), Path.Combine("v", "a-2.mp4") };
         check(RecordingFiles.UniquePath("v", "a", ".mp4", taken.Contains) == Path.Combine("v", "a-3.mp4"), "Unique recording name.");
         check(RecordingFiles.UniquePath("v", "b", ".mp4", taken.Contains) == Path.Combine("v", "b.mp4"), "Free name kept.");
+        var work = new PixelRect(0, 0, 1920, 1040);
+        check(RecordingControls.Place(new(400, 200, 800, 500), 300, 44, work) == (650, 710), "Toolbar centred under the region.");
+        check(RecordingControls.Place(new(400, 600, 800, 420), 300, 44, work) == (650, 546), "Toolbar above when no room below.");
+        check(RecordingControls.Place(new(0, 0, 1920, 1040), 300, 44, work) == (810, 986), "Full-screen region keeps the toolbar inside the bottom edge.");
+        check(RecordingControls.Place(new(1800, 200, 100, 100), 300, 44, work).X == 1620, "Toolbar clamped to the work area.");
+        check(RecordingControls.Clock(TimeSpan.FromSeconds(65.9)) == "1:05" && RecordingControls.Clock(TimeSpan.FromSeconds(3725)) == "1:02:05" && RecordingControls.Clock(TimeSpan.FromSeconds(-3)) == "0:00", "Elapsed clock text.");
     }
 }

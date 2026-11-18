@@ -25,6 +25,14 @@ internal sealed record RecordingTarget(RecordingKind Kind, nint Handle, PixelRec
         return new(RecordingKind.Screen, monitor, new(0, 0, bounds.Width, bounds.Height));
     }
 
+    /// <summary>A window's visible bounds in desktop pixels, without the invisible resize border.</summary>
+    public static PixelRect WindowBounds(nint window)
+    {
+        if (DwmGetWindowAttribute(window, 9, out Native.RECT bounds, Marshal.SizeOf<Native.RECT>()) < 0 && !Native.GetWindowRect(window, out bounds)) return default;
+        return new(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+    }
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint hwnd, int attribute, out Native.RECT value, int size);
+
     /// <summary>The whole window; its size is read from the capture item when recording starts.</summary>
     public static RecordingTarget ForWindow(nint window) => new(RecordingKind.Window, window, default);
 }

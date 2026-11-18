@@ -47,7 +47,7 @@ internal sealed class SelectionWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer toastTimer=new() {Interval=TimeSpan.FromMilliseconds(1400)};
 
     /// <summary>Capture modes on the all-in-one bar, as commands the app can run.</summary>
-    private static readonly (string Command,string Label)[] Modes=[("region","영역"),("pick-window","창"),("display","화면"),("desktop","전체 화면"),("delayed","3초 후"),("scroll","스크롤"),("ocr","텍스트")];
+    private static readonly (string Command,string Label)[] Modes=[("region","영역"),("pick-window","창"),("display","화면"),("desktop","전체 화면"),("delayed","3초 후"),("scroll","스크롤"),("ocr","텍스트"),("record","녹화")];
     private static readonly (string Label,double? Ratio)[] Ratios=[("자유",null),("1:1",1),("4:3",4d/3),("3:2",3d/2),("16:9",16d/9)];
     /// <summary>The chosen ratio lasts for the session, so repeated captures keep the same shape.</summary>
     private static double? sessionRatio;
@@ -104,7 +104,7 @@ internal sealed class SelectionWindow : Window
         loupe.Child=loupeStack;canvas.Children.Add(loupe);
         Content=root;
         ((TextBlock)hint.Child).Text=windows is not null?"캡처할 창을 클릭하세요 · Esc 취소"
-            :(options.Purpose is string purpose?purpose+" · ":"")+(Live?"실시간 화면 · 드래그하여 선택 · Shift 정사각형 · Space 이동 · F 화면 고정 · Esc 취소":"드래그하여 선택 · Shift 정사각형 · Space 이동 · Tab 색 복사 · R 측정 · F 실시간 · Esc 취소");
+            :(options.Purpose is string purpose?purpose+" · ":"")+(options.Command=="record"?"드래그하여 선택 · Shift 정사각형 · Space 이동 · Esc 취소":Live?"실시간 화면 · 드래그하여 선택 · Shift 정사각형 · Space 이동 · F 화면 고정 · Esc 취소":"드래그하여 선택 · Shift 정사각형 · Space 이동 · Tab 색 복사 · R 측정 · F 실시간 · Esc 취소");
         Canvas.SetLeft(hint,24);Canvas.SetTop(hint,modeBar!=null?74:24);
         toast.Visibility=Visibility.Collapsed;sizeTag.Visibility=Visibility.Collapsed;rulerTag.Visibility=Visibility.Collapsed;
         toastTimer.Tick+=(_,_)=>{toastTimer.Stop();toast.Visibility=Visibility.Collapsed;};
@@ -130,10 +130,13 @@ internal sealed class SelectionWindow : Window
         foreach(var (command,label) in Modes) {
             var button=BarButton(label,command==options.Command);button.Click+=(_,_)=>{if(command!=options.Command)Completed?.Invoke(new(null,0,command));};row.Children.Add(button);
         }
+        // Recording always watches the live screen, so the frozen/live switch is not offered.
         if(windows is null) {
-            row.Children.Add(BarDivider());
-            foreach(var (label,live) in new[]{("고정",false),("실시간",true)}) {
-                var button=BarButton(label,live==Live);button.Click+=(_,_)=>{if(live!=Live)RequestToggleLive();};row.Children.Add(button);
+            if(options.Command!="record") {
+                row.Children.Add(BarDivider());
+                foreach(var (label,live) in new[]{("고정",false),("실시간",true)}) {
+                    var button=BarButton(label,live==Live);button.Click+=(_,_)=>{if(live!=Live)RequestToggleLive();};row.Children.Add(button);
+                }
             }
             row.Children.Add(BarDivider());
             foreach(var (label,ratio) in Ratios) {
@@ -256,7 +259,7 @@ internal sealed class SelectionWindow : Window
                 else if(mode==Mode.Idle){selection=bounds;Finish();}
                 break;
             case System.Windows.Input.Key.Space:spaceHeld=true;break;
-            case System.Windows.Input.Key.F when windows is null:
+            case System.Windows.Input.Key.F when windows is null && options.Command!="record":
                 if(mode==Mode.Idle)RequestToggleLive();
                 else if(mode==Mode.Adjusting)ShowToast("선택을 시작하기 전에 전환할 수 있습니다");
                 break;

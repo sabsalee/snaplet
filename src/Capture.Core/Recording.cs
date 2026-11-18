@@ -244,3 +244,26 @@ public static class RecordingFiles
         }
     }
 }
+
+public static class RecordingControls
+{
+    /// <summary>
+    /// Where the recording toolbar goes: centred under the region, else above it, else inside its bottom edge
+    /// (it is excluded from the video, so covering the region is the last resort, not an error). Clamped to the work area.
+    /// </summary>
+    public static (int X, int Y) Place(PixelRect region, int width, int height, PixelRect work, int gap = 10)
+    {
+        int x = Math.Clamp(region.X + (region.Width - width) / 2, work.X, Math.Max(work.X, work.Right - width));
+        int y = region.Bottom + gap + height <= work.Bottom ? region.Bottom + gap
+            : region.Y - gap - height >= work.Y ? region.Y - gap - height
+            : Math.Clamp(region.Bottom - gap - height, work.Y, Math.Max(work.Y, work.Bottom - height));
+        return (x, y);
+    }
+
+    /// <summary>Elapsed time as m:ss under an hour and h:mm:ss after.</summary>
+    public static string Clock(TimeSpan elapsed)
+    {
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        return elapsed.TotalHours >= 1 ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:00}:{elapsed.Seconds:00}" : $"{elapsed.Minutes}:{elapsed.Seconds:00}";
+    }
+}
