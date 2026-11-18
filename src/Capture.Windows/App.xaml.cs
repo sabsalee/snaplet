@@ -100,8 +100,8 @@ public partial class App : Application
         if(command=="home"){ShowHome();return;}
         if(command=="history"){ShowGallery();return;}
         // A recording shortcut pressed while recording controls that recording instead of starting another.
-        if(command.StartsWith("record",StringComparison.Ordinal) && Recording.RecordingController.Active is {} active){if(command=="record-pause")active.TogglePause();else active.Stop();return;}
-        if(command=="record-pause")return;
+        if(command.StartsWith("record",StringComparison.Ordinal) && Recording.RecordingController.Active is {} active){if(command=="record-pause")active.TogglePause();else if(command=="record-draw")active.ToggleDrawing();else active.Stop();return;}
+        if(command is "record-pause" or "record-draw")return;
         if(command=="record-screen"){var screen=Native.PointerDisplay();StartRecording(Recording.RecordingTarget.ForScreen(screen.Handle),new(screen.Bounds.Left,screen.Bounds.Top,screen.Bounds.Width,screen.Bounds.Height),screen);return;}
         if(scrollWindow is not null){scrollWindow.Message("스크롤 캡처가 진행 중입니다. F9 또는 완료 버튼으로 마쳐 주세요.");return;}
         if(capturing)return;
@@ -215,7 +215,7 @@ public partial class App : Application
     private bool quitAfterRecording;
     /// <summary>Starts a recording with the current settings; the popup appears when it is saved.</summary>
     private async void StartRecording(Recording.RecordingTarget target,Capture.Core.PixelRect desktop,DisplayInfo display) {
-        var controller=new Recording.RecordingController(target,desktop,display,new(settings.SaveFolder,()=>Capture.Core.FileNameTemplate.Render(settings.FileNameTemplate,DateTime.Now,Guid.NewGuid().ToString("N")[..4]),settings.RecordFps,settings.RecordCursor,settings.RecordCountdown?3:0,settings.RecordSystemAudio,settings.RecordMicrophone));
+        var controller=new Recording.RecordingController(target,desktop,display,new(settings.SaveFolder,()=>Capture.Core.FileNameTemplate.Render(settings.FileNameTemplate,DateTime.Now,Guid.NewGuid().ToString("N")[..4]),settings.RecordFps,settings.RecordCursor,settings.RecordCountdown?3:0,settings.RecordSystemAudio,settings.RecordMicrophone,TimeSpan.FromSeconds(settings.RecordSketchFadeSeconds)));
         controller.Progress+=elapsed=>tray?.SetTip(elapsed is TimeSpan t?$"Snaplet · 녹화 중 {Capture.Core.RecordingControls.Clock(t)}":"Snaplet · 빠른 캡처");
         try {
             var result=await controller.RunAsync();
@@ -492,6 +492,7 @@ public partial class App : Application
             File.WriteAllText(Path.Combine(path,"recording-smoke.txt"),await Recording.RecordingSmokeTest.RunAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-flow.txt"),await Recording.RecordingSmokeTest.RunFlowAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-sound.txt"),await Recording.RecordingSmokeTest.RunSoundAsync(path));
+            File.WriteAllText(Path.Combine(path,"recording-sketch.txt"),await Recording.RecordingSmokeTest.RunSketchAsync(path));
             FidelitySheet.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();
