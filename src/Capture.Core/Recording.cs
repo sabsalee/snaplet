@@ -122,16 +122,24 @@ public static class InputTrack
 }
 
 public sealed record Mp4Track(string Handler, int Width, int Height, TimeSpan Duration);
-public sealed record Mp4Info(TimeSpan Duration, IReadOnlyList<Mp4Track> Tracks);
+public sealed record Mp4Info(TimeSpan Duration, IReadOnlyList<Mp4Track> Tracks)
+{
+    /// <summary>Movie fragments (moof) after the index: a fragmented file stays playable up to the last complete one.</summary>
+    public int Fragments { get; init; }
+}
 
 /// <summary>Reads duration and tracks from an MP4 header. Returns null when the index (moov) is missing, as in an interrupted recording.</summary>
 public static class Mp4Reader
 {
     public static Mp4Info? Read(Stream stream)
     {
+        Mp4Info? movie = null; int fragments = 0;
         foreach (var (type, start, length) in Boxes(stream, 0, stream.Length))
-            if (type == "moov") return Movie(stream, start, length);
-        return null;
+        {
+            if (type == "moov") movie = Movie(stream, start, length);
+            if (type == "moof") fragments++;
+        }
+        return movie is null ? null : movie with { Fragments = fragments };
     }
 
     private static Mp4Info Movie(Stream stream, long start, long length)
@@ -180,6 +188,7 @@ public static class Mp4Reader
             long size = BinaryPrimitives.ReadUInt32BigEndian(header); var type = Encoding.ASCII.GetString(header, 4, 4); int headerSize = 8;
             if (size == 1) { stream.ReadExactly(header, 8, 8); size = (long)BinaryPrimitives.ReadUInt64BigEndian(header.AsSpan(8)); headerSize = 16; }
             else if (size == 0) size = end - position;
+            // A box cut short by an interrupted write ends the walk; everything before it is still read.
             if (size < headerSize || position + size > end) yield break;
             yield return (type, position + headerSize, size - headerSize);
             position += size;

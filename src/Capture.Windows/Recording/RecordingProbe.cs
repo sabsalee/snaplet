@@ -121,7 +121,7 @@ internal static class RecordingProbe
                 var target = args[1]; reportPath = target + ".inspect.txt";
                 await using var file = File.OpenRead(target);
                 var info = Mp4Reader.Read(file);
-                report.AppendLine(info is null ? $"NO INDEX: {target} 에 moov가 없어 일반 재생기로 열 수 없습니다 ({file.Length / 1024} KB 기록됨)." : Describe(info));
+                report.AppendLine(info is null ? $"NO INDEX: {target} 에 moov가 없어 일반 재생기로 열 수 없습니다 ({file.Length / 1024} KB 기록됨)." : Describe(info) + $"; fragments {info.Fragments}" + (info.Fragments > 0 ? " — playable up to the last complete fragment" : ""));
                 code = 0;
                 return;
             }

@@ -54,6 +54,10 @@ internal static class RecordingChecks
         check(info!.Tracks.Count == 2 && info.Tracks[0] == new Mp4Track("vide", 1920, 1080, S(12.5)) && info.Tracks[1].Handler == "soun" && info.Tracks[1].Duration == S(12.48), "MP4 tracks.");
         check(Mp4Reader.Read(new MemoryStream(Box("ftyp", Encoding.ASCII.GetBytes("isom")).Concat(Box("mdat", new byte[64])).ToArray())) is null, "Missing index means an interrupted file.");
         check(Mp4Reader.Read(new MemoryStream(mp4[..^10])) is null, "Truncated index is not trusted.");
+        byte[] fragmented = [.. Box("ftyp", Encoding.ASCII.GetBytes("iso5")), .. Box("moov", Box("mvhd", Header(1000, 0)), Track("vide", 640, 360, 30000, 0)),
+            .. Box("moof", new byte[8]), .. Box("mdat", new byte[16]), .. Box("moof", new byte[8]), .. Box("mdat", new byte[16]), .. Box("moof", new byte[8])];
+        var partial = Mp4Reader.Read(new MemoryStream(fragmented[..^6]));
+        check(partial is not null && partial.Fragments == 2 && partial.Tracks[0].Width == 640, "A cut fragmented file keeps its index and complete fragments.");
     }
 
     private static byte[] Box(string type, params byte[][] parts)

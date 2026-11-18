@@ -84,6 +84,11 @@ public partial class App : Application
             try{hotkeys.Apply(settings.Hotkeys);}catch(Exception error){warning=error.Message+"\n설정에서 단축키를 바꿔 주세요. 트레이 메뉴는 사용할 수 있습니다.";}
         } catch(Exception error){Error(error);}
         CleanDragFiles();
+        try {
+            var (recovered,lost)=Recording.RecordingRecovery.Run(settings.SaveFolder);
+            if(recovered.Count>0)warning??=$"지난번에 끊긴 녹화 {recovered.Count}개를 복구해 저장 폴더에 두었습니다: {string.Join(", ",recovered.Select(Path.GetFileName))}";
+            else if(lost>0)warning??=$"지난번에 끊긴 녹화 {lost}개는 재생할 수 없어 지웠습니다.";
+        } catch(Exception error){warning??="끊긴 녹화를 확인하지 못했습니다: "+error.Message;}
         if(settings.KeepHistoryOnDisk){try{history.AddRange(HistoryStore.Load(loaded:(image,path,when)=>historyRecords.Add(image,new(){When=when,Path=path})));}catch(Exception error){warning??="최근 캡처를 불러오지 못했습니다: "+error.Message;}}
         if(e.Args.Contains("--demo")){var demo=ImageActions.Demo();Received(demo,"합성 데모 이미지",true);Edit(demo);}
         else if(forwarded!=null)Dispatcher.BeginInvoke(()=>_=RunCommandAsync(forwarded),DispatcherPriority.ApplicationIdle);
@@ -220,7 +225,7 @@ public partial class App : Application
         try {
             var result=await controller.RunAsync();
             if(result is null){status.Text="녹화를 취소했습니다.";return;}
-            status.Text=$"녹화 저장: {Path.GetFileName(result.Path)}"+(result.TargetClosed?" · 창이 닫혀 녹화를 마쳤습니다":"")+(result.SoundProblems is {Count:>0} problems?" · "+string.Join(" ",problems):"");
+            status.Text=$"녹화 저장: {Path.GetFileName(result.Path)}"+(result.EndedBecause is string why?$" · {why} 녹화를 마쳤습니다":"")+(result.SoundProblems is {Count:>0} problems?" · "+string.Join(" ",problems):"");
             if(settings.CopyAfterCapture)Recording.RecordingPopup.CopyFile(result.Path);
             if(quitAfterRecording){Shutdown();return;}
             if(settings.AfterCapture==AfterCaptureAction.None)return;
@@ -499,6 +504,7 @@ public partial class App : Application
             File.WriteAllText(Path.Combine(path,"recording-sound.txt"),await Recording.RecordingSmokeTest.RunSoundAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-sketch.txt"),await Recording.RecordingSmokeTest.RunSketchAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-edit.txt"),await Recording.RecordingSmokeTest.RunEditAsync(path));
+            File.WriteAllText(Path.Combine(path,"recording-recovery.txt"),Recording.RecordingSmokeTest.RunRecovery(path));
             FidelitySheet.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();
