@@ -32,6 +32,16 @@ try {
             if (Test-Path "$crash/probe.mp4.inspect.txt") { Get-Content "$crash/probe.mp4.inspect.txt" | Write-Host }
             Remove-Item "$crash/probe.mp4" -ErrorAction SilentlyContinue
         } else { Write-Host 'Crash check left no file.' }
+        # The same crash with fragmented MP4: what survives decides how recordings are written.
+        $crash = Join-Path $results 'record-crash-fragmented'
+        $recording = Start-Process -FilePath (Join-Path $projectRoot 'artifacts/snaplet-win-x64/Snaplet.exe') -ArgumentList @('--record-probe', "`"$crash`"", '--seconds', '6', '--crash-at', '3', '--fragmented') -PassThru
+        if (-not $recording.WaitForExit(60000)) { $recording.Kill() }
+        if (Test-Path "$crash/probe.mp4") {
+            $inspect = Start-Process -FilePath (Join-Path $projectRoot 'artifacts/snaplet-win-x64/Snaplet.exe') -ArgumentList @('--record-inspect', "`"$crash/probe.mp4`"") -PassThru
+            if (-not $inspect.WaitForExit(30000)) { $inspect.Kill() }
+            if (Test-Path "$crash/probe.mp4.inspect.txt") { Get-Content "$crash/probe.mp4.inspect.txt" | Write-Host }
+            Remove-Item "$crash/probe.mp4" -ErrorAction SilentlyContinue
+        } else { Write-Host 'Fragmented crash check left no file.' }
     }
     Compress-Archive -Path artifacts/snaplet-win-x64/* -DestinationPath artifacts/Snaplet-Windows-x64.zip -Force
     & ./scripts/package-updates.ps1 -PreviousRelease:($env:GITHUB_REF_TYPE -eq 'tag')

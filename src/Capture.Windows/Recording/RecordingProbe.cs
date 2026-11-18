@@ -99,8 +99,36 @@ internal static class RecordingProbe
             if (videoTrack.Width != width || videoTrack.Height != height) throw new InvalidOperationException($"합성 녹화 크기 {videoTrack.Width}×{videoTrack.Height}, 기대 {width}×{height}");
             if ((videoTrack.Duration - expected).Duration() > tolerance) throw new InvalidOperationException($"영상 길이 {videoTrack.Duration.TotalSeconds:0.000}s, 기대 {expected.TotalSeconds:0.000}s (일시정지 0.6s 제외)");
             if ((soundTrack.Duration - expected).Duration() > tolerance) throw new InvalidOperationException($"소리 길이 {soundTrack.Duration.TotalSeconds:0.000}s, 기대 {expected.TotalSeconds:0.000}s");
-            return string.Create(CultureInfo.InvariantCulture, $"PASS: synthetic {width}x{height}@{fps} H.264 + AAC, video {videoTrack.Duration.TotalSeconds:0.000}s, sound {soundTrack.Duration.TotalSeconds:0.000}s, expected {expected.TotalSeconds:0.000}s after a 0.6s pause; prepare {prepareMs:0} ms, total {clock.Elapsed.TotalMilliseconds:0} ms, {new FileInfo(path).Length / 1024} KB.");
+            var fragmentNote = await FragmentedExperimentAsync(folder, width, height, fps);
+            return string.Create(CultureInfo.InvariantCulture, $"PASS ({fragmentNote}): synthetic {width}x{height}@{fps} H.264 + AAC, video {videoTrack.Duration.TotalSeconds:0.000}s, sound {soundTrack.Duration.TotalSeconds:0.000}s, expected {expected.TotalSeconds:0.000}s after a 0.6s pause; prepare {prepareMs:0} ms, total {clock.Elapsed.TotalMilliseconds:0} ms, {new FileInfo(path).Length / 1024} KB.");
         }
+    }
+
+    /// <summary>Whether the built-in encoder writes fragmented MP4 here; information only, never fails the check.</summary>
+    private static async Task<string> FragmentedExperimentAsync(string folder, int width, int height, int fps)
+    {
+        try
+        {
+            var stream = new VideoStreamDescriptor(VideoEncodingProperties.CreateUncompressed(MediaEncodingSubtypes.Bgra8, (uint)width, (uint)height));
+            var source = new MediaStreamSource(stream) { BufferTime = TimeSpan.Zero, CanSeek = false };
+            int index = 0; var pixels = new byte[width * height * 4];
+            source.SampleRequested += (_, args) =>
+            {
+                if (index >= fps * 3) { args.Request.Sample = null; return; }
+                Array.Fill(pixels, (byte)(index * 4 % 255));
+                var sample = MediaStreamSample.CreateFromBuffer(pixels.AsBuffer(), RecordingOutput.SlotTime(index++, fps)); sample.Duration = RecordingOutput.SlotTime(1, fps);
+                args.Request.Sample = sample;
+            };
+            var path = Path.Combine(folder, "recording-fragmented.mp4");
+            await using var file = File.Create(path);
+            var prepared = await new MediaTranscoder().PrepareMediaStreamSourceTranscodeAsync(source, file.AsRandomAccessStream(), ScreenRecorder.Profile(width, height, fps, false, true));
+            if (!prepared.CanTranscode) return $"fragmented MP4 unsupported: {prepared.FailureReason}";
+            await prepared.TranscodeAsync();
+            await file.FlushAsync(); file.Position = 0;
+            var info = Mp4Reader.Read(file);
+            return info is null ? "fragmented MP4 wrote no index" : $"fragmented MP4: {info.Fragments} fragments";
+        }
+        catch (Exception error) { return $"fragmented MP4 failed: {error.GetType().Name} 0x{error.HResult:X8}"; }
     }
 
     /// <summary>
@@ -121,7 +149,7 @@ internal static class RecordingProbe
                 var target = args[1]; reportPath = target + ".inspect.txt";
                 await using var file = File.OpenRead(target);
                 var info = Mp4Reader.Read(file);
-                report.AppendLine(info is null ? $"NO INDEX: {target} 에 moov가 없어 일반 재생기로 열 수 없습니다 ({file.Length / 1024} KB 기록됨)." : Describe(info));
+                report.AppendLine(info is null ? $"NO INDEX: {target} 에 moov가 없어 일반 재생기로 열 수 없습니다 ({file.Length / 1024} KB 기록됨)." : Describe(info) + $"; fragments {info.Fragments}" + (info.Fragments > 0 ? " — playable up to the last complete fragment" : ""));
                 code = 0;
                 return;
             }
@@ -130,7 +158,7 @@ internal static class RecordingProbe
             int fps = (int)Number("--fps", 30); var seconds = TimeSpan.FromSeconds(Number("--seconds", 10));
             var pauseAt = TimeSpan.FromSeconds(Number("--pause-at", 3)); var pauseFor = TimeSpan.FromSeconds(Number("--pause-for", 2));
             double crashAt = Number("--crash-at", -1);
-            bool cursor = args.Contains("--cursor");
+            bool cursor = args.Contains("--cursor"), fragmented = args.Contains("--fragmented");
             var monitor = Native.MonitorFromPoint(new Native.POINT(), 1);
             var bounds = Native.Displays().First(d => d.Handle == monitor).Bounds;
             var parts = Option("--region", $"0,0,{bounds.Width},{bounds.Height}").Split(',').Select(int.Parse).ToArray();
@@ -144,7 +172,8 @@ internal static class RecordingProbe
             // Two markers inside the region: one excluded from capture like the recording toolbar, one included like a live annotation.
             var excluded = Marker(region.X + 20, region.Y + 20, WpfColor.FromRgb(255, 0, 255), true);
             var included = Marker(region.X + 120, region.Y + 20, WpfColor.FromRgb(0, 255, 0), false);
-            var recorder = new ScreenRecorder(CaptureEngine.CreateItem(monitor, false), region, fps, cursor);
+            var recorder = new ScreenRecorder(CaptureEngine.CreateItem(monitor, false), region, fps, cursor) { Fragmented = fragmented };
+            report.AppendLine($"Container: {(fragmented ? "fragmented MP4" : "MP4")}");
             var path = Path.Combine(folder, "probe.mp4");
             var cpu = Process.GetCurrentProcess().TotalProcessorTime;
             var wall = Stopwatch.StartNew();

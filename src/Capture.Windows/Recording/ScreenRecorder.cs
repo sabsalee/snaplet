@@ -74,7 +74,7 @@ internal sealed class ScreenRecorder
         source.SampleRequested += OnSampleRequested;
         var transcoder = new MediaTranscoder { HardwareAccelerationEnabled = true };
         var preparing = Stopwatch.StartNew();
-        var prepared = await transcoder.PrepareMediaStreamSourceTranscodeAsync(source, output, Profile(Output.Width, Output.Height, fps, audio is not null));
+        var prepared = await transcoder.PrepareMediaStreamSourceTranscodeAsync(source, output, Profile(Output.Width, Output.Height, fps, audio is not null, Fragmented));
         Metrics.PrepareMs = preparing.Elapsed.TotalMilliseconds;
         if (!prepared.CanTranscode) throw new InvalidOperationException("인코더를 준비하지 못했습니다: " + prepared.FailureReason);
         poolSize = item.Size;
@@ -107,9 +107,13 @@ internal sealed class ScreenRecorder
         using (copy) return await SoftwareBitmap.CreateCopyFromSurfaceAsync(copy);
     }
 
-    internal static MediaEncodingProfile Profile(int width, int height, int fps, bool audio)
+    /// <summary>Writes fragmented MP4 (index first, then self-contained pieces) so an interrupted file stays playable.</summary>
+    internal bool Fragmented { get; init; }
+
+    internal static MediaEncodingProfile Profile(int width, int height, int fps, bool audio, bool fragmented = false)
     {
         var profile = MediaEncodingProfile.CreateMp4(VideoEncodingQuality.HD1080p);
+        if (fragmented) profile.Container.Subtype = "FMPEG4";
         profile.Video.Width = (uint)width; profile.Video.Height = (uint)height;
         profile.Video.FrameRate.Numerator = (uint)fps; profile.Video.FrameRate.Denominator = 1;
         // About 0.12 bits per pixel: 1080p30 ≈ 7.5 Mbps, enough for screen text.
