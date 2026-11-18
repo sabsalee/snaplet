@@ -11,8 +11,6 @@ using Windows.Storage.Streams;
 
 namespace Capture.Windows.Recording;
 
-internal sealed record RecordingRegion(int X, int Y, int Width, int Height);
-
 internal sealed class RecordingMetrics
 {
     public double PrepareMs, FirstFrameMs = -1, FirstSampleMs = -1, CopyMs, MaxCopyMs;
@@ -28,7 +26,7 @@ internal sealed class RecordingMetrics
 internal sealed class ScreenRecorder
 {
     private readonly GraphicsCaptureItem item;
-    private readonly RecordingRegion region;
+    private readonly PixelRect region;
     private readonly int fps;
     private readonly bool cursor;
     private readonly RecordingSession session = new();
@@ -39,8 +37,9 @@ internal sealed class ScreenRecorder
     private bool fresh, stopRequested;
     private long lastSlot = -1;
     private D3D11? d3d;
+    private global::Windows.Graphics.SizeInt32 poolSize;
 
-    public ScreenRecorder(GraphicsCaptureItem item, RecordingRegion region, int fps, bool cursor)
+    public ScreenRecorder(GraphicsCaptureItem item, PixelRect region, int fps, bool cursor)
     {
         this.item = item; this.region = region; this.fps = fps; this.cursor = cursor;
         Output = RecordingOutput.Size(region.Width, region.Height);
@@ -51,6 +50,10 @@ internal sealed class ScreenRecorder
     public TimeSpan Elapsed => clock.Elapsed;
     public TimeSpan Duration { get { lock (gate) return session.MediaTime(clock.Elapsed); } }
     public int Pauses { get { lock (gate) return session.Pauses; } }
+
+    /// <summary>True when the recording ended because the target window closed.</summary>
+    public bool TargetClosed { get; private set; }
+    public RecordingState State { get { lock (gate) return session.State; } }
 
     public void Pause() { lock (gate) session.Pause(clock.Elapsed); }
     public void Resume() { lock (gate) session.Resume(clock.Elapsed); Wake(); }
@@ -70,7 +73,11 @@ internal sealed class ScreenRecorder
         var prepared = await transcoder.PrepareMediaStreamSourceTranscodeAsync(source, output, Profile(Output.Width, Output.Height, fps, false));
         Metrics.PrepareMs = preparing.Elapsed.TotalMilliseconds;
         if (!prepared.CanTranscode) throw new InvalidOperationException("인코더를 준비하지 못했습니다: " + prepared.FailureReason);
+        poolSize = item.Size;
         pool.FrameArrived += OnFrame;
+        // A closed window ends the recording; what was recorded is kept.
+        void OnClosed(GraphicsCaptureItem sender, object args) { TargetClosed = true; Stop(); }
+        item.Closed += OnClosed;
         using var registration = cancellationToken.Register(Stop);
         try
         {
@@ -81,6 +88,7 @@ internal sealed class ScreenRecorder
         finally
         {
             pool.FrameArrived -= OnFrame;
+            item.Closed -= OnClosed;
             lock (gate) { latest?.Dispose(); latest = null; d3d = null; }
         }
     }
@@ -118,6 +126,12 @@ internal sealed class ScreenRecorder
             device = d3d;
         }
         if (device is null) return;
+        // A resized window keeps the output size: larger content is clipped, smaller content leaves the rest black.
+        if (frame.ContentSize.Width != poolSize.Width || frame.ContentSize.Height != poolSize.Height)
+        {
+            poolSize = frame.ContentSize;
+            pool.Recreate(device.Device, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, poolSize);
+        }
         var copying = Stopwatch.StartNew();
         var copy = device.CopyRegion(frame.Surface, region.X, region.Y, Output.Width, Output.Height, frame.ContentSize.Width, frame.ContentSize.Height);
         var copyMs = copying.Elapsed.TotalMilliseconds;
