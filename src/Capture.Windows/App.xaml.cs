@@ -99,6 +99,10 @@ public partial class App : Application
         if(command=="last"){if(history.FirstOrDefault() is BitmapSource last)Edit(last);else ShowHome();return;}
         if(command=="home"){ShowHome();return;}
         if(command=="history"){ShowGallery();return;}
+        // A recording shortcut pressed while recording controls that recording instead of starting another.
+        if(command.StartsWith("record",StringComparison.Ordinal) && Recording.RecordingController.Active is {} active){if(command=="record-pause")active.TogglePause();else active.Stop();return;}
+        if(command=="record-pause")return;
+        if(command=="record-screen"){var screen=Native.PointerDisplay();StartRecording(Recording.RecordingTarget.ForScreen(screen.Handle),new(screen.Bounds.Left,screen.Bounds.Top,screen.Bounds.Width,screen.Bounds.Height),screen);return;}
         if(scrollWindow is not null){scrollWindow.Message("스크롤 캡처가 진행 중입니다. F9 또는 완료 버튼으로 마쳐 주세요.");return;}
         if(capturing)return;
         capturing=true;activeCapture=new CancellationTokenSource();var token=activeCapture.Token;
@@ -119,18 +123,32 @@ public partial class App : Application
             diagnostics.Mark("ownWindowsHiddenMs");
             if(command=="delayed") {status.Text="3초 후 현재 화면을 캡처합니다…";await Task.Delay(3000,token);}
             CapturedFrame result;
-            if(command is "region" or "pick-window" or "scroll" or "ocr") {
+            if(command is "region" or "pick-window" or "scroll" or "ocr" or "record" or "record-window") {
                 var displays=Native.Displays();
-                var targets=command=="pick-window"?Native.Windows():null;
+                var targets=command is "pick-window" or "record-window"?Native.Windows():null;
                 // Live selection takes its shot after the choice is made. Picking a window always captures the window afresh, so it stays frozen.
-                bool live=(liveOverride??settings.LiveSelection) && command!="pick-window";
+                // Recording always starts from the live screen; picking a window stays frozen so the choice is stable.
+                bool live=command=="record" || (liveOverride??settings.LiveSelection) && command is not ("pick-window" or "record-window");
                 var shots=live?[]:await Task.WhenAll(displays.Select(d=>engine.CaptureMonitorAsync(d.Handle,token)));
                 if(!live)diagnostics.Frames(shots);
-                var purpose=command switch {"ocr"=>"텍스트·QR 인식","scroll"=>"스크롤 캡처 영역","pick-window"=>"캡처할 창을 클릭하세요",_=>destination!=null?"편집 중인 이미지에 추가":null};
+                var purpose=command switch {"ocr"=>"텍스트·QR 인식","scroll"=>"스크롤 캡처 영역","pick-window"=>"캡처할 창을 클릭하세요","record"=>"녹화할 영역을 고르세요 · Enter는 화면 전체","record-window"=>"녹화할 창을 클릭하세요",_=>destination!=null?"편집 중인 이미지에 추가":null};
                 var options=new SelectionOptions(settings.ShowLoupe,settings.AdjustSelectionBeforeCapture || command=="scroll",purpose,settings.ShowCaptureModeBar && destination==null,command);
                 var selection=await SelectAsync(displays,shots,targets,token,diagnostics,options);
                 if(selection is null)return;
                 if(selection.NextCommand is string chosen){if(selection.ToggleLive)liveOverride=!live;nextCommand=chosen;return;}
+                if(command is "record" or "record-window") {
+                    if(selection.Window!=0) {
+                        var bounds=Recording.RecordingTarget.WindowBounds(selection.Window);
+                        var display=displays.FirstOrDefault(d=>d.Bounds.Left<=bounds.X+bounds.Width/2 && bounds.X+bounds.Width/2<d.Bounds.Right && d.Bounds.Top<=bounds.Y+bounds.Height/2 && bounds.Y+bounds.Height/2<d.Bounds.Bottom)??Native.PointerDisplay();
+                        StartRecording(Recording.RecordingTarget.ForWindow(selection.Window),bounds,display);
+                    } else {
+                        var chosenRect=selection.Region!.Value;var area=new Capture.Core.PixelRect(chosenRect.X,chosenRect.Y,chosenRect.Width,chosenRect.Height);
+                        var target=Recording.RecordingTarget.ForArea(area)??throw new InvalidOperationException("녹화할 영역이 화면 밖에 있습니다.");
+                        var display=displays.First(d=>d.Handle==target.Handle);
+                        StartRecording(target,new(display.Bounds.Left+target.Region.X,display.Bounds.Top+target.Region.Y,target.Region.Width,target.Region.Height),display);
+                    }
+                    return;
+                }
                 if(selection.Window!=0){result=await engine.CaptureWindowAsync(selection.Window,token);windowCapture=true;}
                 else {
                     var rect=selection.Region!.Value;
@@ -193,6 +211,23 @@ public partial class App : Application
             // Another mode was chosen on the all-in-one bar; run it now that this capture has fully finished.
             if(nextCommand!=null)_=RunCommandAsync(nextCommand,null,destination);
         }
+    }
+    private bool quitAfterRecording;
+    /// <summary>Starts a recording with the current settings; the popup appears when it is saved.</summary>
+    private async void StartRecording(Recording.RecordingTarget target,Capture.Core.PixelRect desktop,DisplayInfo display) {
+        var controller=new Recording.RecordingController(target,desktop,display,new(settings.SaveFolder,()=>Capture.Core.FileNameTemplate.Render(settings.FileNameTemplate,DateTime.Now,Guid.NewGuid().ToString("N")[..4]),settings.RecordFps,settings.RecordCursor,settings.RecordCountdown?3:0));
+        controller.Progress+=elapsed=>tray?.SetTip(elapsed is TimeSpan t?$"Snaplet · 녹화 중 {Capture.Core.RecordingControls.Clock(t)}":"Snaplet · 빠른 캡처");
+        try {
+            var result=await controller.RunAsync();
+            if(result is null){status.Text="녹화를 취소했습니다.";return;}
+            status.Text=$"녹화 저장: {Path.GetFileName(result.Path)}"+(result.TargetClosed?" · 창이 닫혀 녹화를 마쳤습니다":"");
+            if(settings.CopyAfterCapture)Recording.RecordingPopup.CopyFile(result.Path);
+            if(quitAfterRecording){Shutdown();return;}
+            if(settings.AfterCapture==AfterCaptureAction.None)return;
+            var popup=new Recording.RecordingPopup(result);
+            popup.Loaded+=(_,_)=>{Native.GetCursorPos(out var at);var work=Native.PointerDisplay().Work;Recording.RecordingLook.PlacePhysical(popup,(w,h)=>PreviewWindow.PopupPlacement(at.X,at.Y,w,h,work.Left,work.Top,work.Right,work.Bottom));};
+            popup.Show();
+        } catch(Exception error){Error(error);if(quitAfterRecording)Shutdown();}
     }
     private Task<SelectionResult?> SelectAsync(IReadOnlyList<DisplayInfo> displays,CapturedFrame[] shots,IReadOnlyList<PickableWindow>? targets,CancellationToken token,CaptureDiagnostics diagnostics,SelectionOptions options) {
         var completion=new TaskCompletionSource<SelectionResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -402,7 +437,7 @@ public partial class App : Application
     private void RestartForUpdate()
     {
         if(updates?.Snapshot.Stage!=UpdateStage.Ready)return;
-        if(capturing || scrollWindow!=null || backgroundExports>0 || editors.Values.Any(editor=>editor.IsExporting)){UI.NoticeWindow.Alert(preferences,"현재 작업을 먼저 마쳐 주세요","진행 중인 캡처·복사·저장을 완료한 뒤 업데이트할 수 있습니다.");return;}
+        if(capturing || scrollWindow!=null || backgroundExports>0 || Recording.RecordingController.Active!=null || editors.Values.Any(editor=>editor.IsExporting)){UI.NoticeWindow.Alert(preferences,"현재 작업을 먼저 마쳐 주세요","진행 중인 캡처·복사·저장을 완료한 뒤 업데이트할 수 있습니다.");return;}
         if((history.Count>0 || editors.Count>0) && !UI.NoticeWindow.Confirm(preferences,"업데이트하고 다시 시작할까요?","최근 캡처와 저장하지 않은 편집은 다시 시작하면 사라집니다. 필요한 이미지를 먼저 복사하거나 저장하세요.","업데이트하고 다시 시작"))return;
         if(capturing || scrollWindow!=null || backgroundExports>0 || editors.Values.Any(editor=>editor.IsExporting))return;
         updates.ApplyAndRestart(()=>{quitting=true;foreach(var editor in editors.Values.ToArray())editor.CloseForExit();Shutdown();});
@@ -410,13 +445,19 @@ public partial class App : Application
     private void ShowTrayMenu() {
         var menu=Editor.EditorTheme.Themed(new ContextMenu {Placement=PlacementMode.MousePoint},Editor.EditorTheme.SystemUsesDark());
         void Add(string text,Action action){var item=new MenuItem {Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
+        if(Recording.RecordingController.Active is {} recording) {
+            Add($"녹화 정지하고 저장 ({Capture.Core.RecordingControls.Clock(recording.Elapsed)})",recording.Stop);
+            Add(recording.Paused?"이어서 녹화":"녹화 일시정지",recording.TogglePause);
+            menu.Items.Add(new Separator());
+        }
         foreach(var (text,command) in new[]{("영역 캡처","region"),("창 캡처","window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
         Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
+        if(Recording.RecordingController.Active is null){menu.Items.Add(new Separator());foreach(var (text,command) in new[]{("영역 녹화","record"),("창 녹화","record-window"),("현재 화면 녹화","record-screen")}){var c=command;Add(text,()=>_=RunCommandAsync(c));}}
         var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=UI.Ui.Thumbnail(bitmap,$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px")};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
         if(closedPopups.Count>0)Add("닫은 캡처 팝업 다시 열기",()=>{var image=closedPopups[0];closedPopups.RemoveAt(0);ShowPopup(image);});
         if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
         if(previews.Any(p=>p.Pinned))Add("고정 이미지 모두 닫기",()=>{foreach(var p in previews.Where(p=>p.Pinned).ToArray())p.Close();});
-        menu.Items.Add(new Separator());Add("캡처 기록…",ShowGallery);Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>Shutdown());
+        menu.Items.Add(new Separator());Add("캡처 기록…",ShowGallery);Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>{if(Recording.RecordingController.Active is {} running){quitAfterRecording=true;running.Stop();}else Shutdown();});
         menu.IsOpen=true;
     }
     private void ShowTrayNotice() {
@@ -449,6 +490,7 @@ public partial class App : Application
             await UI.ScrollSmokeTest.RunAsync(path);
             File.WriteAllText(Path.Combine(path,"recording-synthetic.txt"),await Recording.RecordingProbe.SyntheticAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-smoke.txt"),await Recording.RecordingSmokeTest.RunAsync(path));
+            File.WriteAllText(Path.Combine(path,"recording-flow.txt"),await Recording.RecordingSmokeTest.RunFlowAsync(path));
             FidelitySheet.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();

@@ -47,7 +47,7 @@ internal sealed class SelectionWindow : Window
     private readonly System.Windows.Threading.DispatcherTimer toastTimer=new() {Interval=TimeSpan.FromMilliseconds(1400)};
 
     /// <summary>Capture modes on the all-in-one bar, as commands the app can run.</summary>
-    private static readonly (string Command,string Label)[] Modes=[("region","영역"),("pick-window","창"),("display","화면"),("desktop","전체 화면"),("delayed","3초 후"),("scroll","스크롤"),("ocr","텍스트")];
+    private static readonly (string Command,string Label)[] Modes=[("region","영역"),("pick-window","창"),("display","화면"),("desktop","전체 화면"),("delayed","3초 후"),("scroll","스크롤"),("ocr","텍스트"),("record","녹화")];
     private static readonly (string Label,double? Ratio)[] Ratios=[("자유",null),("1:1",1),("4:3",4d/3),("3:2",3d/2),("16:9",16d/9)];
     /// <summary>The chosen ratio lasts for the session, so repeated captures keep the same shape.</summary>
     private static double? sessionRatio;
@@ -130,10 +130,13 @@ internal sealed class SelectionWindow : Window
         foreach(var (command,label) in Modes) {
             var button=BarButton(label,command==options.Command);button.Click+=(_,_)=>{if(command!=options.Command)Completed?.Invoke(new(null,0,command));};row.Children.Add(button);
         }
+        // Recording always watches the live screen, so the frozen/live switch is not offered.
         if(windows is null) {
-            row.Children.Add(BarDivider());
-            foreach(var (label,live) in new[]{("고정",false),("실시간",true)}) {
-                var button=BarButton(label,live==Live);button.Click+=(_,_)=>{if(live!=Live)RequestToggleLive();};row.Children.Add(button);
+            if(options.Command!="record") {
+                row.Children.Add(BarDivider());
+                foreach(var (label,live) in new[]{("고정",false),("실시간",true)}) {
+                    var button=BarButton(label,live==Live);button.Click+=(_,_)=>{if(live!=Live)RequestToggleLive();};row.Children.Add(button);
+                }
             }
             row.Children.Add(BarDivider());
             foreach(var (label,ratio) in Ratios) {

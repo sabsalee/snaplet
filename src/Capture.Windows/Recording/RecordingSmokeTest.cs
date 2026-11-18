@@ -74,6 +74,75 @@ internal static class RecordingSmokeTest
         }
     }
 
+    /// <summary>The user-facing flow: bar buttons pause, resume, stop, start over and discard; the bar and popup are saved as review images.</summary>
+    internal static async Task<string> RunFlowAsync(string folder)
+    {
+        if (!GraphicsCaptureSession.IsSupported()) return "SKIP: Windows Graphics Capture가 없어 녹화 흐름 검사를 건너뜁니다.";
+        var output = Path.Combine(folder, "recordings-flow");
+        if (Directory.Exists(output)) Directory.Delete(output, true);
+        var window = new Window { WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Width = 360, Height = 240, Left = 120, Top = 120, Background = new WpfBrush(WpfColor.FromRgb(240, 240, 244)) };
+        window.Show();
+        int count = 0;
+        try
+        {
+            var display = Native.Displays()[0];
+            var target = RecordingTarget.ForArea(new PixelRect(display.Bounds.Left + 120, display.Bounds.Top + 120, 360, 240)) ?? throw new InvalidOperationException("영역 대상을 만들지 못했습니다.");
+            var desktop = new PixelRect(display.Bounds.Left + target.Region.X, display.Bounds.Top + target.Region.Y, target.Region.Width, target.Region.Height);
+            RecordingController Start() => new(target, desktop, display, new(output, () => $"flow-{++count}", 30, true, 0));
+            async Task<RecordingController> Running(RecordingController controller)
+            {
+                for (int i = 0; i < 300 && controller.Elapsed <= TimeSpan.Zero; i++) await Task.Delay(50);
+                if (controller.Elapsed <= TimeSpan.Zero) throw new InvalidOperationException("녹화가 시작되지 않았습니다.");
+                return controller;
+            }
+
+            var first = Start(); var firstRun = first.RunAsync();
+            await Running(first);
+            if (RecordingController.Active != first || !first.Bar.IsVisible) throw new InvalidOperationException("녹화 중 막대가 보이지 않습니다.");
+            await Task.Delay(400);
+            first.Bar.Click("일시정지"); await Task.Delay(600);
+            if (!first.Paused) throw new InvalidOperationException("일시정지 버튼이 녹화를 멈추지 않았습니다.");
+            Save(first.Bar, Path.Combine(folder, "ui-recording-bar-paused.png"));
+            first.Bar.Click("이어서 녹화"); await Task.Delay(700);
+            Save(first.Bar, Path.Combine(folder, "ui-recording-bar.png"));
+            first.Bar.Click("정지하고 저장");
+            var saved = await firstRun.WaitAsync(TimeSpan.FromSeconds(30)) ?? throw new InvalidOperationException("정지했는데 저장된 녹화가 없습니다.");
+            if (RecordingController.Active is not null || first.Bar.IsVisible) throw new InvalidOperationException("녹화가 끝난 뒤 막대가 남았습니다.");
+            var line = Check(saved, 360, 240, TimeSpan.FromSeconds(1.1), "bar stop (0.6s pause removed)");
+
+            var second = Start(); var secondRun = second.RunAsync();
+            await Running(second); await Task.Delay(700);
+            second.Bar.Click("처음부터 다시");
+            for (int i = 0; i < 300 && second.Elapsed > TimeSpan.FromMilliseconds(500); i++) await Task.Delay(20);
+            await Running(second); await Task.Delay(800);
+            second.Bar.Click("정지하고 저장");
+            var again = await secondRun.WaitAsync(TimeSpan.FromSeconds(30)) ?? throw new InvalidOperationException("처음부터 다시 녹화한 뒤 저장되지 않았습니다.");
+            line += "; " + Check(again, 360, 240, TimeSpan.FromSeconds(0.8), "start over keeps only the new take");
+
+            var third = Start(); var thirdRun = third.RunAsync();
+            await Running(third); await Task.Delay(400);
+            third.Bar.Click("취소하고 버리기");
+            if (await thirdRun.WaitAsync(TimeSpan.FromSeconds(30)) is not null) throw new InvalidOperationException("버린 녹화가 저장되었습니다.");
+            var files = Directory.GetFiles(output, "*.mp4").Select(Path.GetFileName).Order().ToArray();
+            if (!files.SequenceEqual(new[] { "flow-1.mp4", "flow-3.mp4" })) throw new InvalidOperationException("남은 녹화 파일이 기대와 다릅니다: " + string.Join(", ", files));
+
+            var popup = new RecordingPopup(saved); popup.Show(); await Task.Delay(1200);
+            Save(popup, Path.Combine(folder, "ui-recording-popup.png")); popup.Close();
+            return "PASS: " + line + "; discard leaves no file; bar and popup images saved";
+        }
+        finally { window.Close(); }
+    }
+
+    private static void Save(Window window, string path)
+    {
+        if (window.Content is not FrameworkElement content) return;
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(window);
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(content.ActualHeight * dpi.DpiScaleY), 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, System.Windows.Media.PixelFormats.Pbgra32);
+        bitmap.Render(content);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var file = File.Create(path); encoder.Save(file);
+    }
+
     private static string Check(RecordingResult result, int width, int height, TimeSpan expected, string label)
     {
         using var file = File.OpenRead(result.Path);

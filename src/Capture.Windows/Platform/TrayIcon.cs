@@ -17,5 +17,11 @@ internal sealed class TrayIcon : IDisposable
         var info=data;info.Flags=0x10;info.InfoTitle=title;info.Info=text;info.InfoFlags=1;
         Native.Shell_NotifyIcon(1,ref info);
     }
+    /// <summary>Changes the hover text, e.g. to show recording time.</summary>
+    public void SetTip(string text)
+    {
+        data.Tip=text.Length>127?text[..127]:text;var tip=data;tip.Flags=4;
+        Native.Shell_NotifyIcon(1,ref tip);
+    }
     public void Dispose(){Native.Shell_NotifyIcon(2,ref data);if(appIcon!=0)Native.DestroyIcon(appIcon);}
 }

@@ -118,6 +118,14 @@ internal static class SelectionSmokeTest
             liveBar.SimulateMode("실시간");Check(barToggle is null,"choosing the current selection mode keeps the overlay open");
             liveBar.SimulateMode("고정");Check(barToggle is {NextCommand:"region",ToggleLive:true},"the bar switches selection mode");
         } finally {liveBar.Close();SelectionWindow.ResetRatioForTest();}
+        SelectionResult? recordChoice=null;
+        var recordBar=new SelectionWindow(display,null,null,new SelectionOptions(true,false,"녹화할 영역을 고르세요 · Enter는 화면 전체",true,"record"));recordBar.Completed+=r=>recordChoice=r;
+        try {
+            recordBar.Show();recordBar.UpdateLayout();Shot(recordBar,directory,"selection-record");
+            recordBar.SimulateMode("녹화");Check(recordChoice is null,"choosing recording again keeps the recording overlay open");
+            recordBar.SimulateMode("고정");Check(recordChoice is null,"recording offers no frozen mode: it always watches the live screen");
+            recordBar.SimulateMode("영역");Check(recordChoice?.NextCommand=="region","the bar switches from recording back to a screenshot");
+        } finally {recordBar.Close();SelectionWindow.ResetRatioForTest();}
         Check(!SettingsStore.Parse("{}",out _).LiveSelection && SettingsStore.Parse("""{"LiveSelection":true}""",out _).LiveSelection,"selection stays frozen by default and the live choice round-trips");
 
         var cancel=new SelectionWindow(display,image,null,new SelectionOptions());cancel.Completed+=r=>{result=r;completed=true;};
