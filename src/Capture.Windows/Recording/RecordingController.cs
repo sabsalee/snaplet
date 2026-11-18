@@ -6,7 +6,7 @@ using Capture.Windows.Platform;
 
 namespace Capture.Windows.Recording;
 
-internal sealed record RecordingOptions(string Folder, Func<string> Stem, int Fps = 30, bool Cursor = true, int CountdownSeconds = 0);
+internal sealed record RecordingOptions(string Folder, Func<string> Stem, int Fps = 30, bool Cursor = true, int CountdownSeconds = 0, bool SystemSound = false, bool Microphone = false);
 
 /// <summary>
 /// One recording as the user sees it: corner marks and the bar appear, an optional countdown runs, then
@@ -64,7 +64,7 @@ internal sealed class RecordingController
             while (true)
             {
                 restart = false;
-                job = new RecordingJob(target, options.Folder, options.Stem(), options.Fps, options.Cursor);
+                job = new RecordingJob(target, options.Folder, options.Stem(), options.Fps, options.Cursor, options.SystemSound, options.Microphone);
                 var run = job.RunAsync();
                 await job.Started;
                 if (stopBeforeStart) job.Stop();
@@ -89,7 +89,7 @@ internal sealed class RecordingController
     {
         if (job is null) return;
         bool paused = job.State == RecordingState.Paused;
-        bar.Update(job.Duration, paused, ++ticks % 4 >= 2);
+        bar.Update(job.Duration, paused, ++ticks % 4 >= 2, job.HasSound ? job.SoundLevel : null, job.MicrophoneQuiet);
         Progress?.Invoke(job.Duration);
     }
 

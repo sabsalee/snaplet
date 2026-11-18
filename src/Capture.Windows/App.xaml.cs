@@ -215,12 +215,12 @@ public partial class App : Application
     private bool quitAfterRecording;
     /// <summary>Starts a recording with the current settings; the popup appears when it is saved.</summary>
     private async void StartRecording(Recording.RecordingTarget target,Capture.Core.PixelRect desktop,DisplayInfo display) {
-        var controller=new Recording.RecordingController(target,desktop,display,new(settings.SaveFolder,()=>Capture.Core.FileNameTemplate.Render(settings.FileNameTemplate,DateTime.Now,Guid.NewGuid().ToString("N")[..4]),settings.RecordFps,settings.RecordCursor,settings.RecordCountdown?3:0));
+        var controller=new Recording.RecordingController(target,desktop,display,new(settings.SaveFolder,()=>Capture.Core.FileNameTemplate.Render(settings.FileNameTemplate,DateTime.Now,Guid.NewGuid().ToString("N")[..4]),settings.RecordFps,settings.RecordCursor,settings.RecordCountdown?3:0,settings.RecordSystemAudio,settings.RecordMicrophone));
         controller.Progress+=elapsed=>tray?.SetTip(elapsed is TimeSpan t?$"Snaplet · 녹화 중 {Capture.Core.RecordingControls.Clock(t)}":"Snaplet · 빠른 캡처");
         try {
             var result=await controller.RunAsync();
             if(result is null){status.Text="녹화를 취소했습니다.";return;}
-            status.Text=$"녹화 저장: {Path.GetFileName(result.Path)}"+(result.TargetClosed?" · 창이 닫혀 녹화를 마쳤습니다":"");
+            status.Text=$"녹화 저장: {Path.GetFileName(result.Path)}"+(result.TargetClosed?" · 창이 닫혀 녹화를 마쳤습니다":"")+(result.SoundProblems is {Count:>0} problems?" · "+string.Join(" ",problems):"");
             if(settings.CopyAfterCapture)Recording.RecordingPopup.CopyFile(result.Path);
             if(quitAfterRecording){Shutdown();return;}
             if(settings.AfterCapture==AfterCaptureAction.None)return;
@@ -491,6 +491,7 @@ public partial class App : Application
             File.WriteAllText(Path.Combine(path,"recording-synthetic.txt"),await Recording.RecordingProbe.SyntheticAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-smoke.txt"),await Recording.RecordingSmokeTest.RunAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-flow.txt"),await Recording.RecordingSmokeTest.RunFlowAsync(path));
+            File.WriteAllText(Path.Combine(path,"recording-sound.txt"),await Recording.RecordingSmokeTest.RunSoundAsync(path));
             FidelitySheet.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();

@@ -37,7 +37,7 @@ internal sealed record RecordingTarget(RecordingKind Kind, nint Handle, PixelRec
     public static RecordingTarget ForWindow(nint window) => new(RecordingKind.Window, window, default);
 }
 
-internal sealed record RecordingResult(string Path, TimeSpan Duration, int Width, int Height, string InputTrack, bool TargetClosed);
+internal sealed record RecordingResult(string Path, TimeSpan Duration, int Width, int Height, string InputTrack, bool TargetClosed, bool HasSound = false, IReadOnlyList<string>? SoundProblems = null);
 
 /// <summary>
 /// One recording from start to saved file: capture and encoding into a temporary file, cursor and click
@@ -48,14 +48,15 @@ internal sealed class RecordingJob
     private readonly RecordingTarget target;
     private readonly string folder, stem;
     private readonly int fps;
-    private readonly bool cursor;
+    private readonly bool cursor, systemSound, microphoneSound;
+    private AudioRecorder? audio;
     private ScreenRecorder? recorder;
     private (int X, int Y)? monitorOrigin;
     private readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public RecordingJob(RecordingTarget target, string folder, string stem, int fps = 30, bool cursor = true)
+    public RecordingJob(RecordingTarget target, string folder, string stem, int fps = 30, bool cursor = true, bool systemSound = false, bool microphoneSound = false)
     {
-        this.target = target; this.folder = folder; this.stem = stem; this.fps = fps; this.cursor = cursor;
+        this.target = target; this.folder = folder; this.stem = stem; this.fps = fps; this.cursor = cursor; this.systemSound = systemSound; this.microphoneSound = microphoneSound;
     }
 
     /// <summary>Completes when frames are being captured, or faults when recording could not start.</summary>
@@ -65,6 +66,10 @@ internal sealed class RecordingJob
     public void Pause() => recorder?.Pause();
     public void Resume() => recorder?.Resume();
     public void Stop() => recorder?.Stop();
+    /// <summary>Latest sound level, 0..1, and whether the microphone has been silent for a while.</summary>
+    public float SoundLevel => audio?.Level ?? 0;
+    public bool HasSound => audio?.HasSound == true;
+    public bool MicrophoneQuiet => audio?.MicrophoneQuiet == true;
 
     internal static string WorkFolder => Path.Combine(SettingsStore.DirectoryPath, "Recordings");
 
@@ -78,7 +83,9 @@ internal sealed class RecordingJob
             if (!GraphicsCaptureSession.IsSupported()) throw new NotSupportedException("이 PC에서는 화면 녹화를 사용할 수 없습니다(Windows Graphics Capture 없음).");
             var item = CaptureEngine.CreateItem(target.Handle, target.Kind == RecordingKind.Window);
             var region = target.Kind == RecordingKind.Window ? new PixelRect(0, 0, item.Size.Width, item.Size.Height) : target.Region;
-            var current = new ScreenRecorder(item, region, fps, cursor);
+            ScreenRecorder? current = null;
+            if (systemSound || microphoneSound) audio = new AudioRecorder(systemSound, microphoneSound, () => current?.State == RecordingState.Recording);
+            current = new ScreenRecorder(item, region, fps, cursor, audio);
             recorder = current;
             var sampler = new InputSampler();
             var sampling = new CancellationTokenSource();
@@ -100,7 +107,7 @@ internal sealed class RecordingJob
             Directory.CreateDirectory(folder);
             var final = RecordingFiles.UniquePath(folder, stem, ".mp4", File.Exists);
             File.Move(temp, final);
-            return new(final, current.Duration, current.Output.Width, current.Output.Height, inputPath, current.TargetClosed);
+            return new(final, current.Duration, current.Output.Width, current.Output.Height, inputPath, current.TargetClosed, audio?.HasSound == true, audio?.Problems ?? []);
         }
         catch (Exception error)
         {
@@ -109,6 +116,7 @@ internal sealed class RecordingJob
         }
         finally
         {
+            audio?.Dispose();
             if (File.Exists(temp)) File.Delete(temp);
         }
     }

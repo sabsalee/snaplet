@@ -8,6 +8,7 @@ using Windows.Media.Core;
 using Windows.Media.MediaProperties;
 using Windows.Media.Transcoding;
 using Windows.Storage.Streams;
+using System.Runtime.InteropServices.WindowsRuntime;
 
 namespace Capture.Windows.Recording;
 
@@ -29,6 +30,7 @@ internal sealed class ScreenRecorder
     private readonly PixelRect region;
     private readonly int fps;
     private readonly bool cursor;
+    private readonly AudioRecorder? audio;
     private readonly RecordingSession session = new();
     private readonly Stopwatch clock = new();
     private readonly object gate = new();
@@ -39,9 +41,9 @@ internal sealed class ScreenRecorder
     private D3D11? d3d;
     private global::Windows.Graphics.SizeInt32 poolSize;
 
-    public ScreenRecorder(GraphicsCaptureItem item, PixelRect region, int fps, bool cursor)
+    public ScreenRecorder(GraphicsCaptureItem item, PixelRect region, int fps, bool cursor, AudioRecorder? audio = null)
     {
-        this.item = item; this.region = region; this.fps = fps; this.cursor = cursor;
+        this.item = item; this.region = region; this.fps = fps; this.cursor = cursor; this.audio = audio is { HasSound: true } ? audio : null;
         Output = RecordingOutput.Size(region.Width, region.Height);
     }
 
@@ -66,11 +68,13 @@ internal sealed class ScreenRecorder
         using var pool = Direct3D11CaptureFramePool.CreateFreeThreaded(device.Device, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, item.Size);
         using var capture = pool.CreateCaptureSession(item);
         capture.IsCursorCaptureEnabled = cursor;
-        var source = new MediaStreamSource(new VideoStreamDescriptor(VideoEncodingProperties.CreateUncompressed(MediaEncodingSubtypes.Bgra8, (uint)Output.Width, (uint)Output.Height))) { BufferTime = TimeSpan.Zero, CanSeek = false };
+        var video = new VideoStreamDescriptor(VideoEncodingProperties.CreateUncompressed(MediaEncodingSubtypes.Bgra8, (uint)Output.Width, (uint)Output.Height));
+        var source = audio is null ? new MediaStreamSource(video) : new MediaStreamSource(video, new AudioStreamDescriptor(AudioEncodingProperties.CreatePcm(AudioConverter.Rate, 2, 16)));
+        source.BufferTime = TimeSpan.Zero; source.CanSeek = false;
         source.SampleRequested += OnSampleRequested;
         var transcoder = new MediaTranscoder { HardwareAccelerationEnabled = true };
         var preparing = Stopwatch.StartNew();
-        var prepared = await transcoder.PrepareMediaStreamSourceTranscodeAsync(source, output, Profile(Output.Width, Output.Height, fps, false));
+        var prepared = await transcoder.PrepareMediaStreamSourceTranscodeAsync(source, output, Profile(Output.Width, Output.Height, fps, audio is not null));
         Metrics.PrepareMs = preparing.Elapsed.TotalMilliseconds;
         if (!prepared.CanTranscode) throw new InvalidOperationException("인코더를 준비하지 못했습니다: " + prepared.FailureReason);
         poolSize = item.Size;
@@ -82,6 +86,7 @@ internal sealed class ScreenRecorder
         try
         {
             lock (gate) { clock.Start(); session.Start(clock.Elapsed); }
+            audio?.Start();
             capture.StartCapture();
             await prepared.TranscodeAsync();
         }
@@ -150,7 +155,7 @@ internal sealed class ScreenRecorder
     {
         var request = args.Request;
         var deferral = request.GetDeferral();
-        _ = SupplyAsync(request, deferral);
+        _ = request.StreamDescriptor is AudioStreamDescriptor ? SupplyAudioAsync(request, deferral) : SupplyAsync(request, deferral);
     }
 
     private async Task SupplyAsync(MediaStreamSourceSampleRequest request, MediaStreamSourceSampleRequestDeferral deferral)
@@ -189,6 +194,40 @@ internal sealed class ScreenRecorder
                     wake = signal.Task;
                 }
                 await Task.WhenAny(wake, Task.Delay(delay)).ConfigureAwait(false);
+            }
+        }
+        finally { deferral.Complete(); }
+    }
+
+    /// <summary>Hands the encoder sound in about 20 ms pieces, timed by media time so it stays with the picture.</summary>
+    private async Task SupplyAudioAsync(MediaStreamSourceSampleRequest request, MediaStreamSourceSampleRequestDeferral deferral)
+    {
+        try
+        {
+            while (true)
+            {
+                Task wake;
+                lock (gate)
+                {
+                    if (stopRequested) { request.Sample = null; return; }
+                    if (session.State == RecordingState.Recording && audio is not null)
+                    {
+                        var media = session.MediaTime(clock.Elapsed); var from = audio.Written;
+                        if (media - from >= TimeSpan.FromMilliseconds(20))
+                        {
+                            var pcm = audio.Take(media);
+                            if (pcm.Length > 0)
+                            {
+                                var sample = MediaStreamSample.CreateFromBuffer(pcm.AsBuffer(), from);
+                                sample.Duration = TimeSpan.FromTicks(pcm.Length / 4 * TimeSpan.TicksPerSecond / AudioConverter.Rate);
+                                request.Sample = sample;
+                                return;
+                            }
+                        }
+                    }
+                    wake = signal.Task;
+                }
+                await Task.WhenAny(wake, Task.Delay(20)).ConfigureAwait(false);
             }
         }
         finally { deferral.Complete(); }

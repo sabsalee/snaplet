@@ -99,3 +99,58 @@ internal static class RecordingEngineChecks
         check(RecordingControls.Clock(TimeSpan.FromSeconds(65.9)) == "1:05" && RecordingControls.Clock(TimeSpan.FromSeconds(3725)) == "1:02:05" && RecordingControls.Clock(TimeSpan.FromSeconds(-3)) == "0:00", "Elapsed clock text.");
     }
 }
+
+internal static class RecordingAudioChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        byte[] Float(int frames, int channels, Func<int, int, float> value)
+        {
+            var data = new byte[frames * channels * 4];
+            for (int f = 0; f < frames; f++) for (int c = 0; c < channels; c++) BitConverter.TryWriteBytes(data.AsSpan((f * channels + c) * 4), value(f, c));
+            return data;
+        }
+        var output = new List<float>();
+        new AudioConverter(new(48000, 2, 32, true)).Convert(Float(480, 2, (f, c) => c == 0 ? .5f : -.25f), output);
+        check(output.Count == 960 && output[0] == .5f && output[1] == -.25f, "48 kHz stereo float passes through unchanged.");
+
+        output.Clear();
+        var converter = new AudioConverter(new(44100, 2, 32, true));
+        // Two buffers of 441 frames = 20 ms must give 960 frames at 48 kHz, give or take one at the edge.
+        converter.Convert(Float(441, 2, (f, c) => f / 882f), output); converter.Convert(Float(441, 2, (f, c) => (f + 441) / 882f), output);
+        check(Math.Abs(output.Count / 2 - 960) <= 1, "44.1 kHz resampled to 48 kHz keeps duration: " + output.Count / 2);
+        bool rising = true; for (int i = 2; i < output.Count; i += 2) rising &= output[i] >= output[i - 2] - 1e-6f;
+        check(rising, "A rising ramp stays monotonic across buffer edges (no clicks).");
+
+        output.Clear();
+        var mono16 = new byte[4]; BitConverter.TryWriteBytes(mono16.AsSpan(0), (short)16384); BitConverter.TryWriteBytes(mono16.AsSpan(2), (short)-32768);
+        new AudioConverter(new(48000, 1, 16, false)).Convert(mono16, output);
+        check(output.SequenceEqual(new[] { .5f, .5f, -1f, -1f }), "16-bit mono is copied to both sides.");
+        output.Clear();
+        new AudioConverter(new(48000, 6, 24, false)).Convert(new byte[] { 0, 0, 0x40, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, output);
+        check(output.SequenceEqual(new[] { .5f, -.5f }), "24-bit 5.1 keeps front left and right.");
+        bool rejected = false; try { _ = new AudioConverter(new(48000, 2, 8, false)); } catch (ArgumentException) { rejected = true; }
+        check(rejected, "8-bit audio rejected.");
+
+        var timeline = new AudioTimeline();
+        timeline.Add(Enumerable.Repeat(1f, 480 * 2).ToList());
+        var first = timeline.Take(TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(200));
+        check(first.Length == 960 * 4 && BitConverter.ToInt16(first, 0) == 32767 && BitConverter.ToInt16(first, 480 * 4) == 0, "Missing sound is filled with silence up to the video time.");
+        check(timeline.Take(TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(200)).Length == 0 && timeline.Written == 960, "Nothing is repeated for the same time.");
+        timeline.Add(Enumerable.Repeat(.5f, 48000 * 2).ToList());
+        var lagged = timeline.Take(TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(100));
+        check(lagged.Length == 960 * 4, "Only the time asked for is written.");
+        var after = timeline.Take(TimeSpan.FromMilliseconds(140), TimeSpan.FromMilliseconds(100));
+        check(after.Length == 4800 * 4 && timeline.Written == 6720, "A backlog beyond the allowed lag is trimmed to stay in sync.");
+
+        var mixer = new AudioMixer(); var mixed = new List<float>();
+        mixer.AddSystem([.6f, .6f, .6f, .6f]); mixer.AddMicrophone([.6f, -.2f]);
+        mixer.Drain(mixed, true, true);
+        check(mixed.Count == 2 && mixed[0] == 1f && Math.Abs(mixed[1] - .4f) < 1e-6f, "Both sources mix where both have frames, clamped to full scale.");
+        mixer.Drain(mixed, true, true, flush: true);
+        check(mixed.Count == 4 && Math.Abs(mixed[2] - .6f) < 1e-6f, "Flush releases the longer source.");
+        mixed.Clear(); mixer.AddMicrophone([.3f, .3f]); mixer.Drain(mixed, false, true);
+        check(mixed.SequenceEqual(new[] { .3f, .3f }), "Microphone alone passes through.");
+        check(Math.Abs(AudioMixer.Peak([.1f, -.8f, .3f]) - .8f) < 1e-6f, "Peak level for the indicator.");
+    }
+}

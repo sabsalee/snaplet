@@ -64,6 +64,10 @@ public sealed record AppSettings
     public bool RecordCursor {get;init;}=true;
     /// <summary>Count down three seconds before a recording starts.</summary>
     public bool RecordCountdown {get;init;}
+    /// <summary>Record what the computer plays (default output loopback).</summary>
+    public bool RecordSystemAudio {get;init;}
+    /// <summary>Record the default microphone.</summary>
+    public bool RecordMicrophone {get;init;}
 
     /// <summary>Every command that can own a global shortcut, in display order. New commands start unassigned to avoid stealing keys from other apps.</summary>
     public static readonly IReadOnlyList<(string Command,string Name)> Commands=[
