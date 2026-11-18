@@ -135,10 +135,10 @@ internal static class RecordingSmokeTest
 
     private static void Save(Window window, string path)
     {
-        if (window.Content is not FrameworkElement content) return;
+        // The whole window, so the content's margin and shadow are included rather than cropped.
         var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(window);
-        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(content.ActualHeight * dpi.DpiScaleY), 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, System.Windows.Media.PixelFormats.Pbgra32);
-        bitmap.Render(content);
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(window.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(window.ActualHeight * dpi.DpiScaleY), 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, System.Windows.Media.PixelFormats.Pbgra32);
+        bitmap.Render(window);
         var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
         using var file = File.Create(path); encoder.Save(file);
     }

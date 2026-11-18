@@ -104,7 +104,7 @@ internal sealed class SelectionWindow : Window
         loupe.Child=loupeStack;canvas.Children.Add(loupe);
         Content=root;
         ((TextBlock)hint.Child).Text=windows is not null?"캡처할 창을 클릭하세요 · Esc 취소"
-            :(options.Purpose is string purpose?purpose+" · ":"")+(Live?"실시간 화면 · 드래그하여 선택 · Shift 정사각형 · Space 이동 · F 화면 고정 · Esc 취소":"드래그하여 선택 · Shift 정사각형 · Space 이동 · Tab 색 복사 · R 측정 · F 실시간 · Esc 취소");
+            :(options.Purpose is string purpose?purpose+" · ":"")+(options.Command=="record"?"드래그하여 선택 · Shift 정사각형 · Space 이동 · Esc 취소":Live?"실시간 화면 · 드래그하여 선택 · Shift 정사각형 · Space 이동 · F 화면 고정 · Esc 취소":"드래그하여 선택 · Shift 정사각형 · Space 이동 · Tab 색 복사 · R 측정 · F 실시간 · Esc 취소");
         Canvas.SetLeft(hint,24);Canvas.SetTop(hint,modeBar!=null?74:24);
         toast.Visibility=Visibility.Collapsed;sizeTag.Visibility=Visibility.Collapsed;rulerTag.Visibility=Visibility.Collapsed;
         toastTimer.Tick+=(_,_)=>{toastTimer.Stop();toast.Visibility=Visibility.Collapsed;};
@@ -259,7 +259,7 @@ internal sealed class SelectionWindow : Window
                 else if(mode==Mode.Idle){selection=bounds;Finish();}
                 break;
             case System.Windows.Input.Key.Space:spaceHeld=true;break;
-            case System.Windows.Input.Key.F when windows is null:
+            case System.Windows.Input.Key.F when windows is null && options.Command!="record":
                 if(mode==Mode.Idle)RequestToggleLive();
                 else if(mode==Mode.Adjusting)ShowToast("선택을 시작하기 전에 전환할 수 있습니다");
                 break;
