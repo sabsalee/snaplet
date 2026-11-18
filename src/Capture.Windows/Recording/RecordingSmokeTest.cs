@@ -198,11 +198,12 @@ internal static class RecordingSmokeTest
             Drag("화살표", 300, 260, 220, 160);
             Drag("펜", 260, 60, 420, 100);
             Drag("형광펜", 60, 220, 220, 230);
-            controller.Bar.Click("번호"); canvas.Begin(new(400, 200)); canvas.Begin(new(440, 250));
             Drag("스포트라이트", 30, 30, 210, 150);
+            controller.Bar.Click("번호"); canvas.Begin(new(400, 200)); canvas.Begin(new(440, 250));
             if (canvas.Count != 7) throw new InvalidOperationException($"그린 개수가 {canvas.Count}개입니다(기대 7).");
             controller.Bar.Click("마지막 그림 지우기 (Ctrl+Z)");
             if (canvas.Count != 6) throw new InvalidOperationException("되돌리기가 마지막 그림을 지우지 않았습니다.");
+            if (canvas.Marks[^1].Kind != AnnotationKind.Step || canvas.Marks[^1].Text != "1") throw new InvalidOperationException("되돌리기가 마지막 번호가 아닌 그림을 지웠습니다.");
             controller.Bar.Click("색 바꾸기");
             if (sketch.Color == new ColorRgba(255, 59, 48)) throw new InvalidOperationException("색 바꾸기가 색을 바꾸지 않았습니다.");
             await Task.Delay(400);
