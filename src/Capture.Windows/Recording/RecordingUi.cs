@@ -202,7 +202,7 @@ internal sealed class RecordingFrame : Window
 /// </summary>
 internal sealed class RecordingPopup : Window
 {
-    public RecordingPopup(RecordingResult result)
+    public RecordingPopup(RecordingResult result, Action? edit = null)
     {
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         Topmost = true; ShowInTaskbar = false; SizeToContent = SizeToContent.WidthAndHeight; FontFamily = Ui.Font; Title = "Snaplet 녹화 완료";
@@ -229,6 +229,7 @@ internal sealed class RecordingPopup : Window
         var info = new TextBlock { Text = $"{RecordingControls.Clock(result.Duration)} · {result.Width} × {result.Height} · {Size(result.Path)}", Foreground = RecordingLook.Muted, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 8, 0) };
         var actions = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        if (edit is not null) buttons.Children.Add(RecordingLook.Button("edit", "잘라내기·GIF로 편집", () => { edit(); Close(); }));
         buttons.Children.Add(RecordingLook.Button("copy", "파일 복사", () => CopyFile(result.Path)));
         buttons.Children.Add(RecordingLook.Button("folder", "폴더에서 보기", () => ShowInFolder(result.Path)));
         buttons.Children.Add(RecordingLook.Button("close", "닫기", Close));

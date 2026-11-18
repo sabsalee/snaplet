@@ -224,10 +224,15 @@ public partial class App : Application
             if(settings.CopyAfterCapture)Recording.RecordingPopup.CopyFile(result.Path);
             if(quitAfterRecording){Shutdown();return;}
             if(settings.AfterCapture==AfterCaptureAction.None)return;
-            var popup=new Recording.RecordingPopup(result);
+            var popup=new Recording.RecordingPopup(result,()=>EditRecording(result.Path,result.HasSound));
             popup.Loaded+=(_,_)=>{Native.GetCursorPos(out var at);var work=Native.PointerDisplay().Work;Recording.RecordingLook.PlacePhysical(popup,(w,h)=>PreviewWindow.PopupPlacement(at.X,at.Y,w,h,work.Left,work.Top,work.Right,work.Bottom));};
             popup.Show();
         } catch(Exception error){Error(error);if(quitAfterRecording)Shutdown();}
+    }
+    /// <summary>Trim, mute, resize, GIF and frame-to-image for a saved recording.</summary>
+    private void EditRecording(string path,bool hasSound) {
+        var window=new Recording.RecordingEditWindow(path,hasSound,image=>{Received(image,"녹화 장면",true);Edit(image);});
+        window.Show();window.Activate();
     }
     private Task<SelectionResult?> SelectAsync(IReadOnlyList<DisplayInfo> displays,CapturedFrame[] shots,IReadOnlyList<PickableWindow>? targets,CancellationToken token,CaptureDiagnostics diagnostics,SelectionOptions options) {
         var completion=new TaskCompletionSource<SelectionResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -493,6 +498,7 @@ public partial class App : Application
             File.WriteAllText(Path.Combine(path,"recording-flow.txt"),await Recording.RecordingSmokeTest.RunFlowAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-sound.txt"),await Recording.RecordingSmokeTest.RunSoundAsync(path));
             File.WriteAllText(Path.Combine(path,"recording-sketch.txt"),await Recording.RecordingSmokeTest.RunSketchAsync(path));
+            File.WriteAllText(Path.Combine(path,"recording-edit.txt"),await Recording.RecordingSmokeTest.RunEditAsync(path));
             FidelitySheet.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();
