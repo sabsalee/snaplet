@@ -273,6 +273,26 @@ internal static class RecordingSmokeTest
         return FormattableString.Invariant($"PASS: trim 0.5–1.7s → {tv.Duration.TotalSeconds:0.00}s with sound; muted 320x180 without sound; GIF {gif.Frames} frames at {gif.DelayCentiseconds}/100s looping ({new FileInfo(gifPath).Length / 1024} KB); frame 640x360; edit window saved its range");
     }
 
+    /// <summary>Start-up recovery: a playable leftover moves to the save folder, an unplayable one is removed, nothing else is touched.</summary>
+    internal static string RunRecovery(string folder)
+    {
+        var work = Path.Combine(folder, "recovery-work"); var save = Path.Combine(folder, "recovery-save");
+        foreach (var d in new[] { work, save }) { if (Directory.Exists(d)) Directory.Delete(d, true); Directory.CreateDirectory(d); }
+        var synthetic = Path.Combine(folder, "recording-synthetic.mp4");
+        if (!File.Exists(synthetic)) return "SKIP: 합성 녹화가 없어 복구 검사를 건너뜁니다.";
+        File.Copy(synthetic, Path.Combine(work, "playable.mp4"));
+        var cut = File.ReadAllBytes(synthetic); File.WriteAllBytes(Path.Combine(work, "cut.mp4"), cut[..(cut.Length / 2)]);
+        File.WriteAllText(Path.Combine(work, "cut.input"), InputTrack.Header + "\n");
+        File.WriteAllText(Path.Combine(work, "notes.txt"), "keep");
+        var (recovered, lost) = RecordingRecovery.Run(save, work);
+        var left = Directory.GetFiles(work).Select(Path.GetFileName).Order().ToArray();
+        // The plain MP4 here keeps its index at the end, so its first half cannot be played.
+        if (recovered.Count != 1 || lost != 1 || !left.SequenceEqual(new[] { "notes.txt" }) || !Path.GetFileName(recovered[0]).StartsWith("복구된 녹화", StringComparison.Ordinal))
+            throw new InvalidOperationException($"복구 결과가 기대와 다릅니다: 복구 {recovered.Count}, 삭제 {lost}, 남음 {string.Join(",", left)}");
+        Directory.Delete(work, true); Directory.Delete(save, true);
+        return "PASS: playable leftover recovered to the save folder, cut leftover and its input track removed, other files untouched";
+    }
+
     private static System.Windows.Media.Imaging.BitmapSource? BitmapSourceOpened;
     private static string Describe(Mp4Info info) => string.Join(", ", info.Tracks.Select(t => FormattableString.Invariant($"{t.Handler} {t.Width}x{t.Height} {t.Duration.TotalSeconds:0.00}s")));
 
