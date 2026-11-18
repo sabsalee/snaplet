@@ -53,7 +53,12 @@ internal static class RecordingExport
             cancellationToken.ThrowIfCancellationRequested();
             var frame = await FrameAsync(composition, times[i], width, height);
             // A palette chosen from each frame keeps screen colours accurate instead of a fixed web palette.
-            var indexed = new FormatConvertedBitmap(frame, PixelFormats.Indexed8, new BitmapPalette(frame, 256), 0);
+            var palette = new BitmapPalette(frame, 256);
+            var converted = new FormatConvertedBitmap(frame, PixelFormats.Indexed8, palette, 0);
+            // Copy the indexed pixels out so the full-colour frame can be released before the next one.
+            var pixels = new byte[width * height];
+            converted.CopyPixels(pixels, width, 0);
+            var indexed = BitmapSource.Create(width, height, 96, 96, PixelFormats.Indexed8, palette, pixels, width);
             indexed.Freeze();
             encoder.Frames.Add(BitmapFrame.Create(indexed));
             progress?.Report((i + 1) / (double)times.Count * .95);
