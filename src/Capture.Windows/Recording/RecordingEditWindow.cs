@@ -22,8 +22,8 @@ internal sealed class RecordingEditWindow : Window
     private readonly Action<BitmapSource> editImage;
     private readonly MediaElement video = new() { LoadedBehavior = MediaState.Manual, UnloadedBehavior = MediaState.Close, ScrubbingEnabled = true, Stretch = Stretch.Uniform };
     private readonly TrimBar trim = new();
-    private readonly TextBlock time = Ui.Label("0:00 / 0:00", 12, Ui.Brush("SecondaryTextBrush"));
-    private readonly TextBlock status = Ui.Label("", 12, Ui.Brush("SecondaryTextBrush"));
+    private readonly TextBlock time = Ui.Label("0:00 / 0:00", 12, Ui.Brush("MutedBrush"));
+    private readonly TextBlock status = Ui.Label("", 12, Ui.Brush("MutedBrush"));
     private readonly ProgressBar progress = new() { Height = 4, Minimum = 0, Maximum = 1, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox mute = new() { Content = "소리 빼기", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) };
     private readonly ComboBox size = new() { MinWidth = 130, VerticalAlignment = VerticalAlignment.Center, ItemsSource = new[] { "원본 크기", "긴 변 1920", "긴 변 1280", "긴 변 720" }, SelectedIndex = 0 };
