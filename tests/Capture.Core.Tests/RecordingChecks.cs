@@ -71,3 +71,25 @@ internal static class RecordingChecks
     private static byte[] Movie() => [.. Box("ftyp", Encoding.ASCII.GetBytes("isom")), .. Box("mdat", new byte[32]),
         .. Box("moov", Box("mvhd", Header(1000, 12500)), Track("vide", 1920, 1080, 30000, 375000), Track("soun", 0, 0, 48000, 599040))];
 }
+
+internal static class RecordingEngineChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        PixelRect[] monitors = [new(0, 0, 1920, 1080), new(1920, -200, 1280, 1024)];
+        check(RecordingArea.OnMonitor(new(100, 100, 400, 300), monitors) == (0, new PixelRect(100, 100, 400, 300)), "Selection inside the first monitor.");
+        check(RecordingArea.OnMonitor(new(1800, 0, 600, 300), monitors) == (1, new PixelRect(0, 200, 480, 300)), "Larger share wins and is clipped, relative to that monitor.");
+        check(RecordingArea.OnMonitor(new(-500, 0, 400, 300), monitors) is null, "Selection outside every monitor.");
+        check(RecordingArea.OnMonitor(new(1919, 0, 1, 50), monitors) is null, "Sliver is rejected.");
+
+        var sampler = new InputSampler(); var t = TimeSpan.FromMilliseconds(10);
+        sampler.Sample(t, 5, 5, 0); sampler.Sample(t * 2, 5, 5, 0); sampler.Sample(t * 3, 6, 5, 1); sampler.Sample(t * 4, 6, 5, 1 | 2); sampler.Sample(t * 5, 6, 5, 0);
+        var kinds = string.Join(",", sampler.Events.Select(e => $"{e.Kind}{e.Button}"));
+        check(kinds == "Move0,Move0,Down1,Down2,Up1,Up2", "Sampler writes moves and button edges only: " + kinds);
+        check(sampler.Events[2].X == 6 && sampler.Events[2].Time == t * 3, "Button edge carries position and time.");
+
+        var taken = new HashSet<string> { Path.Combine("v", "a.mp4"), Path.Combine("v", "a-2.mp4") };
+        check(RecordingFiles.UniquePath("v", "a", ".mp4", taken.Contains) == Path.Combine("v", "a-3.mp4"), "Unique recording name.");
+        check(RecordingFiles.UniquePath("v", "b", ".mp4", taken.Contains) == Path.Combine("v", "b.mp4"), "Free name kept.");
+    }
+}

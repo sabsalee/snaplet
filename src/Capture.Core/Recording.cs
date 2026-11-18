@@ -191,3 +191,56 @@ public static class Mp4Reader
         var data = new byte[Math.Min(length, 4096)]; stream.Position = start; stream.ReadExactly(data); return data;
     }
 }
+
+public static class RecordingArea
+{
+    /// <summary>
+    /// The first release records inside one monitor: picks the monitor holding most of the selection and clips to it.
+    /// Returns the region relative to that monitor, or null when the selection misses every monitor.
+    /// </summary>
+    public static (int Monitor, PixelRect Region)? OnMonitor(PixelRect selection, IReadOnlyList<PixelRect> monitors)
+    {
+        int best = -1; long bestArea = 0; PixelRect bestClip = default;
+        for (int i = 0; i < monitors.Count; i++)
+        {
+            var m = monitors[i];
+            int left = Math.Max(selection.X, m.X), top = Math.Max(selection.Y, m.Y), right = Math.Min(selection.Right, m.Right), bottom = Math.Min(selection.Bottom, m.Bottom);
+            long area = (long)Math.Max(0, right - left) * Math.Max(0, bottom - top);
+            if (area > bestArea) { best = i; bestArea = area; bestClip = new(left - m.X, top - m.Y, right - left, bottom - top); }
+        }
+        return best < 0 || bestClip.Width < 2 || bestClip.Height < 2 ? null : (best, bestClip);
+    }
+}
+
+/// <summary>Turns polled cursor and button state into input events, writing only changes.</summary>
+public sealed class InputSampler
+{
+    private int x = int.MinValue, y = int.MinValue, buttons;
+    private readonly List<InputEvent> events = new();
+    public IReadOnlyList<InputEvent> Events => events;
+
+    /// <summary><paramref name="pressed"/> is a bit mask: 1 left, 2 right, 4 middle. Positions are relative to the recorded region.</summary>
+    public void Sample(TimeSpan media, int cursorX, int cursorY, int pressed)
+    {
+        if (cursorX != x || cursorY != y) { events.Add(new(media, InputEventKind.Move, cursorX, cursorY)); x = cursorX; y = cursorY; }
+        for (int bit = 1; bit <= 4; bit <<= 1)
+        {
+            bool now = (pressed & bit) != 0, before = (buttons & bit) != 0;
+            if (now != before) events.Add(new(media, now ? InputEventKind.Down : InputEventKind.Up, cursorX, cursorY, bit));
+        }
+        buttons = pressed;
+    }
+}
+
+public static class RecordingFiles
+{
+    /// <summary>First free <c>stem.ext</c>, <c>stem-2.ext</c>, … in <paramref name="folder"/>.</summary>
+    public static string UniquePath(string folder, string stem, string extension, Func<string, bool> exists)
+    {
+        for (int n = 1; ; n++)
+        {
+            var path = Path.Combine(folder, (n == 1 ? stem : $"{stem}-{n}") + extension);
+            if (!exists(path)) return path;
+        }
+    }
+}

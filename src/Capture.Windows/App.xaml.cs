@@ -448,6 +448,7 @@ public partial class App : Application
             BackdropSmokeTest.Run(path);
             await UI.ScrollSmokeTest.RunAsync(path);
             File.WriteAllText(Path.Combine(path,"recording-synthetic.txt"),await Recording.RecordingProbe.SyntheticAsync(path));
+            File.WriteAllText(Path.Combine(path,"recording-smoke.txt"),await Recording.RecordingSmokeTest.RunAsync(path));
             FidelitySheet.Run(path);
             await UpdateSmokeTest.RunAsync(path);
             GdiSnapshot.RunSelfTest();

@@ -134,7 +134,7 @@ internal static class RecordingProbe
             var monitor = Native.MonitorFromPoint(new Native.POINT(), 1);
             var bounds = Native.Displays().First(d => d.Handle == monitor).Bounds;
             var parts = Option("--region", $"0,0,{bounds.Width},{bounds.Height}").Split(',').Select(int.Parse).ToArray();
-            var region = new RecordingRegion(parts[0], parts[1], parts[2], parts[3]);
+            var region = new PixelRect(parts[0], parts[1], parts[2], parts[3]);
             report.AppendLine($"Snaplet recording probe {typeof(RecordingProbe).Assembly.GetName().Version} · {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             report.AppendLine($"OS {Environment.OSVersion.Version}, {Environment.ProcessorCount} logical CPUs, primary monitor {bounds.Width}x{bounds.Height}");
             report.AppendLine($"WGC supported: {GraphicsCaptureSession.IsSupported()}; border can be removed (IsBorderRequired present): {ApiInformation.IsPropertyPresent("Windows.Graphics.Capture.GraphicsCaptureSession", "IsBorderRequired")}");
