@@ -61,6 +61,8 @@ internal sealed class RecordingBar : Window
     private readonly TextBlock time = new() { Text = "0:00", Foreground = RecordingLook.Text, FontSize = 13, FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"), MinWidth = 40, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Left };
     private readonly Ellipse light = new() { Width = 9, Height = 9, Fill = RecordingLook.Live, Margin = new Thickness(6, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
     private readonly Button pause, stop;
+    private readonly ContentControl sound = new() { Content = Ui.Icon("mic", 14), Foreground = RecordingLook.Text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0), Visibility = Visibility.Collapsed, ToolTip = "소리 녹음 중" };
+    private readonly TextBlock warning = new() { Text = "마이크 소리 없음", Foreground = RecordingLook.Paused, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 4, 0), Visibility = Visibility.Collapsed };
     private bool paused;
 
     public event Action? PauseToggled, StopRequested, RestartRequested, DiscardRequested;
@@ -74,7 +76,7 @@ internal sealed class RecordingBar : Window
         stop = RecordingLook.Button("stop", "정지하고 저장", () => StopRequested?.Invoke(), RecordingLook.Live);
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         var grip = new ContentControl { Content = Ui.Grip(), Foreground = RecordingLook.Muted, Cursor = Cursors.SizeAll, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 0, 0) };
-        row.Children.Add(grip); row.Children.Add(light); row.Children.Add(time);
+        row.Children.Add(grip); row.Children.Add(light); row.Children.Add(time); row.Children.Add(sound); row.Children.Add(warning);
         row.Children.Add(RecordingLook.Divider());
         row.Children.Add(pause); row.Children.Add(stop);
         row.Children.Add(RecordingLook.Divider());
@@ -87,8 +89,12 @@ internal sealed class RecordingBar : Window
 
     public bool Paused => paused;
 
-    public void Update(TimeSpan elapsed, bool isPaused, bool blink)
+    public void Update(TimeSpan elapsed, bool isPaused, bool blink, float? soundLevel = null, bool microphoneQuiet = false)
     {
+        // The microphone glyph brightens with the sound level, so a silent recording is noticed early.
+        sound.Visibility = soundLevel is null ? Visibility.Collapsed : Visibility.Visible;
+        sound.Opacity = .35 + .65 * Math.Clamp(soundLevel ?? 0, 0, 1);
+        warning.Visibility = microphoneQuiet && !isPaused ? Visibility.Visible : Visibility.Collapsed;
         time.Text = RecordingControls.Clock(elapsed);
         if (isPaused != paused)
         {

@@ -133,6 +133,37 @@ internal static class RecordingSmokeTest
         finally { window.Close(); }
     }
 
+    /// <summary>
+    /// Sound requested: with an audio device the MP4 must carry a sound track as long as the picture, pause included;
+    /// without one the recording must still be saved and say why the sound is missing.
+    /// </summary>
+    internal static async Task<string> RunSoundAsync(string folder)
+    {
+        if (!GraphicsCaptureSession.IsSupported()) return "SKIP: Windows Graphics Capture가 없어 소리 녹화 검사를 건너뜁니다.";
+        var output = Path.Combine(folder, "recordings-sound");
+        if (Directory.Exists(output)) Directory.Delete(output, true);
+        var display = Native.Displays()[0];
+        var target = RecordingTarget.ForArea(new PixelRect(display.Bounds.Left, display.Bounds.Top, 320, 240)) ?? throw new InvalidOperationException("영역 대상을 만들지 못했습니다.");
+        var job = new RecordingJob(target, output, "sound", 30, false, systemSound: true, microphoneSound: true);
+        var run = job.RunAsync();
+        await job.Started.WaitAsync(TimeSpan.FromSeconds(15));
+        await Task.Delay(700); job.Pause(); await Task.Delay(500); job.Resume(); await Task.Delay(800);
+        job.Stop();
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(30));
+        using var file = File.OpenRead(result.Path);
+        var info = Mp4Reader.Read(file) ?? throw new InvalidOperationException("소리를 요청한 녹화에 MP4 색인이 없습니다.");
+        var video = info.Tracks.First(t => t.Handler == "vide"); var sound = info.Tracks.FirstOrDefault(t => t.Handler == "soun");
+        if (!result.HasSound)
+        {
+            if (sound is not null) throw new InvalidOperationException("소리 장치가 없다고 했는데 소리 트랙이 있습니다.");
+            if (result.SoundProblems is not { Count: > 0 }) throw new InvalidOperationException("소리 없이 녹화한 이유가 없습니다.");
+            return FormattableString.Invariant($"PASS (no audio device): video {video.Duration.TotalSeconds:0.00}s saved without sound; reason shown: {string.Join(" / ", result.SoundProblems)}");
+        }
+        if (sound is null) throw new InvalidOperationException("소리를 녹음했다고 했는데 소리 트랙이 없습니다.");
+        if ((sound.Duration - video.Duration).Duration() > TimeSpan.FromMilliseconds(250)) throw new InvalidOperationException($"소리 {sound.Duration.TotalSeconds:0.000}s와 영상 {video.Duration.TotalSeconds:0.000}s 길이가 어긋납니다.");
+        return FormattableString.Invariant($"PASS: video {video.Duration.TotalSeconds:0.00}s, sound {sound.Duration.TotalSeconds:0.00}s after a 0.5s pause; problems: {(result.SoundProblems is { Count: > 0 } p ? string.Join(" / ", p) : "none")}");
+    }
+
     private static void Save(Window window, string path)
     {
         // The whole window, so the content's margin and shadow are included rather than cropped.
