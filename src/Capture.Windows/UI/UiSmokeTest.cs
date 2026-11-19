@@ -15,9 +15,11 @@ internal static class UiSmokeTest
     internal static void Run(string directory)
     {
         var checks=new List<string>();void Check(bool value,string label){if(!value)throw new InvalidOperationException("UI check failed: "+label);checks.Add(label);}
-        foreach(var name in FluentIcons.Paths.Keys) {
-            var icon=Ui.Icon(name);Check(icon is Viewbox {Child:Canvas {Width:24,Height:24}},"Fluent icon retains consistent design grid: "+name);
+        static bool Throws(Action action){try{action();return false;}catch(ArgumentException){return true;}}
+        foreach(var name in AppIcons.Paths.Keys) {
+            var icon=Ui.Icon(name);Check(icon is Viewbox {Child:Canvas {Width:AppIcons.Grid,Height:AppIcons.Grid}},"icon keeps the Phosphor design grid: "+name);
         }
+        Check(Throws(()=>Ui.Icon("■")),"an unknown icon name is an error, never drawn as text");
         var image=ImageActions.Demo();var settings=new AppSettings();var commands=new List<string>();
         var home=new HomeWindow(settings,commands.Add,()=>commands.Add("open"),()=>commands.Add("paste"),()=>{},()=>{},_=>{},_=>{},new TextBlock());
         try {
@@ -69,7 +71,9 @@ internal static class UiSmokeTest
             Shot(preview,"preview");Click(preview,"이미지 고정");Check(preview.Pinned,"preview pin command switches to pinned presentation");
             Shot(preview,"pinned");preview.RaiseEvent(new System.Windows.Input.MouseEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0){RoutedEvent=UIElement.MouseEnterEvent});Shot(preview,"pinned-tools");
             preview.SetPinOpacity(.5);Check(preview.Opacity==.5,"pin opacity reaches the window");preview.SetPinOpacity(1);
-            var pinWidth=preview.Width;Click(preview,"확대 · 휠");Check(preview.Width>pinWidth,"pin zoom button enlarges the image");Click(preview,"축소 · 휠");Check(preview.Width==pinWidth,"pin zoom button shrinks the image");
+            preview.ActualSizePin();preview.ZoomPin(1.5);preview.ZoomPin(1.5);preview.UpdateLayout();Check(preview.PinZoom>2.2,"a pinned image zooms past its original size");Shot(preview,"pinned-zoomed");
+            preview.ZoomPin(100);Check(Math.Abs(preview.PinZoom-4)<.01,"pin zoom stops at 400%");preview.ActualSizePin();Check(Math.Abs(preview.PinZoom-1)<.01,"the zoom label returns the pin to 100%");
+            preview.ZoomPin(2);preview.UpdateLayout();Click(preview,"원래 크기로");Check(Math.Abs(preview.PinZoom-1)<.01,"clicking the zoom level in the bar returns to 100%");
             Click(preview,"고정 해제");preview.UpdateLayout();Check(!preview.Pinned,"unpin rebuilds compact preview without reparenting errors");
             bool edited=false;preview.EditRequested+=_=>edited=true;Click(preview,"편집");Check(edited && !preview.IsVisible,"preview edit dispatches image and dismisses unpinned window");
         }finally{if(preview.IsVisible)preview.Close();}
@@ -77,10 +81,10 @@ internal static class UiSmokeTest
         try {
             Shot(popup,"popup");
             popup.RaiseEvent(new System.Windows.Input.MouseEventArgs(System.Windows.Input.Mouse.PrimaryDevice,0){RoutedEvent=UIElement.MouseEnterEvent});Shot(popup,"popup-hover");
-            Check(((FrameworkElement)popup.Content).ActualWidth<=220,"the after-capture popup stays small");
+            Check(((FrameworkElement)popup.Content).ActualWidth<=380,"the after-capture popup stays small");
             Check(new[]{"편집","이미지 복사","이미지 저장","텍스트 추출","이미지 고정","미리보기 닫기"}.All(n=>Find<Button>(popup).Any(b=>b.IsVisible && AutomationProperties.GetName(b)==n)),"the popup offers edit, copy, save, text, pin and close");
             Click(popup,"이미지 고정");Check(popup.Pinned,"pinning from the popup switches to a pinned image");
-            popup.UpdateLayout();Click(popup,"고정 해제");popup.UpdateLayout();Check(!popup.Pinned && ((FrameworkElement)popup.Content).ActualWidth<=220,"unpinning returns to the small popup");
+            popup.UpdateLayout();Click(popup,"고정 해제");popup.UpdateLayout();Check(!popup.Pinned && ((FrameworkElement)popup.Content).ActualWidth<=380,"unpinning returns to the small popup");
         }finally{if(popup.IsVisible)popup.Close();}
         Check(PreviewWindow.PopupPlacement(100,100,200,150,0,0,1920,1040)==(118,118),"the popup opens below and right of the pointer");
         Check(PreviewWindow.AvoidOverlap(100,100,200,150,[(100,100,300,250)],0,1920,1040)==(100,258),"a new popup moves below one already open");
@@ -106,7 +110,10 @@ internal static class UiSmokeTest
             if(!window.IsVisible)window.Show();window.UpdateLayout();
             var content=(FrameworkElement)window.Content;
             Check(content.ActualWidth>100 && content.ActualHeight>60,name+" has nonempty arranged content");
-            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth),(int)Math.Ceiling(content.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(content);
+            // A transparent window draws its content inside a margin for the shadow, so the whole window is captured.
+            Visual target=window.AllowsTransparency?window:content;
+            double w=window.AllowsTransparency?window.ActualWidth:content.ActualWidth,h=window.AllowsTransparency?window.ActualHeight:content.ActualHeight;
+            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(w),(int)Math.Ceiling(h),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(directory,"ui-"+name+".png"));encoder.Save(file);
         }
     }

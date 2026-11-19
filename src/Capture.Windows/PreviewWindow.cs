@@ -15,7 +15,7 @@ internal sealed class PreviewWindow : Window
     private BitmapSource image;
     private readonly AppSettings settings;
     private readonly Image thumbnail;
-    private readonly TextBlock message=Ui.Label("",11,Ui.Dark.Muted);
+    private readonly TextBlock message=new(){FontSize=11};
     private readonly DispatcherTimer outside=new(){Interval=TimeSpan.FromMilliseconds(100)};
     private readonly DateTime shown=DateTime.UtcNow;
     private readonly bool interactive;
@@ -26,9 +26,6 @@ internal sealed class PreviewWindow : Window
     private Native.POINT? pinMoveStart;
     private Native.RECT pinMoveBounds;
     private Border? imageContainer;
-    private FrameworkElement? pinHeader,pinTools;
-    private Slider? pinOpacity;
-    private FrameworkElement? popupChrome;
     internal BitmapSource Image=>image;
     /// <summary>The capture moved on to an editor, so closing this popup is not worth offering to undo.</summary>
     internal bool HandedOff {get;private set;}
@@ -44,6 +41,7 @@ internal sealed class PreviewWindow : Window
     internal PreviewWindow(BitmapSource bitmap,AppSettings preferences,bool pinned=false,bool enableDesktopIntegration=true,bool nearPointer=false)
     {
         image=bitmap;settings=preferences;Pinned=pinned;interactive=enableDesktopIntegration;this.nearPointer=nearPointer;
+        Editor.EditorTheme.FollowSystem(this);
         Title="Snaplet · 미리보기";WindowStyle=WindowStyle.None;AllowsTransparency=true;Background=Brushes.Transparent;ResizeMode=ResizeMode.NoResize;ShowInTaskbar=false;ShowActivated=false;Topmost=true;
         thumbnail=new Image{Source=image,Stretch=Stretch.Uniform,Cursor=Cursors.Hand,ToolTip="클릭하여 편집 · 드래그하여 PNG 파일 전달"};
         ToolTipService.SetInitialShowDelay(thumbnail,1500);
@@ -69,7 +67,7 @@ internal sealed class PreviewWindow : Window
             if(IsVisible && settings.ClosePreviewOutside && !Pinned && !busy && DateTime.UtcNow-shown>TimeSpan.FromMilliseconds(500) && pressed && !previousMouse && !IsMouseOver)Close();
             previousMouse=pressed;
         };
-        MouseWheel+=(_,e)=>{if(!Pinned)return;if(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)){SetPinOpacity(PinOpacity+(e.Delta>0?.1:-.1));e.Handled=true;return;}ResizePin(e.Delta>0?32:-32);e.Handled=true;};
+        MouseWheel+=(_,e)=>{if(!Pinned)return;if(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)){SetPinOpacity(PinOpacity+(e.Delta>0?.1:-.1));e.Handled=true;return;}ZoomPin(e.Delta>0?1.1:1/1.1);e.Handled=true;};
         PreviewMouseDown+=(_,_)=>{if(Pinned)Activate();};
         PreviewKeyDown+=(_,e)=>{
             if(!Pinned)return;var step=Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)?10:1;
@@ -84,10 +82,10 @@ internal sealed class PreviewWindow : Window
         DragDrop.DoDragDrop(from,new DataObject(DataFormats.FileDrop,new[]{path}),DragDropEffects.Copy);message.Text="파일을 전달했습니다.";
     });
     /// <summary>A visible handle for dragging the capture out as a PNG file.</summary>
-    private FrameworkElement FileHandle()
+    private Button FileHandle()
     {
         var icon=new StackPanel {Orientation=Orientation.Horizontal};icon.Children.Add(Ui.Grip());icon.Children.Add(Ui.Icon("file",16));icon.Children.Add(Ui.Grip());
-        var handle=new Button {Content=icon,ToolTip="끌어서 파일로 놓기",Height=30,Padding=new Thickness(2),Cursor=Cursors.SizeAll,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Foreground=Ui.Dark.Text,Style=(Style)Application.Current.FindResource("EditorIconButton")};
+        var handle=new Button {Content=icon,ToolTip="끌어서 파일로 놓기",Height=30,Padding=new Thickness(2),Cursor=Cursors.SizeAll,Background=Brushes.Transparent,BorderThickness=new Thickness(0),Style=(Style)Application.Current.FindResource("EditorIconButton")};handle.SetResourceReference(ForegroundProperty,"TextBrush");
         System.Windows.Automation.AutomationProperties.SetName(handle,"끌어서 파일로 놓기");
         Point? start=null;
         handle.PreviewMouseLeftButtonDown+=(_,e)=>start=e.GetPosition(handle);
@@ -98,106 +96,147 @@ internal sealed class PreviewWindow : Window
         };
         return handle;
     }
-    internal void ResizePin(double change)=>FitPin(pinImageWidth+change);
-    /// <summary>The window follows the image's shape. An image too short to sit under the tools gets clear bands above and below, which show the tools only on hover.</summary>
+    /// <summary>Zooms a pinned image by a factor of its current size, from a fifth of the original up to four times it.</summary>
+    internal void ZoomPin(double factor)=>FitPin(pinImageWidth*factor);
+    /// <summary>Shows a pinned image at its original size again.</summary>
+    internal void ActualSizePin()=>FitPin(NaturalWidth);
+    /// <summary>The image's size at 100%, in device-independent units on this monitor.</summary>
+    private double NaturalWidth{get{var scale=VisualTreeHelper.GetDpi(this).DpiScaleX;return image.PixelWidth/(scale<=0?1:scale);}}
+    internal double PinZoom=>pinImageWidth/NaturalWidth;
+    /// <summary>The window follows the image plus room for its shadow; the floating bar sits inside the image's top-left corner.</summary>
     private void FitPin(double? imageWidth=null)
     {
-        var scale=VisualTreeHelper.GetDpi(this).DpiScaleX;if(scale<=0)scale=1;
-        // Actual size at first, but a large capture starts smaller so it does not cover the screen and can still grow.
-        var width=Math.Clamp(imageWidth ?? Math.Min(image.PixelWidth/scale,PinStartMaxWidth),180,900);var height=width*image.PixelHeight/image.PixelWidth;
-        if(height>900){height=900;width=Math.Max(180,height*image.PixelWidth/image.PixelHeight);}
+        var natural=NaturalWidth;
+        // Actual size at first, but a large capture starts smaller so it does not cover the screen. It can then grow past 100%.
+        var width=Math.Clamp(imageWidth ?? Math.Min(natural,PinStartMaxWidth),Math.Min(natural,48),Math.Max(natural*PinMaxZoom,48));
+        var height=width*image.PixelHeight/image.PixelWidth;
         pinImageWidth=width;
-        var bands=height<PinToolsHeight;
-        // The tools wrap to a second row on a narrow pin.
-        var below=bands?(width<420?84d:44d):0;var above=bands?34d:0;
-        if(imageContainer!=null){imageContainer.Margin=new Thickness(0,above,0,below);}
-        Width=width+2;Height=height+2+above+below;
+        // A very short image keeps its bar above it rather than covering all of it.
+        pinBarAbove=height<PinBarHeight+16;
+        if(imageContainer!=null){imageContainer.Width=width;imageContainer.Height=height;imageContainer.Margin=new Thickness(PinShadow,PinShadow+(pinBarAbove?PinBarHeight+6:0),PinShadow,PinShadow);}
+        if(pinBar!=null){pinBar.Margin=pinBarAbove?new Thickness(PinShadow,PinShadow,0,0):new Thickness(PinShadow+8,PinShadow+8,0,0);}
+        if(zoomLabel!=null)zoomLabel.Text=$"{PinZoom:P0}";
+        Width=width+2*PinShadow;Height=height+2*PinShadow+(pinBarAbove?PinBarHeight+6:0);
     }
-    private const double PinToolsHeight=120,PinStartMaxWidth=640;
+    private const double PinStartMaxWidth=640,PinMaxZoom=4,PinShadow=14,PinBarHeight=32;
     private double pinImageWidth;
+    private bool pinBarAbove;
+    private Border? pinBar;
+    private TextBlock? zoomLabel;
+    private Button IconTool(string glyph,string label,Action action,double size=30)
+    {
+        var b=Ui.IconButton(glyph,label,action,size);b.Padding=new Thickness(6);b.SetResourceReference(ForegroundProperty,"TextBrush");return b;
+    }
+    private void Copy()=>_=RunAsync(async()=>message.Text=await ImageActions.CopyAsync(image)?"클립보드에 복사했습니다.":"새 복사 요청이 있어 취소했습니다.");
+    private void SaveAs()=>Run(()=>{if(ImageActions.SaveDialog(image,this)!=null)message.Text="파일로 저장했습니다.";});
+    private void TogglePin(){Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;}ApplyLayering();Build();if(interactive && !Pinned)Position();}
     private void Build()
     {
+        // The image may sit inside the pin's clipping border or the popup's frame; free it from whichever holds it.
+        if(thumbnail.Parent is System.Windows.Controls.Decorator holder)holder.Child=null;
         if(imageContainer!=null)imageContainer.Child=null;
         if(message.Parent is Panel old)old.Children.Remove(message);
-        Content=null;thumbnail.Height=thumbnail.Width=double.NaN;thumbnail.Effect=null;popupChrome=null;popupCard=null;popupLetterboxed=false;message.ClearValue(TextBlock.ForegroundProperty);message.Foreground=Ui.Dark.Muted;thumbnail.ContextMenu=Pinned?null:PopupMenu();thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 크기 조절 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
-        var header=new DockPanel{LastChildFill=true};
-        var close=Ui.IconButton("close","미리보기 닫기",Close,26);DockPanel.SetDock(close,Dock.Right);header.Children.Add(close);
-        var title=Ui.Label(Pinned?"고정 이미지":"캡처",12,Ui.Dark.Muted,FontWeights.SemiBold);title.VerticalAlignment=VerticalAlignment.Center;header.Children.Add(title);
-        var tools=new DockPanel{LastChildFill=false};
-        var pin=Ui.IconButton("pin",Pinned?"고정 해제":"이미지 고정",()=>{Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;}ApplyLayering();Build();},32);pin.Foreground=Pinned?Ui.Dark.Accent:Ui.Dark.Text;DockPanel.SetDock(pin,Dock.Right);tools.Children.Add(pin);
-        Panel left=Pinned?new WrapPanel():new StackPanel{Orientation=Orientation.Horizontal};tools.Children.Add(left);
-        left.Children.Add(Ui.IconButton("edit","편집",RequestEdit,34));
-        var copy=Ui.IconButton("copy","이미지 복사",()=>{},34);copy.Click+=async (_,_)=>await RunAsync(async()=>message.Text=await ImageActions.CopyAsync(image)?"클립보드에 복사했습니다.":"새 복사 요청이 있어 취소했습니다.");left.Children.Add(copy);
-        left.Children.Add(Ui.IconButton("save","이미지 저장",()=>Run(()=>{if(ImageActions.SaveDialog(image,this)!=null)message.Text="파일로 저장했습니다.";}),34));
-        left.Children.Add(Ui.IconButton("ocr","텍스트 추출",()=>OcrRequested?.Invoke(image),34));
-        if(Pinned) {
-            left.Children.Add(Ui.IconButton("−","축소 · 휠",()=>ResizePin(-64),34));
-            left.Children.Add(Ui.IconButton("+","확대 · 휠",()=>ResizePin(64),34));
-            pinOpacity=new Slider{Minimum=.2,Maximum=1,Value=PinOpacity,Width=72,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,4,0),ToolTip="불투명도 · Shift+휠"};
-            System.Windows.Automation.AutomationProperties.SetName(pinOpacity,"불투명도");pinOpacity.ValueChanged+=(_,e)=>SetPinOpacity(e.NewValue);left.Children.Add(pinOpacity);
-            left.Children.Add(Ui.IconButton("↖","클릭 통과 · 트레이 메뉴에서 해제",()=>SetClickThrough(true),34));
-            left.Children.Add(FileHandle());
-        }
-        imageContainer=new Border{Background=new SolidColorBrush(Color.FromRgb(17,19,23)),CornerRadius=new CornerRadius(6),Child=thumbnail};
-        message.Text=Pinned?"":"클릭하여 편집 · 드래그하여 전달";message.TextTrimming=TextTrimming.CharacterEllipsis;message.TextWrapping=TextWrapping.NoWrap;
-        if(Pinned) {
-            SizeToContent=SizeToContent.Manual;imageContainer.Background=Brushes.Transparent;imageContainer.CornerRadius=new CornerRadius(0);imageContainer.BorderBrush=Ui.Dark.Line;imageContainer.BorderThickness=new Thickness(1);FitPin();
-            var root=new Grid{Background=Brushes.Transparent};root.Children.Add(imageContainer);
-            var top=new Border{Background=new SolidColorBrush(Color.FromArgb(235,25,28,33)),Child=header,Padding=new Thickness(8,4,6,4),VerticalAlignment=VerticalAlignment.Top};root.Children.Add(top);
-            var bottom=new Border{Background=new SolidColorBrush(Color.FromArgb(235,25,28,33)),Child=tools,Padding=new Thickness(8,4,8,4),VerticalAlignment=VerticalAlignment.Bottom};root.Children.Add(bottom);
-            pinHeader=top;pinTools=bottom;Content=root;SetPinChrome(IsMouseOver);
-            header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};
-            // Either mouse button moves a pinned image; the file handle in its tools hands out a file.
-            thumbnail.MouseRightButtonDown-=MovePinned;thumbnail.MouseRightButtonDown+=MovePinned;
-        } else if(nearPointer) {
-            // Only the image at rest; hovering dims it and shows copy and save in the middle, with the other actions in the corners.
-            // It never takes focus, so Ctrl+V into another app keeps working.
-            thumbnail.ToolTip=null;
-            // The window keeps room for the hover controls; an image that does not fill it stays clear around it until hover.
-            var fit=Math.Min(1,Math.Min(PopupImageWidth/image.PixelWidth,PopupImageHeight/image.PixelHeight));
-            var shownWidth=image.PixelWidth*fit;var shownHeight=image.PixelHeight*fit;
-            var boxWidth=Math.Max(shownWidth,PopupMinWidth);var boxHeight=Math.Max(shownHeight,PopupMinHeight);
-            popupLetterboxed=boxWidth>shownWidth+.5 || boxHeight>shownHeight+.5;
-            SizeToContent=SizeToContent.Height;Width=boxWidth+8;Height=double.NaN;pinHeader=pinTools=null;
-            thumbnail.Width=shownWidth;thumbnail.Height=shownHeight;imageContainer.Background=Brushes.Transparent;imageContainer.CornerRadius=new CornerRadius(6);
-            var frame=new Grid{Width=boxWidth,Height=boxHeight};frame.Children.Add(imageContainer);
-            var dim=new Border{Background=new SolidColorBrush(Color.FromArgb(120,10,12,16)),CornerRadius=new CornerRadius(6),IsHitTestVisible=false};
-            var chrome=new Grid();chrome.Children.Add(dim);
-            Button Corner(Button b,HorizontalAlignment x,VerticalAlignment y) {
-                ((Panel)b.Parent).Children.Remove(b);b.Width=b.Height=26;b.Padding=new Thickness(5);b.Margin=new Thickness(4);b.Foreground=Brushes.White;b.Background=new SolidColorBrush(Color.FromArgb(170,20,22,26));b.HorizontalAlignment=x;b.VerticalAlignment=y;chrome.Children.Add(b);return b;
-            }
-            Corner(close,HorizontalAlignment.Left,VerticalAlignment.Top);
-            Corner(pin,HorizontalAlignment.Right,VerticalAlignment.Top);
-            Corner(FindTool(tools,"편집"),HorizontalAlignment.Left,VerticalAlignment.Bottom);
-            Corner(FindTool(tools,"텍스트 추출"),HorizontalAlignment.Right,VerticalAlignment.Bottom);
-            var middle=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};chrome.Children.Add(middle);
-            void Pill(Button b,string text) {
-                ((Panel)b.Parent).Children.Remove(b);b.Width=double.NaN;b.MinWidth=62;b.Height=26;b.Padding=new Thickness(10,2,10,2);b.Margin=new Thickness(0,2,0,2);b.ToolTip=null;b.Content=new TextBlock{Text=text,FontSize=12,FontWeight=FontWeights.SemiBold,Foreground=Brushes.Black,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
-                // Its own template: the shared icon button turns dark on hover, which hides this black label.
-                var pillFace=new FrameworkElementFactory(typeof(Border));pillFace.SetValue(Border.CornerRadiusProperty,new CornerRadius(6));pillFace.SetBinding(Border.BackgroundProperty,new System.Windows.Data.Binding("Background"){RelativeSource=System.Windows.Data.RelativeSource.TemplatedParent});
-                var pillText=new FrameworkElementFactory(typeof(ContentPresenter));pillText.SetValue(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Center);pillText.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center);pillFace.AppendChild(pillText);
-                b.Template=new ControlTemplate(typeof(Button)){VisualTree=pillFace};
-                b.Background=new SolidColorBrush(Color.FromArgb(235,255,255,255));b.MouseEnter+=(_,_)=>b.Background=Brushes.White;b.MouseLeave+=(_,_)=>b.Background=new SolidColorBrush(Color.FromArgb(235,255,255,255));middle.Children.Add(b);
-            }
-            Pill(FindTool(tools,"이미지 복사"),"복사");Pill(FindTool(tools,"이미지 저장"),"저장");
-            message.Text=$"{image.PixelWidth:N0} × {image.PixelHeight:N0}"+(settings.CopyAfterCapture?" · 복사됨":"");message.Foreground=Brushes.White;message.TextAlignment=TextAlignment.Center;message.FontSize=10;message.Margin=new Thickness(0,2,0,0);middle.Children.Add(message);
-            var handle=FileHandle();handle.HorizontalAlignment=HorizontalAlignment.Center;handle.VerticalAlignment=VerticalAlignment.Bottom;handle.Margin=new Thickness(0,0,0,3);handle.SetValue(Button.ForegroundProperty,Brushes.White);chrome.Children.Add(handle);
-            popupChrome=chrome;frame.Children.Add(chrome);
-            popupCard=Ui.CardOf(frame,3);Content=popupCard;SetPinChrome(IsMouseOver);
-        } else {
-            SizeToContent=SizeToContent.Height;Width=334;Height=double.NaN;pinHeader=pinTools=null;
-            var root=new StackPanel();header.Margin=new Thickness(0,0,0,8);root.Children.Add(header);
-            thumbnail.Height=Math.Clamp(310d*image.PixelHeight/image.PixelWidth,92,210);root.Children.Add(imageContainer);
-            var dimensions=Ui.Label($"{image.PixelWidth:N0} × {image.PixelHeight:N0} px",10,Ui.Dark.Muted);dimensions.Margin=new Thickness(1,8,0,3);root.Children.Add(dimensions);root.Children.Add(tools);
-            message.Margin=new Thickness(1,5,0,0);root.Children.Add(message);Content=Ui.CardOf(root,11);
-            header.MouseLeftButtonDown+=(_,e)=>{if(e.OriginalSource is TextBlock)DragMove();};
-        }
+        Content=null;thumbnail.Height=thumbnail.Width=double.NaN;thumbnail.Effect=null;pinBar=null;zoomLabel=null;
+        thumbnail.ContextMenu=Pinned?null:PopupMenu();thumbnail.Stretch=Pinned?Stretch.Fill:Stretch.Uniform;
+        thumbnail.ToolTip=Pinned?"드래그로 이동 · 휠로 확대·축소 · Shift+휠로 불투명도 · 클릭하여 편집":"클릭하여 편집 · 드래그하여 PNG 파일 전달";
+        if(Pinned)BuildPin();else BuildPopup();
+    }
+    /// <summary>
+    /// After a capture: a small window with its tools on top and the image below, like an editor at a glance.
+    /// The tools are always visible; the image opens the editor on click and hands out a PNG on drag.
+    /// </summary>
+    private void BuildPopup()
+    {
+        SizeToContent=SizeToContent.WidthAndHeight;Width=Height=double.NaN;
+        var tools=new DockPanel{LastChildFill=false,Margin=new Thickness(6,5,6,3)};
+        var left=new StackPanel{Orientation=Orientation.Horizontal};
+        left.Children.Add(IconTool("close","미리보기 닫기",Close));
+        left.Children.Add(Divider());
+        left.Children.Add(IconTool("copy","이미지 복사",Copy));
+        left.Children.Add(IconTool("save","이미지 저장",SaveAs));
+        left.Children.Add(IconTool("pin","이미지 고정",TogglePin));
+        left.Children.Add(Divider());
+        left.Children.Add(FileHandle());
+        var right=new StackPanel{Orientation=Orientation.Horizontal};DockPanel.SetDock(right,Dock.Right);
+        right.Children.Add(IconTool("ocr","텍스트 추출",()=>OcrRequested?.Invoke(image)));
+        right.Children.Add(IconTool("edit","편집",RequestEdit));
+        tools.Children.Add(right);tools.Children.Add(left);
+        // Fit inside the card without enlarging; the toolbar sets the card's minimum width.
+        var fit=Math.Min(1,Math.Min(PopupImageWidth/image.PixelWidth,PopupImageHeight/image.PixelHeight));
+        thumbnail.Width=Math.Max(1,image.PixelWidth*fit);thumbnail.Height=Math.Max(1,image.PixelHeight*fit);
+        imageContainer=new Border{Child=thumbnail,CornerRadius=new CornerRadius(6),Margin=new Thickness(8,0,8,0),HorizontalAlignment=HorizontalAlignment.Center,ClipToBounds=true};
+        imageContainer.Clip=new RectangleGeometry(new Rect(0,0,thumbnail.Width,thumbnail.Height),6,6);
+        var stage=new Border{Child=imageContainer,Margin=new Thickness(8,0,8,0),CornerRadius=new CornerRadius(6),MinHeight=60,Padding=new Thickness(0)};
+        stage.SetResourceReference(Border.BackgroundProperty,"WorkspaceBrush");
+        message.Text=$"{image.PixelWidth:N0} × {image.PixelHeight:N0}"+(settings.CopyAfterCapture?" · 복사됨":"");
+        message.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");message.FontSize=11;message.TextAlignment=TextAlignment.Left;message.Margin=new Thickness(12,6,12,9);
+        var body=new StackPanel();body.Children.Add(tools);body.Children.Add(stage);body.Children.Add(message);
+        popupCard=new Border{Child=body,CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Margin=new Thickness(PinShadow),MinWidth=PopupMinWidth,
+            Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=22,ShadowDepth=4,Direction=270,Opacity=.28}};
+        popupCard.SetResourceReference(Border.BackgroundProperty,"CardBrush");popupCard.SetResourceReference(Border.BorderBrushProperty,"DividerBrush");
+        Content=popupCard;
+    }
+    private static Border Divider(){var d=new Border{Width=1,Height=18,Margin=new Thickness(4,0,4,0),VerticalAlignment=VerticalAlignment.Center};d.SetResourceReference(Border.BackgroundProperty,"DividerBrush");return d;}
+    /// <summary>
+    /// A pinned image is just the image, rounded and lifted by a shadow. Hovering shows a small dark bar inside its top-left corner.
+    /// </summary>
+    private void BuildPin()
+    {
+        SizeToContent=SizeToContent.Manual;
+        var clip=new Border{Child=thumbnail,CornerRadius=new CornerRadius(8),ClipToBounds=true};
+        thumbnail.Stretch=Stretch.Fill;
+        imageContainer=new Border{Child=clip,CornerRadius=new CornerRadius(8),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top,
+            Effect=new System.Windows.Media.Effects.DropShadowEffect{BlurRadius=18,ShadowDepth=3,Direction=270,Opacity=.35}};
+        imageContainer.SizeChanged+=(_,e)=>clip.Clip=new RectangleGeometry(new Rect(e.NewSize),8,8);
+        var bar=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
+        Button Light(string glyph,string label,Action action){var b=Ui.IconButton(glyph,label,action,26);b.Padding=new Thickness(5);b.Foreground=Brushes.White;b.Style=PinButtonStyle();return b;}
+        // The close control is a red dot, as on a window's title bar.
+        var close=new Button{Width=22,Height=26,Style=PinButtonStyle(),ToolTip="고정 이미지 닫기",Content=new System.Windows.Shapes.Ellipse{Width=12,Height=12,Fill=new SolidColorBrush(Color.FromRgb(255,95,87))}};
+        System.Windows.Automation.AutomationProperties.SetName(close,"고정 이미지 닫기");close.Click+=(_,_)=>Close();
+        bar.Children.Add(close);
+        var handle=FileHandle();handle.Height=26;handle.Foreground=Brushes.White;handle.Style=PinButtonStyle();bar.Children.Add(handle);
+        bar.Children.Add(Light("edit","편집",RequestEdit));
+        bar.Children.Add(Light("copy","이미지 복사",Copy));
+        bar.Children.Add(Light("pin","고정 해제",TogglePin));
+        var more=Light("more","더 보기 · 저장·텍스트 추출·불투명도·클릭 통과",()=>{});more.Click+=(_,_)=>{var menu=PinMenu();menu.PlacementTarget=more;menu.IsOpen=true;};bar.Children.Add(more);
+        zoomLabel=new TextBlock{Foreground=Brushes.White,FontSize=12,FontFamily=Ui.Font,VerticalAlignment=VerticalAlignment.Center};
+        var zoom=new Button{Content=zoomLabel,Height=26,Padding=new Thickness(6,0,7,0),Style=PinButtonStyle(),ToolTip="원래 크기로 · 휠로 확대·축소"};
+        System.Windows.Automation.AutomationProperties.SetName(zoom,"원래 크기로");zoom.Click+=(_,_)=>ActualSizePin();bar.Children.Add(zoom);
+        pinBar=new Border{Child=bar,Background=new SolidColorBrush(Color.FromArgb(190,38,38,40)),CornerRadius=new CornerRadius(8),Padding=new Thickness(4,1,4,1),
+            HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top,BorderBrush=new SolidColorBrush(Color.FromArgb(40,255,255,255)),BorderThickness=new Thickness(1)};
+        var root=new Grid{Background=Brushes.Transparent};root.Children.Add(imageContainer);root.Children.Add(pinBar);
+        Content=root;FitPin();SetPinChrome(IsMouseOver);
+        // Either mouse button moves a pinned image; the file handle in its bar hands out a file.
+        thumbnail.MouseRightButtonDown-=MovePinned;thumbnail.MouseRightButtonDown+=MovePinned;
+    }
+    private static Style? pinButtonStyle;
+    /// <summary>A flat button for the dark pin bar: a light wash on hover, no theme colours.</summary>
+    private static Style PinButtonStyle()
+    {
+        if(pinButtonStyle!=null)return pinButtonStyle;
+        var face=new FrameworkElementFactory(typeof(Border),"face");face.SetValue(Border.CornerRadiusProperty,new CornerRadius(6));face.SetValue(Border.BackgroundProperty,Brushes.Transparent);
+        face.SetBinding(Border.PaddingProperty,new System.Windows.Data.Binding("Padding"){RelativeSource=System.Windows.Data.RelativeSource.TemplatedParent});
+        var content=new FrameworkElementFactory(typeof(ContentPresenter));content.SetValue(FrameworkElement.HorizontalAlignmentProperty,HorizontalAlignment.Center);content.SetValue(FrameworkElement.VerticalAlignmentProperty,VerticalAlignment.Center);face.AppendChild(content);
+        var template=new ControlTemplate(typeof(Button)){VisualTree=face};
+        var hover=new Trigger{Property=UIElement.IsMouseOverProperty,Value=true};hover.Setters.Add(new Setter(Border.BackgroundProperty,new SolidColorBrush(Color.FromArgb(46,255,255,255)),"face"));template.Triggers.Add(hover);
+        pinButtonStyle=new Style(typeof(Button));pinButtonStyle.Setters.Add(new Setter(Control.TemplateProperty,template));pinButtonStyle.Setters.Add(new Setter(UIElement.FocusableProperty,false));pinButtonStyle.Setters.Add(new Setter(FrameworkElement.CursorProperty,Cursors.Hand));
+        return pinButtonStyle;
+    }
+    private ContextMenu PinMenu()
+    {
+        var menu=Editor.EditorTheme.Themed(new ContextMenu(),Editor.EditorTheme.SystemUsesDark());
+        void Add(ItemsControl parent,string text,Action action,bool check=false){var item=new MenuItem{Header=text,IsChecked=check};item.Click+=(_,_)=>action();parent.Items.Add(item);}
+        Add(menu,"저장…",SaveAs);Add(menu,"텍스트 추출",()=>OcrRequested?.Invoke(image));
+        menu.Items.Add(new Separator());
+        var opacity=new MenuItem{Header="불투명도"};foreach(var value in new[]{1,.8,.6,.4}){var v=value;Add(opacity,$"{v:P0}",()=>SetPinOpacity(v),Math.Abs(PinOpacity-v)<.01);}menu.Items.Add(opacity);
+        Add(menu,"클릭 통과 · 트레이 메뉴에서 해제",()=>SetClickThrough(true));
+        Add(menu,"원래 크기로",ActualSizePin);
+        return menu;
     }
     /// <summary>The whole pin (not just its image) becomes see-through. This window is created transparent, the only state in which WPF honours Window.Opacity.</summary>
     internal void SetPinOpacity(double value)
     {
         PinOpacity=Pinned?Math.Clamp(Math.Round(value,2),.2,1):1;ApplyLayering();
-        if(pinOpacity!=null && Math.Abs(pinOpacity.Value-PinOpacity)>.001)pinOpacity.Value=PinOpacity;
         if(Pinned)message.Text=$"불투명도 {PinOpacity:P0}";
     }
     /// <summary>Click-through pins ignore the mouse entirely; turn it off from the tray menu.</summary>
@@ -217,15 +256,10 @@ internal sealed class PreviewWindow : Window
         if(!Pinned)return;BeginPinMove();e.Handled=true;
     }
     private void BeginPinMove(){Native.GetCursorPos(out var p);pinMoveStart=p;Native.GetWindowRect(new WindowInteropHelper(this).Handle,out pinMoveBounds);thumbnail.CaptureMouse();}
-    private const double PopupImageWidth=204,PopupImageHeight=150,PopupMinWidth=164,PopupMinHeight=132;
-    // Nearly clear rather than clear: Windows passes the mouse through fully clear pixels, which would leave a thin image almost impossible to hover.
-    private static readonly SolidColorBrush PopupClearHitBrush=new(Color.FromArgb(1,0,0,0));
-    private bool popupLetterboxed;
+    private const double PopupImageWidth=300,PopupImageHeight=200,PopupMinWidth=280;
     private Border? popupCard;
     private void SetPinChrome(bool show){
-        if(popupCard!=null && popupChrome!=null && popupLetterboxed){popupCard.Background=show?Ui.Dark.Card:PopupClearHitBrush;popupCard.BorderBrush=show?Ui.Dark.Line:Brushes.Transparent;}
-        if(popupChrome!=null){popupChrome.Opacity=show?1:0;popupChrome.IsHitTestVisible=show;thumbnail.Effect=show?new System.Windows.Media.Effects.BlurEffect{Radius=4}:null;}
-        if(pinHeader==null || pinTools==null)return;pinHeader.Opacity=pinTools.Opacity=show?1:0;pinHeader.IsHitTestVisible=pinTools.IsHitTestVisible=show;
+        if(pinBar==null)return;pinBar.Opacity=show?1:0;pinBar.IsHitTestVisible=show;
     }
     private void NudgePin(int dx,int dy)
     {

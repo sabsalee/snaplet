@@ -79,15 +79,12 @@ internal static class Ui
     }
     internal static FrameworkElement Icon(string name,double size=20)
     {
-        name=name switch {"⧉"=>"copy","↧"=>"save","⌖"=>"pin","✎"=>"edit",_=>name};
-        if(!FluentIcons.Paths.TryGetValue(name,out var data)) {
-            var label=new TextBlock {Text=name,FontSize=size,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center,MinWidth=size};
-            label.SetBinding(TextBlock.ForegroundProperty,new Binding("Foreground"){RelativeSource=new RelativeSource(RelativeSourceMode.FindAncestor,typeof(Control),1),FallbackValue=Text});return label;
-        }
-        // Keep the original 24 px design grid; never normalize glyphs by their ink bounds.
+        // Every icon is a drawn Phosphor outline; a name without one is a programming error, never shown as text.
+        if(!AppIcons.Paths.TryGetValue(name,out var data))throw new ArgumentException("아이콘이 없습니다: "+name,nameof(name));
+        // Keep the original 256-unit design grid; never normalize glyphs by their ink bounds. Nonzero fill as in the SVG.
         var path=new Path {Data=Geometry.Parse("F1 "+data)};
         path.SetBinding(Path.FillProperty,new Binding("Foreground"){RelativeSource=new RelativeSource(RelativeSourceMode.FindAncestor,typeof(Control),1),FallbackValue=Text});
-        var canvas=new System.Windows.Controls.Canvas {Width=24,Height=24};canvas.Children.Add(path);
+        var canvas=new System.Windows.Controls.Canvas {Width=AppIcons.Grid,Height=AppIcons.Grid};canvas.Children.Add(path);
         return new Viewbox {Width=size,Height=size,Child=canvas,Stretch=Stretch.Uniform};
     }
     /// <summary>Two columns of dots that say "this can be dragged", inheriting the owner's foreground.</summary>
