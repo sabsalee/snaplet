@@ -134,6 +134,8 @@ public sealed class EditorWindow : Window
         imageMenu.Click+=(_,_)=>ShowImageMenu(imageMenu);
         var toolStrip=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
         toolbar.Children.Add(new ScrollViewer {Content=toolStrip,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
+        // The toolbar doubles as the title bar; Windows keeps only its caption buttons at the right.
+        WindowFrame.Unify(this,toolbar,52);
         void Tool(string glyph,string tip,AnnotationKind? kind) {var b=ToolButton(toolStrip,glyph,tip,()=>SetTool(kind));toolButtons.Add((kind,b));}
         Tool("select","선택 · V",null);Tool("arrow","화살표 · A",AnnotationKind.Arrow);Tool("text","글자 · T",AnnotationKind.Text);
         Tool("rectangle","사각형 · R",AnnotationKind.Rectangle);Tool("pixelate","모자이크 가림 · M",AnnotationKind.Pixelate);Tool("pen","펜 · P",AnnotationKind.Pen);

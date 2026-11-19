@@ -23,6 +23,7 @@ internal sealed class OcrWindow : Window
         box=new TextBox{Text=text,AcceptsReturn=true,AcceptsTab=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(16),FontSize=14};root.Children.Add(box);
         box.TextChanged+=(_,_)=>Update();Update();
         PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape)Close();};
+        WindowFrame.UnifyWithStrip(this);
         if(notice is not null)feedback.Text=notice;
         void Update(){copy.IsEnabled=box.Text.Length>0;feedback.Text=box.Text.Length==0?"인식된 텍스트가 없습니다.":$"{box.Text.Length:N0}자 · 복사할 내용을 수정할 수 있습니다.";}
     }

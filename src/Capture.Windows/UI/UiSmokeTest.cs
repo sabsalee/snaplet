@@ -20,6 +20,24 @@ internal static class UiSmokeTest
             var icon=Ui.Icon(name);Check(icon is Viewbox {Child:Canvas {Width:AppIcons.Grid,Height:AppIcons.Grid}},"icon keeps the Phosphor design grid: "+name);
         }
         Check(Throws(()=>Ui.Icon("■")),"an unknown icon name is an error, never drawn as text");
+        foreach(var weight in new[]{400,500,600}) {
+            var face=new Typeface(Ui.Font,FontStyles.Normal,FontWeight.FromOpenTypeWeight(weight),FontStretches.Normal);
+            Check(face.TryGetGlyphTypeface(out var glyphs) && glyphs.FamilyNames.Values.Contains("Pretendard") && glyphs.Weight.ToOpenTypeWeight()==weight && glyphs.StyleSimulations==StyleSimulations.None
+                && glyphs.CharacterToGlyphMap.ContainsKey('가') && glyphs.CharacterToGlyphMap.ContainsKey('A'),"the bundled Pretendard face is used for weight "+weight);
+        }
+        Check(Application.Current.TryFindResource("AppFont") is FontFamily appFont && appFont.Source.Contains("Pretendard"),"windows, tooltips and menus use the bundled interface font");
+        var supported=WindowFrame.Override;
+        try {
+            WindowFrame.Override=false;
+            var plain=new Window();var plainBand=new DockPanel();plain.Content=plainBand;
+            Check(!WindowFrame.Unify(plain,plainBand,52) && System.Windows.Shell.WindowChrome.GetWindowChrome(plain) is null,"older Windows keeps the normal title bar");
+            WindowFrame.Override=true;
+            var unified=new Window {Width=600,Height=300};var band=new DockPanel {Height=52};var action=new Button();band.Children.Add(action);var body=new DockPanel();DockPanel.SetDock(band,Dock.Top);body.Children.Add(band);unified.Content=body;
+            Check(WindowFrame.Unify(unified,band,52) && System.Windows.Shell.WindowChrome.GetWindowChrome(unified) is {CaptionHeight:52,UseAeroCaptionButtons:true},"the toolbar becomes the title bar and Windows keeps its caption buttons");
+            Check(System.Windows.Shell.WindowChrome.GetIsHitTestVisibleInChrome(action) && WindowFrame.IsTitleBand(band) && band.Children.OfType<FrameworkElement>().Any(e=>e.Width==WindowFrame.CaptionButtons),"toolbar buttons stay clickable and the caption buttons keep their room");
+            var strip=new Window {Title="스트립 제목",Content=new Grid()};
+            Check(WindowFrame.UnifyWithStrip(strip) && strip.Content is DockPanel {Children.Count:2} root && root.Children[0] is DockPanel first && WindowFrame.IsTitleBand(first) && Find<TextBlock>(first).Any(t=>t.Text=="스트립 제목"),"windows without a toolbar get a slim strip with their title");
+        } finally {WindowFrame.Override=supported;}
         var image=ImageActions.Demo();var settings=new AppSettings();var commands=new List<string>();
         var home=new HomeWindow(settings,commands.Add,()=>commands.Add("open"),()=>commands.Add("paste"),()=>{},()=>{},_=>{},_=>{},new TextBlock());
         try {

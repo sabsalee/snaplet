@@ -45,6 +45,7 @@ internal sealed class HomeWindow : Window
         var right=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,8,0)};DockPanel.SetDock(right,Dock.Right);toolbar.Children.Add(right);
         recentButton=Ui.IconButton("history","캡처 기록",()=>{},36);recentButton.Margin=new Thickness(2);recentButton.Click+=(_,_)=>ShowRecentMenu(demo);right.Children.Add(recentButton);
         Tool(right,"settings","설정 열기",preferences);
+        WindowFrame.Unify(this,toolbar,52);
 
         // The status line sits on the workspace colour, so it reads as part of the window rather than a separate strip.
         var footer=new DockPanel();footer.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);

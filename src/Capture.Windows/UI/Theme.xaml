@@ -26,16 +26,17 @@
  <SolidColorBrush x:Key="SwitchOffDotBrush" Color="#FFFFFF"/>
  <!-- Editor chrome. EditorTheme.Light overrides these keys when Windows apps use the light theme. -->
  <SolidColorBrush x:Key="ToolbarBrush" Color="#22262D"/>
+ <SolidColorBrush x:Key="TitleBandBrush" Color="#C822262D"/>
  <SolidColorBrush x:Key="FloatingBrush" Color="#2B3039"/>
  <SolidColorBrush x:Key="FloatingBorderBrush" Color="#414957"/>
  <SolidColorBrush x:Key="SelectedToolBrush" Color="#444B52"/>
  <SolidColorBrush x:Key="WorkspaceBrush" Color="#2E3136"/>
  <SolidColorBrush x:Key="HandleBorderBrush" Color="#8E8E93"/>
  <Style TargetType="Window">
-  <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI, Malgun Gothic"/><Setter Property="FontSize" Value="13"/>
+  <Setter Property="FontFamily" Value="{DynamicResource AppFont}"/><Setter Property="FontSize" Value="13"/>
   <Setter Property="Background" Value="{DynamicResource PageBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
   <Setter Property="UseLayoutRounding" Value="True"/><Setter Property="SnapsToDevicePixels" Value="True"/>
-  <Setter Property="TextOptions.TextFormattingMode" Value="Display"/><Setter Property="ui:WindowAppearance.DarkChrome" Value="True"/>
+  <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/><Setter Property="ui:WindowAppearance.DarkChrome" Value="True"/>
  </Style>
  <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/></Style>
  <Style TargetType="Button" x:Key="BaseButton">
@@ -172,8 +173,8 @@
   </Track></Grid><ControlTemplate.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/><Setter TargetName="Decrease" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}"/><Setter TargetName="Increase" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   <Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Height" Value="10"/><Setter Property="Width" Value="Auto"/></Trigger></Style.Triggers>
  </Style>
- <Style TargetType="ToolTip"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="{DynamicResource RaisedBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="Padding" Value="10,6"/></Style>
- <Style TargetType="ContextMenu"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="{DynamicResource CardBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="Padding" Value="5"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/></Border></ControlTemplate></Setter.Value></Setter></Style>
+ <Style TargetType="ToolTip"><Setter Property="FontFamily" Value="{DynamicResource AppFont}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="{DynamicResource RaisedBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="Padding" Value="10,6"/></Style>
+ <Style TargetType="ContextMenu"><Setter Property="FontFamily" Value="{DynamicResource AppFont}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="{DynamicResource CardBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="Padding" Value="5"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/></Border></ControlTemplate></Setter.Value></Setter></Style>
  <Style TargetType="MenuItem"><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="Transparent"/><Setter Property="Padding" Value="10,7"/>
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem"><Grid>
    <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions><ContentPresenter ContentSource="Icon" VerticalAlignment="Center"/><ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" Margin="0,0,14,0"/><Path x:Name="Chevron" Grid.Column="2" Data="M 0,0 L 4,4 L 0,8" Stroke="{DynamicResource MutedBrush}" VerticalAlignment="Center" Visibility="Collapsed"/></Grid></Border>

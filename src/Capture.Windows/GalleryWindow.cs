@@ -50,6 +50,7 @@ internal sealed class GalleryWindow : Window
         count.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");DockPanel.SetDock(count,Dock.Left);toolbar.Children.Add(count);
         clear=new Button {Content="모두 지우기",Margin=new Thickness(0,0,12,0),Padding=new Thickness(10,4,10,5),VerticalAlignment=VerticalAlignment.Center,Style=(Style)Application.Current.FindResource("QuietButton")};
         clear.SetResourceReference(ForegroundProperty,"TextBrush");clear.Click+=(_,_)=>clearAll();DockPanel.SetDock(clear,Dock.Right);toolbar.Children.Add(clear);
+        WindowFrame.Unify(this,toolbar,52);
 
         notice.SetResourceReference(Border.BackgroundProperty,"WorkspaceBrush");DockPanel.SetDock(notice,Dock.Top);root.Children.Add(notice);
         var noticeRow=new DockPanel();notice.Child=noticeRow;

@@ -29,6 +29,12 @@
       "source": "https://cdn.jsdelivr.net/npm/@phosphor-icons/core@2.1.1/LICENSE",
       "bytes": 1092,
       "sha256": "ddbe6082ec3cf979db47e5af549d2849c5d6182b3e005ef91ce1dbb9eb122f11"
+    },
+    {
+      "file": "Pretendard-1.3.9-LICENSE.txt",
+      "source": "https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/LICENSE.txt",
+      "bytes": 4419,
+      "sha256": "b04538c9abec39a3db75108cf0af0fd9c77032fe8aa2cf38345b4d250e98e38e"
     }
   ]
 }

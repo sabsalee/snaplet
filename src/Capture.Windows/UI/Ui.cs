@@ -47,8 +47,8 @@ internal static class Ui
         internal static Brush Card=>Brush("CardBrush");internal static Brush Text=>Brush("TextBrush");internal static Brush Muted=>Brush("MutedBrush");
         internal static Brush Accent=>Brush("AccentBrush");internal static Brush Line=>Brush("BorderBrush");
     }
-    /// <summary>Windows 11's UI typeface, falling back to Segoe UI and the Korean system font.</summary>
-    internal static readonly FontFamily Font=new("Segoe UI Variable Text, Segoe UI, Malgun Gothic");
+    /// <summary>The interface typeface: Pretendard (bundled, SIL OFL) for Korean and Latin alike, falling back to the system UI fonts.</summary>
+    internal static readonly FontFamily Font=new(new Uri("pack://application:,,,/"),"./Fonts/#Pretendard, Segoe UI Variable Text, Segoe UI, Malgun Gothic");
     internal static TextBlock Label(string text,double size=13,Brush? ink=null,FontWeight? weight=null)=>new(){Text=text,FontSize=size,Foreground=ink??Text,FontWeight=weight??FontWeights.Normal,TextWrapping=TextWrapping.Wrap};
     /// <summary>The physical key. With the Korean IME in Hangul mode WPF reports letter keys as ImeProcessed, which would break letter shortcuts.</summary>
     internal static System.Windows.Input.Key Pressed(System.Windows.Input.KeyEventArgs e)=>e.Key==System.Windows.Input.Key.ImeProcessed?e.ImeProcessedKey:e.Key;
