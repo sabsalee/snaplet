@@ -349,7 +349,7 @@ public sealed class EditorWindow : Window
         hoverSwatch.Fill=hoverColor is ColorRgba fill?new SolidColorBrush(Color.FromRgb(fill.R,fill.G,fill.B)):Brushes.Transparent;
     }
     private static string ToolGlyph(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"blur",AnnotationKind.Highlight=>"highlight",AnnotationKind.Spotlight=>"spotlight",
-        AnnotationKind.Step=>"step",AnnotationKind.Ellipse=>"ellipse",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"■"};
+        AnnotationKind.Step=>"step",AnnotationKind.Ellipse=>"ellipse",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"redact"};
     private static string ToolTipOf(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"흐림 · B",AnnotationKind.Highlight=>"형광펜 · H",AnnotationKind.Spotlight=>"Spotlight · S",
         AnnotationKind.Step=>"번호 / 포인터 · N",AnnotationKind.Ellipse=>"타원 · O",AnnotationKind.Line=>"선 · L",AnnotationKind.Magnifier=>"돋보기 · G",_=>"불투명 가림"};
     /// <summary>Test hook: lays the toolbar out for a given width (NaN: its real width), independent of how wide the test machine's screen lets the window grow.</summary>
