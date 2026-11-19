@@ -26,6 +26,11 @@ internal static class UiSmokeTest
                 && glyphs.CharacterToGlyphMap.ContainsKey('가') && glyphs.CharacterToGlyphMap.ContainsKey('A'),"the bundled Pretendard face is used for weight "+weight);
         }
         Check(Application.Current.TryFindResource("AppFont") is FontFamily appFont && appFont.Source.Contains("Pretendard"),"windows, tooltips and menus use the bundled interface font");
+        {
+            var ocr=new OcrWindow("가나다");
+            try {Check(ocr.FontFamily.Source.Contains("Pretendard") && TextOptions.GetTextFormattingMode(ocr)==TextFormattingMode.Ideal,"window subclasses without their own font setting still use the interface font");}
+            finally {ocr.Close();}
+        }
         var supported=WindowFrame.Override;
         try {
             WindowFrame.Override=false;
