@@ -93,7 +93,7 @@ public sealed class EditorWindow : Window
             var now=new PixelRect(r.Left,r.Top,r.Width,r.Height);var fit=WindowPlacement.FitInside(now,new PixelRect(info.Work.Left,info.Work.Top,info.Work.Width,info.Work.Height));
             if(fit!=now)Native.SetWindowPos(hwnd,0,fit.X,fit.Y,fit.Width,fit.Height,0x4|0x10);
         };
-        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=Ui.Font;
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");Ui.Dress(this);
         var root=new DockPanel();Content=root;
         // One toolbar row like the reference: export · pin · file drag | tools ··· | colour under cursor · image size · zoom.
         var toolbar=new DockPanel {LastChildFill=true,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");

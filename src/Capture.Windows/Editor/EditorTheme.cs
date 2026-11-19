@@ -45,7 +45,7 @@ internal static class EditorTheme
     /// <summary>Gives a window the Windows app theme: its palette and its title bar.</summary>
     internal static void FollowSystem(Window window)
     {
-        var dark=SystemUsesDark();Themed(window,dark);UI.WindowAppearance.SetDarkChrome(window,dark);UI.WindowAppearance.Apply(window,dark);
+        var dark=SystemUsesDark();Themed(window,dark);UI.WindowAppearance.SetDarkChrome(window,dark);UI.WindowAppearance.Apply(window,dark);UI.Ui.Dress(window);
     }
     internal static Color Ink(FrameworkElement scope)=>scope.TryFindResource("TextBrush") is SolidColorBrush brush?brush.Color:Colors.White;
 }

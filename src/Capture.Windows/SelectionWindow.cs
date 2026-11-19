@@ -72,6 +72,7 @@ internal sealed class SelectionWindow : Window
     public event Action? SelectionStarted;
 
     public SelectionWindow(DisplayInfo monitor,BitmapSource? background,IReadOnlyList<PickableWindow>? pickWindows=null,SelectionOptions? selectionOptions=null) {
+        UI.Ui.Dress(this);
         display=monitor;image=background;windows=pickWindows;options=selectionOptions??new();
         width=image?.PixelWidth??display.Bounds.Width;height=image?.PixelHeight??display.Bounds.Height;
         if(image!=null) {

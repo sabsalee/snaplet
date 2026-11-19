@@ -28,7 +28,9 @@ internal static class UiSmokeTest
         Check(Application.Current.TryFindResource("AppFont") is FontFamily appFont && appFont.Source.Contains("Pretendard"),"windows, tooltips and menus use the bundled interface font");
         {
             var plainOcr=new OcrWindow("가나다");
-            try {Check(plainOcr.FontFamily.Source.Contains("Pretendard") && TextOptions.GetTextFormattingMode(plainOcr)==TextFormattingMode.Ideal,"window subclasses without their own font setting still use the interface font");}
+            // Check the text inside, not the window: a window's default value is not inherited by its children.
+            try {Check(plainOcr.Content is DependencyObject content && Find<TextBlock>(content).Where(t=>t.ReadLocalValue(TextBlock.FontFamilyProperty)==DependencyProperty.UnsetValue).ToList() is {Count:>0} texts
+                && texts.All(t=>t.FontFamily.Source.Contains("Pretendard") && TextOptions.GetTextFormattingMode(t)==TextFormattingMode.Ideal),"text inside every window, not just the window itself, uses the interface font");}
             finally {plainOcr.Close();}
         }
         var supported=WindowFrame.Override;

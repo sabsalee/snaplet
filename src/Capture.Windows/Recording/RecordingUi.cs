@@ -75,7 +75,7 @@ internal sealed class RecordingBar : Window
     public RecordingBar(bool canDraw = false)
     {
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
-        Topmost = true; ShowInTaskbar = false; ShowActivated = false; SizeToContent = SizeToContent.WidthAndHeight; FontFamily = Ui.Font;
+        Topmost = true; ShowInTaskbar = false; ShowActivated = false; SizeToContent = SizeToContent.WidthAndHeight; Ui.Dress(this);
         Title = "Snaplet 녹화";
         pause = RecordingLook.Button("pause", "일시정지", () => PauseToggled?.Invoke());
         stop = RecordingLook.Button("stop", "정지하고 저장", () => StopRequested?.Invoke(), RecordingLook.Live);
@@ -204,7 +204,7 @@ internal sealed class RecordingPopup : Window
     public RecordingPopup(RecordingResult result, Action? edit = null)
     {
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
-        Topmost = true; ShowInTaskbar = false; SizeToContent = SizeToContent.WidthAndHeight; FontFamily = Ui.Font; Title = "Snaplet 녹화 완료";
+        Topmost = true; ShowInTaskbar = false; SizeToContent = SizeToContent.WidthAndHeight; Ui.Dress(this); Title = "Snaplet 녹화 완료";
         double previewWidth = 300, previewHeight = Math.Clamp(previewWidth * result.Height / Math.Max(1, result.Width), 90, 300);
         var placeholder = new Border { Background = new SolidColorBrush(Color.FromRgb(36, 40, 48)), Child = new ContentControl { Content = Ui.Icon("record", 28), Foreground = RecordingLook.Muted, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
         var video = new MediaElement { LoadedBehavior = MediaState.Manual, UnloadedBehavior = MediaState.Close, IsMuted = true, ScrubbingEnabled = true, Stretch = Stretch.Uniform };

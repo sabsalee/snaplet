@@ -17,16 +17,6 @@ namespace Capture.Windows;
 
 public partial class App : Application
 {
-    /// <summary>
-    /// Every window and everything inside it defaults to the interface font and Ideal text layout.
-    /// The theme's implicit Window style only reaches the base Window type, not our subclasses, so the default is set here.
-    /// Runs after Application's own static setup, which registers the pack:// scheme the bundled font needs.
-    /// </summary>
-    static App()
-    {
-        Control.FontFamilyProperty.OverrideMetadata(typeof(Window),new FrameworkPropertyMetadata(UI.Ui.Font,FrameworkPropertyMetadataOptions.Inherits|FrameworkPropertyMetadataOptions.AffectsMeasure|FrameworkPropertyMetadataOptions.AffectsRender));
-        TextOptions.TextFormattingModeProperty.OverrideMetadata(typeof(Window),new FrameworkPropertyMetadata(TextFormattingMode.Ideal,FrameworkPropertyMetadataOptions.Inherits|FrameworkPropertyMetadataOptions.AffectsMeasure|FrameworkPropertyMetadataOptions.AffectsRender));
-    }
     private UpdateService? updates;
     private readonly DispatcherTimer updatePoll=new() {Interval=TimeSpan.FromHours(6)};
     private Mutex? singleton;
