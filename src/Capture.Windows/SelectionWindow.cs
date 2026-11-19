@@ -384,7 +384,8 @@ internal sealed class SelectionWindow : Window
         var card=UI.Toast.Card(title,second,swatch,swatch is null?"info":null,dark:false);
         toast.Content=card;toast.Visibility=Visibility.Visible;LastToast=title+(second is null?"":" · "+second);
         toast.Measure(new Size(double.PositiveInfinity,double.PositiveInfinity));
-        Canvas.SetLeft(toast,Math.Max(0,(ActualWidth-toast.DesiredSize.Width)/2));Canvas.SetTop(toast,modeBar is null?8:62);
+        Canvas.SetLeft(toast,Math.Max(0,(ActualWidth-toast.DesiredSize.Width)/2));// Below the hint line (and the mode bar), so the two never overlap.
+        Canvas.SetTop(toast,(modeBar is null?24:74)+(hint.Visibility==Visibility.Visible?hint.ActualHeight+4:0));
         UI.Toast.Animate(card);
         toastTimer.Stop();toastTimer.Start();
     }
