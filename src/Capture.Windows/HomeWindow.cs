@@ -29,7 +29,7 @@ internal sealed class HomeWindow : Window
         command=capture;edit=editImage;openPath=openFile;this.clipboard=clipboard;this.open=open;
         Title="Snaplet";Width=1180;Height=800;MinWidth=660;MinHeight=450;WindowStartupLocation=WindowStartupLocation.CenterScreen;AllowDrop=true;
         var dark=EditorTheme.SystemUsesDark();EditorTheme.Themed(this,dark);WindowAppearance.SetDarkChrome(this,dark);WindowAppearance.Apply(this,dark);
-        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=Ui.Font;
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");Ui.Dress(this);
         var root=new DockPanel();Content=root;
 
         // Same toolbar band as the editor; capture and image sources sit where the editor keeps its tools.
@@ -45,6 +45,7 @@ internal sealed class HomeWindow : Window
         var right=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,8,0)};DockPanel.SetDock(right,Dock.Right);toolbar.Children.Add(right);
         recentButton=Ui.IconButton("history","캡처 기록",()=>{},36);recentButton.Margin=new Thickness(2);recentButton.Click+=(_,_)=>ShowRecentMenu(demo);right.Children.Add(recentButton);
         Tool(right,"settings","설정 열기",preferences);
+        WindowFrame.Unify(this,toolbar,52);
 
         // The status line sits on the workspace colour, so it reads as part of the window rather than a separate strip.
         var footer=new DockPanel();footer.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);

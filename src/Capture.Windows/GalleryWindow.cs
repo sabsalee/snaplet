@@ -41,7 +41,7 @@ internal sealed class GalleryWindow : Window
         source=items;edit=editImage;delete=deleteItem;clearAll=deleteAll;openSettings=settings;keptOnDisk=onDisk;
         Title="Snaplet · 캡처 기록";Width=984;Height=680;MinWidth=520;MinHeight=380;WindowStartupLocation=WindowStartupLocation.CenterScreen;
         dark=EditorTheme.SystemUsesDark();EditorTheme.Themed(this,dark);WindowAppearance.SetDarkChrome(this,dark);WindowAppearance.Apply(this,dark);
-        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=Ui.Font;
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");Ui.Dress(this);
         var root=new DockPanel();Content=root;
 
         var toolbar=new DockPanel {LastChildFill=false,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
@@ -50,6 +50,7 @@ internal sealed class GalleryWindow : Window
         count.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");DockPanel.SetDock(count,Dock.Left);toolbar.Children.Add(count);
         clear=new Button {Content="모두 지우기",Margin=new Thickness(0,0,12,0),Padding=new Thickness(10,4,10,5),VerticalAlignment=VerticalAlignment.Center,Style=(Style)Application.Current.FindResource("QuietButton")};
         clear.SetResourceReference(ForegroundProperty,"TextBrush");clear.Click+=(_,_)=>clearAll();DockPanel.SetDock(clear,Dock.Right);toolbar.Children.Add(clear);
+        WindowFrame.Unify(this,toolbar,52);
 
         notice.SetResourceReference(Border.BackgroundProperty,"WorkspaceBrush");DockPanel.SetDock(notice,Dock.Top);root.Children.Add(notice);
         var noticeRow=new DockPanel();notice.Child=noticeRow;

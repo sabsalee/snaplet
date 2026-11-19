@@ -16,3 +16,11 @@ Every icon in the app is a Phosphor Icons 2.1.1 outline (regular weight), licens
 Source: https://github.com/phosphor-icons/core
 
 The complete license is included in `assets/licenses/Phosphor-Icons-2.1.1-LICENSE.txt` and distributed with the application.
+
+## Pretendard
+
+The interface typeface is Pretendard 1.3.9 by Kil Hyung-jin, licensed under the SIL Open Font License 1.1 (Reserved Font Name "Pretendard"). The Regular, Medium and SemiBold TrueType files are embedded unmodified; sources and SHA-256 digests are in `assets/fonts/provenance.json`.
+
+Source: https://github.com/orioncactus/pretendard
+
+The complete license is included in `assets/licenses/Pretendard-1.3.9-LICENSE.txt` and distributed with the application.

@@ -54,6 +54,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e) {
         base.OnStartup(e);
+        Resources["AppFont"]=UI.Ui.Font;
         // Rendering smoke tests run without global shortcuts, tray or screen capture permission.
         if(e.Args.FirstOrDefault() is "--update-integration" or "--verify-update"){_=UpdateIntegration.RunAsync(e.Args,Shutdown);return;}
         if(e.Args.FirstOrDefault() is "--record-probe" or "--record-inspect"){_=Recording.RecordingProbe.RunAsync(e.Args,Shutdown);return;}

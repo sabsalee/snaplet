@@ -25,7 +25,7 @@ internal static class EditorTheme
         ["HoverBrush"]="#E9E9ED",["HoverBorderBrush"]="#C6C6CE",["PressedBrush"]="#DCDCE2",["InputBrush"]="#FFFFFF",
         ["CheckBorderBrush"]="#A0A0AA",["HighlightBrush"]="#E5EDFB",["SelectedBrush"]="#D9E5FA",["TrackBrush"]="#C9C9D0",
         ["ThumbBrush"]="#FFFFFF",["ThumbBorderBrush"]="#A8A8B0",["ScrollThumbBrush"]="#BDBDC4",
-        ["ToolbarBrush"]="#F6F6F7",["FloatingBrush"]="#FFFFFF",["FloatingBorderBrush"]="#DDDDE2",["SelectedToolBrush"]="#E2E2E7",
+        ["ToolbarBrush"]="#F6F6F7",["TitleBandBrush"]="#C8F6F6F7",["FloatingBrush"]="#FFFFFF",["FloatingBorderBrush"]="#DDDDE2",["SelectedToolBrush"]="#E2E2E7",
         ["WorkspaceBrush"]="#E7E7EA",["HandleBorderBrush"]="#8E8E93",["SuccessBrush"]="#1E7F52",["WarningBrush"]="#9A5B00",
         ["DividerBrush"]="#E8E8EC",["SwitchOffBrush"]="#FFFFFF",["SwitchOffBorderBrush"]="#8A8A93",["SwitchOffDotBrush"]="#5F5F68",
     });
@@ -45,7 +45,7 @@ internal static class EditorTheme
     /// <summary>Gives a window the Windows app theme: its palette and its title bar.</summary>
     internal static void FollowSystem(Window window)
     {
-        var dark=SystemUsesDark();Themed(window,dark);UI.WindowAppearance.SetDarkChrome(window,dark);UI.WindowAppearance.Apply(window,dark);
+        var dark=SystemUsesDark();Themed(window,dark);UI.WindowAppearance.SetDarkChrome(window,dark);UI.WindowAppearance.Apply(window,dark);UI.Ui.Dress(window);
     }
     internal static Color Ink(FrameworkElement scope)=>scope.TryFindResource("TextBrush") is SolidColorBrush brush?brush.Color:Colors.White;
 }

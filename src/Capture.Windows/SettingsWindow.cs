@@ -60,6 +60,7 @@ internal sealed class SettingsWindow : Window
         var scroll=new ScrollViewer{Content=page,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,Padding=new Thickness(22,24,24,8)};Grid.SetColumn(scroll,1);columns.Children.Add(scroll);
         pages["capture"]=CapturePage();pages["shortcuts"]=ShortcutsPage();pages["storage"]=StoragePage();pages["updates"]=UpdatesPage();pages["about"]=AboutPage();
         SelectPage("capture");
+        WindowFrame.UnifyWithStrip(this);
     }
     private static CheckBox Toggle(string name,bool value){var c=new CheckBox{IsChecked=value,Style=(Style)Application.Current.FindResource("Switch"),VerticalAlignment=VerticalAlignment.Center};AutomationProperties.SetName(c,name);c.ToolTip=name;return c;}
     private static StackPanel Section(string title,string subtitle=""){var p=new StackPanel{Margin=new Thickness(0,0,0,12)};p.Children.Add(Ui.Header(title,subtitle));return p;}

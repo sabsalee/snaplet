@@ -63,7 +63,7 @@ internal sealed class RecordingEditWindow : Window
         status.Margin = new Thickness(0, 8, 0, 0); status.TextWrapping = TextWrapping.Wrap; footer.Children.Add(status);
         var stage = new Border { Background = Brushes.Black, Margin = new Thickness(20, 20, 20, 8), CornerRadius = new CornerRadius(8), ClipToBounds = true, Child = video };
         root.Children.Add(stage);
-        Content = root;
+        Content = root; WindowFrame.UnifyWithStrip(this);
 
         trim.Changed += () => { Seek(trim.Dragging == TrimHandle.End ? trim.Range.End : trim.Range.Start); UpdateTime(); };
         trim.Scrubbed += position => Seek(position);

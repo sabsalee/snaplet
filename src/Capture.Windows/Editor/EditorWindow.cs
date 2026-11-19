@@ -93,7 +93,7 @@ public sealed class EditorWindow : Window
             var now=new PixelRect(r.Left,r.Top,r.Width,r.Height);var fit=WindowPlacement.FitInside(now,new PixelRect(info.Work.Left,info.Work.Top,info.Work.Width,info.Work.Height));
             if(fit!=now)Native.SetWindowPos(hwnd,0,fit.X,fit.Y,fit.Width,fit.Height,0x4|0x10);
         };
-        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");FontFamily=Ui.Font;
+        SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");Ui.Dress(this);
         var root=new DockPanel();Content=root;
         // One toolbar row like the reference: export · pin · file drag | tools ··· | colour under cursor · image size · zoom.
         var toolbar=new DockPanel {LastChildFill=true,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
@@ -134,6 +134,8 @@ public sealed class EditorWindow : Window
         imageMenu.Click+=(_,_)=>ShowImageMenu(imageMenu);
         var toolStrip=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
         toolbar.Children.Add(new ScrollViewer {Content=toolStrip,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
+        // The toolbar doubles as the title bar; Windows keeps only its caption buttons at the right.
+        WindowFrame.Unify(this,toolbar,52);
         void Tool(string glyph,string tip,AnnotationKind? kind) {var b=ToolButton(toolStrip,glyph,tip,()=>SetTool(kind));toolButtons.Add((kind,b));}
         Tool("select","선택 · V",null);Tool("arrow","화살표 · A",AnnotationKind.Arrow);Tool("text","글자 · T",AnnotationKind.Text);
         Tool("rectangle","사각형 · R",AnnotationKind.Rectangle);Tool("pixelate","모자이크 가림 · M",AnnotationKind.Pixelate);Tool("pen","펜 · P",AnnotationKind.Pen);
