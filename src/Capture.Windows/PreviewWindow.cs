@@ -132,6 +132,8 @@ internal sealed class PreviewWindow : Window
     private void TogglePin(){Pinned=!Pinned;if(!Pinned){ClickThrough=false;PinOpacity=1;}ApplyLayering();Build();if(interactive && !Pinned)Position();}
     private void Build()
     {
+        // The image may sit inside the pin's clipping border or the popup's frame; free it from whichever holds it.
+        if(thumbnail.Parent is System.Windows.Controls.Decorator holder)holder.Child=null;
         if(imageContainer!=null)imageContainer.Child=null;
         if(message.Parent is Panel old)old.Children.Remove(message);
         Content=null;thumbnail.Height=thumbnail.Width=double.NaN;thumbnail.Effect=null;pinBar=null;zoomLabel=null;
