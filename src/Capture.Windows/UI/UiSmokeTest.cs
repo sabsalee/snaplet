@@ -73,7 +73,7 @@ internal static class UiSmokeTest
             preview.SetPinOpacity(.5);Check(preview.Opacity==.5,"pin opacity reaches the window");preview.SetPinOpacity(1);
             preview.ActualSizePin();preview.ZoomPin(1.5);preview.ZoomPin(1.5);preview.UpdateLayout();Check(preview.PinZoom>2.2,"a pinned image zooms past its original size");Shot(preview,"pinned-zoomed");
             preview.ZoomPin(100);Check(Math.Abs(preview.PinZoom-4)<.01,"pin zoom stops at 400%");preview.ActualSizePin();Check(Math.Abs(preview.PinZoom-1)<.01,"the zoom label returns the pin to 100%");
-            var pinWidth=preview.Width;Click(preview,"확대 · 휠");Check(preview.Width>pinWidth,"pin zoom button enlarges the image");Click(preview,"축소 · 휠");Check(preview.Width==pinWidth,"pin zoom button shrinks the image");
+            preview.ZoomPin(2);preview.UpdateLayout();Click(preview,"원래 크기로");Check(Math.Abs(preview.PinZoom-1)<.01,"clicking the zoom level in the bar returns to 100%");
             Click(preview,"고정 해제");preview.UpdateLayout();Check(!preview.Pinned,"unpin rebuilds compact preview without reparenting errors");
             bool edited=false;preview.EditRequested+=_=>edited=true;Click(preview,"편집");Check(edited && !preview.IsVisible,"preview edit dispatches image and dismisses unpinned window");
         }finally{if(preview.IsVisible)preview.Close();}
@@ -110,7 +110,10 @@ internal static class UiSmokeTest
             if(!window.IsVisible)window.Show();window.UpdateLayout();
             var content=(FrameworkElement)window.Content;
             Check(content.ActualWidth>100 && content.ActualHeight>60,name+" has nonempty arranged content");
-            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth),(int)Math.Ceiling(content.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(content);
+            // A transparent window draws its content inside a margin for the shadow, so the whole window is captured.
+            Visual target=window.AllowsTransparency?window:content;
+            double w=window.AllowsTransparency?window.ActualWidth:content.ActualWidth,h=window.AllowsTransparency?window.ActualHeight:content.ActualHeight;
+            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(w),(int)Math.Ceiling(h),96,96,PixelFormats.Pbgra32);bitmap.Render(target);
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(directory,"ui-"+name+".png"));encoder.Save(file);
         }
     }
