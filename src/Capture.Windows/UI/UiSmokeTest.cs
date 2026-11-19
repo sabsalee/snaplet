@@ -27,9 +27,9 @@ internal static class UiSmokeTest
         }
         Check(Application.Current.TryFindResource("AppFont") is FontFamily appFont && appFont.Source.Contains("Pretendard"),"windows, tooltips and menus use the bundled interface font");
         {
-            var ocr=new OcrWindow("가나다");
-            try {Check(ocr.FontFamily.Source.Contains("Pretendard") && TextOptions.GetTextFormattingMode(ocr)==TextFormattingMode.Ideal,"window subclasses without their own font setting still use the interface font");}
-            finally {ocr.Close();}
+            var plainOcr=new OcrWindow("가나다");
+            try {Check(plainOcr.FontFamily.Source.Contains("Pretendard") && TextOptions.GetTextFormattingMode(plainOcr)==TextFormattingMode.Ideal,"window subclasses without their own font setting still use the interface font");}
+            finally {plainOcr.Close();}
         }
         var supported=WindowFrame.Override;
         try {
