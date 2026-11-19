@@ -59,7 +59,7 @@ internal static class SelectionSmokeTest
             Check(overlay.LoupeText.Contains("X 130") && overlay.LoupeText.Contains("Y 360") && overlay.LoupeText.Contains(expected),"loupe shows pointer pixel coordinates and colour "+expected);
             Shot(overlay,directory,"selection-loupe");
             overlay.SimulatePointer(250,450,showRuler:true);overlay.UpdateLayout();
-            Check(overlay.RulerText.StartsWith("↔ "),"ruler reports the colour run under the pointer");
+            Check(overlay.RulerText.StartsWith("가로 "),"ruler reports the colour run under the pointer");
             Shot(overlay,directory,"selection-ruler");
             overlay.SimulatePointer(250,450,showRuler:false);
 
@@ -87,6 +87,12 @@ internal static class SelectionSmokeTest
             barred.SimulateMode("창");Check(modeResult?.NextCommand=="pick-window","choosing another mode asks the app to run it");
         } finally {barred.Close();SelectionWindow.ResetRatioForTest();}
         Check(!new SelectionWindow(display,image,null,new SelectionOptions()).HasModeBar,"the bar stays off by default");
+        var notice=new SelectionWindow(display,image,null,new SelectionOptions());
+        try {
+            notice.Show();notice.UpdateLayout();notice.ShowNotice("#FFFFFF","클립보드에 복사됨",Colors.White);notice.UpdateLayout();
+            Check(notice.LastToast=="#FFFFFF · 클립보드에 복사됨","a colour copy shows the value and what happened on two lines");Shot(notice,directory,"selection-toast");
+            notice.ShowNotice("측정자 켜짐 · 포인터 아래 같은 색 범위를 잽니다");Check(notice.LastToast.StartsWith("측정자 켜짐 · "),"title · detail text splits into the card's two lines");
+        } finally {notice.Close();}
 
         // --- frozen and live selection ------------------------------------------------------
         SelectionResult? liveResult=null;

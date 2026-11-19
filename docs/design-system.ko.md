@@ -19,7 +19,10 @@
 - 색: 중립적인 어두운 배경 `#191C21`, 카드 `#22262D`, 기본 글자 `#F0F2F6`, 보조 글자 `#A6AFBD`, 강조 `#7DAAFF`, 주 동작 `#315FCB`.
 - 타이포그래피: Segoe UI 및 Windows의 한글 폰트 대체. 본문13px, 보조11–12px, 화면 제목24px, 시작 화면28px. 이미지에 저장하는 주석 글자와 앱 UI 글자는 별개다.
 - 간격: 4/8/12/16/24/28px, 버튼 최소 높이36px. 입력창·버튼 모서리5–6px, 카드10px.
-- 아이콘: Microsoft Fluent UI System Icons의 24 px regular 벡터를 사용한다. 원래 24 × 24 격자를 유지하며 텍스트·번호 도구도 같은 아이콘 계열을 쓴다. 라이선스는 앱에 포함한다.
+- 아이콘: 모든 아이콘은 Phosphor Icons 2.1.1 regular 벡터다. 원래 256 × 256 격자를 유지한다. 글자나 기호(▢, ✎, B/I/U, ▾ 등)를 아이콘 대신 쓰지 않으며, 없는 이름을 쓰면 오류가 난다. 라이선스는 앱에 포함한다.
+- 캡처 후 팝업: 시스템 테마를 따르는 둥근 카드(반경 12, 그림자). 위쪽 도구 줄(닫기 | 복사·저장·고정 | 파일 끌기 … 텍스트·편집)이 늘 보이고 아래에 이미지와 크기 줄.
+- 고정 이미지: 이미지만 둥글게(반경 8) 띄우고 그림자를 준다. 마우스를 올리면 이미지 안 왼쪽 위에 어두운 반투명 바(빨간 닫기 점, 파일 끌기, 편집, 복사, 고정 해제, 더 보기, 배율). 휠로 원래 크기의 20%~400%.
+- 알림 카드: 큰 반경(16), 밝은 반투명 면과 넓고 부드러운 그림자, 왼쪽 색 견본·아이콘, 제목과 설명 두 줄, 필요하면 오른쪽 버튼.
 - 상태: hover, 누름, 키보드 포커스, 비활성 상태를 구분한다. 색상 팔레트는 hover해도 색 자체가 바뀌지 않는다.
 - 버튼·체크/스위치·입력창·드롭다운·슬라이더·스크롤바·메뉴·도움말을 같은 테마로 그린다. Windows 제목 표시줄도 어두운 색을 요청하며 시스템이 지원하지 않으면 기본 창 동작을 유지한다.
 
@@ -58,4 +61,4 @@ Windows 창 속성 근거: [Microsoft DWMWINDOWATTRIBUTE](https://learn.microsof
 
 기본 스타일은 바로 써도 균형이 맞는 굵기·색·둥글기를 제공한다. 프리셋 미리보기는 실제 내보내기와 같은 렌더러를 사용한다. 속성 수치는 슬라이더와 직접 입력을 함께 제공하고, 프리셋 적용 뒤에도 개별 속성과 Undo를 유지한다.
 
-참고 기준: [Microsoft 도구 설명](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/tooltips), [Microsoft 입력 피드백](https://learn.microsoft.com/en-us/windows/apps/develop/input/touchpad-interactions), [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons).
+참고 기준: [Microsoft 도구 설명](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/tooltips), [Microsoft 입력 피드백](https://learn.microsoft.com/en-us/windows/apps/develop/input/touchpad-interactions), [Phosphor Icons](https://github.com/phosphor-icons/core).

@@ -89,14 +89,13 @@ internal sealed class RecordingBar : Window
             row.Children.Add(RecordingLook.Divider());
             draw = RecordingLook.Button("edit", "화면에 그리기", () => DrawToggled?.Invoke());
             row.Children.Add(draw);
-            foreach (var (tool, glyph, label) in new[] { (SketchTool.Arrow, "arrow", "화살표"), (SketchTool.Rectangle, "■", "사각형"), (SketchTool.Pen, "edit", "펜"), (SketchTool.Highlight, "highlight", "형광펜"), (SketchTool.Step, "step", "번호"), (SketchTool.Spotlight, "spotlight", "스포트라이트") })
+            foreach (var (tool, glyph, label) in new[] { (SketchTool.Arrow, "arrow", "화살표"), (SketchTool.Rectangle, "rectangle", "사각형"), (SketchTool.Pen, "pen", "펜"), (SketchTool.Highlight, "highlight", "형광펜"), (SketchTool.Step, "step", "번호"), (SketchTool.Spotlight, "spotlight", "스포트라이트") })
             {
                 var chosen = tool;
                 var button = RecordingLook.Button(glyph, label, () => ToolChosen?.Invoke(chosen));
-                if (glyph == "■") button.Content = new Border { Width = 14, Height = 11, BorderBrush = RecordingLook.Text, BorderThickness = new Thickness(1.6), CornerRadius = new CornerRadius(2) };
                 toolButtons[tool] = button; tools.Children.Add(button);
             }
-            var color = RecordingLook.Button("■", "색 바꾸기", () => ColorCycled?.Invoke()); color.Content = swatch; tools.Children.Add(color);
+            var color = RecordingLook.Button("record", "색 바꾸기", () => ColorCycled?.Invoke()); color.Content = swatch; tools.Children.Add(color);
             tools.Children.Add(RecordingLook.Button("undo", "마지막 그림 지우기 (Ctrl+Z)", () => UndoRequested?.Invoke()));
             row.Children.Add(tools);
         }

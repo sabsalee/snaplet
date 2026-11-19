@@ -9,10 +9,10 @@
 
 - **ZXing.Net 0.16.9** — Michael Jahn and contributors (port of ZXing); Apache-2.0. Used locally to decode QR and other 2D codes. https://github.com/micjahn/ZXing.Net . See `licenses/ZXing.Net-0.16.9-LICENSE.txt`.
 
-## Fluent UI System Icons
+## Phosphor Icons
 
-The toolbar uses a curated subset of Microsoft's Fluent UI System Icons (24 px regular), licensed under MIT. Original vector outlines are preserved on their 24 × 24 design grid.
+Every icon in the app is a Phosphor Icons 2.1.1 outline (regular weight), licensed under MIT. Original vector outlines are preserved on their 256 × 256 design grid.
 
-Source: https://github.com/microsoft/fluentui-system-icons
+Source: https://github.com/phosphor-icons/core
 
-The complete license is included in `assets/licenses/Fluent-System-Icons-LICENSE.txt` and distributed with the application.
+The complete license is included in `assets/licenses/Phosphor-Icons-2.1.1-LICENSE.txt` and distributed with the application.

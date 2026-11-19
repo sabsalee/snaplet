@@ -108,8 +108,8 @@ public sealed class EditorWindow : Window
         var bottomFrame=new Border {Child=bottomGrid,BorderThickness=new Thickness(0,1,0,0)};bottomFrame.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
         DockPanel.SetDock(bottomFrame,Dock.Bottom);root.Children.Add(bottomFrame);
         var actions=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,2,0)};DockPanel.SetDock(actions,Dock.Left);toolbar.Children.Add(actions);
-        ToolButton(bottomRight,"⌖","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
-        ToolButton(bottomRight,"⧉","복사 · Ctrl+C · Alt를 누르면 창 유지",async()=>await CopyAsync());
+        ToolButton(bottomRight,"pin","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
+        ToolButton(bottomRight,"copy","복사 · Ctrl+C · Alt를 누르면 창 유지",async()=>await CopyAsync());
         var saveButton=Ui.Button("저장",()=>Save(false),style:"PrimaryButton");saveButton.Margin=new Thickness(6,0,0,0);saveButton.Height=30;saveButton.MinHeight=0;saveButton.MinWidth=64;saveButton.Padding=new Thickness(14,0,14,0);saveButton.VerticalAlignment=VerticalAlignment.Center;saveButton.VerticalContentAlignment=VerticalAlignment.Center;saveButton.Content=new TextBlock {Text="저장",Foreground=Brushes.White,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center};saveButton.ToolTip="저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S · Alt를 누르면 창 유지";bottomRight.Children.Add(saveButton);
         FileDragButton(bottomCenter);
         ToolButton(actions,"region","자르기 · C",StartCrop);
@@ -130,18 +130,18 @@ public sealed class EditorWindow : Window
             Item(menu,"확대 · Ctrl++",()=>ChangeZoom(1.25));Item(menu,"축소 · Ctrl+-",()=>ChangeZoom(.8));
             zoomButton.ContextMenu=menu;menu.PlacementTarget=zoomButton;menu.IsOpen=true;
         };
-        var imageMenu=ToolButton(info,"≡","이미지 메뉴 · 실행 취소·배경·자르기·내보내기",()=>{});
+        var imageMenu=ToolButton(info,"menu","이미지 메뉴 · 실행 취소·배경·자르기·내보내기",()=>{});
         imageMenu.Click+=(_,_)=>ShowImageMenu(imageMenu);
         var toolStrip=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
         toolbar.Children.Add(new ScrollViewer {Content=toolStrip,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
         void Tool(string glyph,string tip,AnnotationKind? kind) {var b=ToolButton(toolStrip,glyph,tip,()=>SetTool(kind));toolButtons.Add((kind,b));}
-        Tool("↖","선택 · V",null);Tool("➜","화살표 · A",AnnotationKind.Arrow);Tool("T","글자 · T",AnnotationKind.Text);
-        Tool("▢","사각형 · R",AnnotationKind.Rectangle);Tool("▧","모자이크 가림 · M",AnnotationKind.Pixelate);Tool("✎","펜 · P",AnnotationKind.Pen);
+        Tool("select","선택 · V",null);Tool("arrow","화살표 · A",AnnotationKind.Arrow);Tool("text","글자 · T",AnnotationKind.Text);
+        Tool("rectangle","사각형 · R",AnnotationKind.Rectangle);Tool("pixelate","모자이크 가림 · M",AnnotationKind.Pixelate);Tool("pen","펜 · P",AnnotationKind.Pen);
         foreach(var kind in MoreTools)Tool(ToolGlyph(kind),ToolTipOf(kind),kind);
         var inlineTools=toolButtons.Count;
         moreToolSlot=ToolButton(toolStrip,ToolGlyph(AnnotationKind.Line),ToolTipOf(AnnotationKind.Line),()=>{});
         moreToolSlot.Click+=(_,_)=>SetTool(toolButtons.Single(x=>x.Button==moreToolSlot).Kind);toolButtons.Add((AnnotationKind.Line,moreToolSlot));
-        var more=ToolButton(toolStrip,"···","더 보기 · 캡처 추가·이미지 붙여넣기·스포이트·접힌 도구",()=>{});
+        var more=ToolButton(toolStrip,"more","더 보기 · 캡처 추가·이미지 붙여넣기·스포이트·접힌 도구",()=>{});
         double hoverWidth=0;
         layoutTools=toolbarWidth=>{
             if(hoverInfo.IsVisible)hoverWidth=Math.Max(hoverWidth,hoverInfo.ActualWidth);
@@ -349,7 +349,7 @@ public sealed class EditorWindow : Window
         hoverSwatch.Fill=hoverColor is ColorRgba fill?new SolidColorBrush(Color.FromRgb(fill.R,fill.G,fill.B)):Brushes.Transparent;
     }
     private static string ToolGlyph(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"blur",AnnotationKind.Highlight=>"highlight",AnnotationKind.Spotlight=>"spotlight",
-        AnnotationKind.Step=>"①",AnnotationKind.Ellipse=>"○",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"■"};
+        AnnotationKind.Step=>"step",AnnotationKind.Ellipse=>"ellipse",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"■"};
     private static string ToolTipOf(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"흐림 · B",AnnotationKind.Highlight=>"형광펜 · H",AnnotationKind.Spotlight=>"Spotlight · S",
         AnnotationKind.Step=>"번호 / 포인터 · N",AnnotationKind.Ellipse=>"타원 · O",AnnotationKind.Line=>"선 · L",AnnotationKind.Magnifier=>"돋보기 · G",_=>"불투명 가림"};
     /// <summary>Test hook: lays the toolbar out for a given width (NaN: its real width), independent of how wide the test machine's screen lets the window grow.</summary>
@@ -593,7 +593,7 @@ public sealed class EditorWindow : Window
         var ratio=ColorMath.WcagRatio(pickForeground,pickBackground);var lc=ColorMath.ApcaLc(pickForeground,pickBackground);
         colorPanel.Children.Add(new TextBlock {Text=$"WCAG 2  {ratio:0.00}:1 · {ColorMath.WcagLevel(ratio)}",FontWeight=FontWeights.SemiBold,Margin=new Thickness(0,4,0,2)});
         colorPanel.Children.Add(new TextBlock {Text=$"APCA  Lc {lc:0.0} · 본문 권장 |Lc| ≥ 75, 큰 글자 ≥ 60",FontSize=12});
-        var swap=new Button {Content="전경 ↔ 배경",FontSize=11,Padding=new Thickness(8,2,8,2),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+        var swap=new Button {Content="전경·배경 바꾸기",FontSize=11,Padding=new Thickness(8,2,8,2),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
         swap.Click+=(_,_)=>{(pickForeground,pickBackground)=(pickBackground,pickForeground);RenderColorPanel();};colorPanel.Children.Add(swap);
     }
     /// <summary>Test hook: the same path as a click in eyedropper mode.</summary>
@@ -613,7 +613,7 @@ public sealed class EditorWindow : Window
         if(Mouse.Captured is Thumb || Keyboard.FocusedElement is Slider focused && focused.IsDescendantOf(inspector))return;
         propertyRow.Children.Clear();propertyDetails.Children.Clear();
         if(typing==null && a==null && surface.Tool==null){inspector.Visibility=Visibility.Collapsed;return;}
-        var collapse=ToolButton(propertyRow,inspectorCollapsed?"›":"‹",inspectorCollapsed?"속성 패널 펼치기":"속성 패널 접기",()=>{inspectorCollapsed=!inspectorCollapsed;SyncInspector();});
+        var collapse=ToolButton(propertyRow,inspectorCollapsed?"next":"previous",inspectorCollapsed?"속성 패널 펼치기":"속성 패널 접기",()=>{inspectorCollapsed=!inspectorCollapsed;SyncInspector();});
         collapse.MinWidth=24;collapse.Height=32;collapse.FontSize=16;
         if(inspectorCollapsed){propertyDetails.Visibility=Visibility.Collapsed;return;}
         var ink=EditorTheme.Ink(this);var icon=new ColorRgba(ink.R,ink.G,ink.B);
@@ -621,7 +621,8 @@ public sealed class EditorWindow : Window
         try {
             var kind=typing?.Kind ?? a?.Kind ?? surface.Tool;
             if(kind is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line) {
-                var presets=new Button {Content="프리셋 ▾",Padding=new Thickness(10,5,10,5),Margin=new Thickness(2),ToolTip="완성된 스타일을 미리 보고 한 번에 적용"};
+                var presetLabel=new StackPanel{Orientation=Orientation.Horizontal};presetLabel.Children.Add(new TextBlock{Text="프리셋",VerticalAlignment=VerticalAlignment.Center});var caret=UI.Ui.Icon("expand",12);caret.Margin=new Thickness(6,1,0,0);presetLabel.Children.Add(caret);
+                var presets=new Button {Content=presetLabel,Padding=new Thickness(10,5,10,5),Margin=new Thickness(2),ToolTip="완성된 스타일을 미리 보고 한 번에 적용"};UI.Ui.BindIcon(caret,presets);System.Windows.Automation.AutomationProperties.SetName(presets,"프리셋");
                 System.Windows.Automation.AutomationProperties.SetName(presets,"스타일 프리셋");
                 presets.Click+=(_,_)=>ShowPresets(presets,kind.Value);propertyDetails.Children.Add(presets);
             }
@@ -674,7 +675,7 @@ public sealed class EditorWindow : Window
                     using(var dc=group.Open())ImageRenderer.PaintAnnotation(dc,source,new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),AnnotationKind.Arrow,new(3,14),new(35,14),icon,1.6,Style:surface.InkStyle));
                     Segment(group,"화살표 모양 바꾸기",false,()=>surface.InkStyle=surface.InkStyle with {RibbonStyle=(RibbonStyle)(((int)surface.InkStyle.RibbonStyle+1)%Enum.GetValues<RibbonStyle>().Length)});
                 }
-                if(a!=null){var reverse=ToolButton(propertyDetails,"⇄","시작점과 끝점 반전",()=>surface.ChangeSelected(x=>x with {Start=x.End,End=x.Start}));reverse.Height=32;}
+                if(a!=null){var reverse=ToolButton(propertyDetails,"swap","시작점과 끝점 반전",()=>surface.ChangeSelected(x=>x with {Start=x.End,End=x.Start}));reverse.Height=32;}
             }
             if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse) {
                 // The reference panel's four fills: rounded outline, outline, hatched, solid. Ellipses swap the rounded outline for translucent.
@@ -692,7 +693,7 @@ public sealed class EditorWindow : Window
             if(kind==AnnotationKind.Rectangle || kind==AnnotationKind.Text && surface.InkStyle.Bubble)
                 ValueSlider("모서리 둥글기",0,48,surface.InkStyle.CornerRadius,value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
             if(kind==AnnotationKind.Text) {
-                Segment(LetterIcon(icon),"글자만",!surface.InkStyle.Bubble,()=>ChangeTextStyle(s=>s with {Bubble=false,ShowTail=false}));
+                Segment(IconDrawing("text",icon),"글자만",!surface.InkStyle.Bubble,()=>ChangeTextStyle(s=>s with {Bubble=false,ShowTail=false}));
                 Segment(FillIcon(ShapeFill.Solid,false,icon),"배경 있는 글자",surface.InkStyle.Bubble && !surface.InkStyle.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=false}));
                 Segment(FillIcon(ShapeFill.Solid,false,icon,bubble:true),"말풍선 · 말꼬리 있음",surface.InkStyle.Bubble && surface.InkStyle.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=true}));
                 var font=new ComboBox {Width=132,Margin=new Thickness(4,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="글꼴"};
@@ -701,13 +702,13 @@ public sealed class EditorWindow : Window
                 var chosen=surface.InkStyle.FontFamily;font.SelectedIndex=chosen is null?0:Math.Max(0,font.Items.IndexOf(chosen));
                 font.SelectionChanged+=(_,_)=>{ChangeTextStyle(s=>s with {FontFamily=font.SelectedIndex<=0?null:(string)font.SelectedItem});surface.ApplyStyle();};
                 propertyRow.Children.Add(font);
-                Segment(LetterStyleIcon("B",FontWeights.Bold,FontStyles.Normal,false,icon),"굵게",surface.InkStyle.Bold,()=>ChangeTextStyle(s=>s with {Bold=!s.Bold}));
-                Segment(LetterStyleIcon("I",FontWeights.Normal,FontStyles.Italic,false,icon),"기울임",surface.InkStyle.Italic,()=>ChangeTextStyle(s=>s with {Italic=!s.Italic}));
-                Segment(LetterStyleIcon("U",FontWeights.Normal,FontStyles.Normal,true,icon),"밑줄",surface.InkStyle.Underline,()=>ChangeTextStyle(s=>s with {Underline=!s.Underline}));
-                if(!surface.InkStyle.Bubble)Segment(LetterStyleIcon("O",FontWeights.Bold,FontStyles.Normal,false,icon),"외곽선",surface.InkStyle.Outlined,()=>ChangeTextStyle(s=>s with {Outlined=!s.Outlined}));
+                Segment(IconDrawing("bold",icon),"굵게",surface.InkStyle.Bold,()=>ChangeTextStyle(s=>s with {Bold=!s.Bold}));
+                Segment(IconDrawing("italic",icon),"기울임",surface.InkStyle.Italic,()=>ChangeTextStyle(s=>s with {Italic=!s.Italic}));
+                Segment(IconDrawing("underline",icon),"밑줄",surface.InkStyle.Underline,()=>ChangeTextStyle(s=>s with {Underline=!s.Underline}));
+                if(!surface.InkStyle.Bubble)Segment(IconDrawing("outline",icon),"외곽선",surface.InkStyle.Outlined,()=>ChangeTextStyle(s=>s with {Outlined=!s.Outlined}));
                 foreach(var (label,align) in new[]{("왼쪽 정렬",TextAlign.Left),("가운데 정렬",TextAlign.Center),("오른쪽 정렬",TextAlign.Right)})
-                    Segment(AlignIcon(align,icon),label,surface.InkStyle.Align==align,()=>ChangeTextStyle(s=>s with {Align=align}));
-                if(a!=null){var edit=ToolButton(propertyDetails,"✎","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));edit.Height=32;}
+                    Segment(IconDrawing(align switch{TextAlign.Center=>"align-center",TextAlign.Right=>"align-right",_=>"align-left"},icon),label,surface.InkStyle.Align==align,()=>ChangeTextStyle(s=>s with {Align=align}));
+                if(a!=null){var edit=ToolButton(propertyDetails,"edit","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));edit.Height=32;}
             }
             if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Step || kind==AnnotationKind.Text && surface.InkStyle.Bubble) {
                 var shapeTail=kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse;
@@ -725,7 +726,7 @@ public sealed class EditorWindow : Window
         // Rarely used controls stay one click away behind ···; tools without compact controls show them directly.
         var compact=propertyRow.Children.Count>1;
         if(compact && propertyDetails.Children.Count>0) {
-            var more=ToolButton(propertyRow,"···","추가 속성 · 프리셋·숫자 입력·말꼬리·모드",()=>{inspectorExpanded=!inspectorExpanded;SyncInspector();});
+            var more=ToolButton(propertyRow,"more","추가 속성 · 프리셋·숫자 입력·말꼬리·모드",()=>{inspectorExpanded=!inspectorExpanded;SyncInspector();});
             more.Height=32;more.MinWidth=30;more.FontSize=16;if(inspectorExpanded)more.SetResourceReference(BackgroundProperty,"SelectedToolBrush");
             System.Windows.Automation.AutomationProperties.SetName(more,"속성 더 보기");
         }
@@ -774,14 +775,13 @@ public sealed class EditorWindow : Window
         }
         return group;
     }
-    private static Drawing LetterIcon(ColorRgba ink)
+    /// <summary>A Phosphor icon as a segment drawing: 18 px tall, centred on the segments' 24×18 grid.</summary>
+    private static Drawing IconDrawing(string name,ColorRgba ink)
     {
-        var group=new DrawingGroup();
-        using(var dc=group.Open()) {
-            dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,24,18));
-            var text=new FormattedText("T",System.Globalization.CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new Typeface(new FontFamily("Segoe UI"),FontStyles.Normal,FontWeights.SemiBold,FontStretches.Normal),17,new SolidColorBrush(Color.FromRgb(ink.R,ink.G,ink.B)),1);
-            dc.DrawText(text,new Point(12-text.Width/2,9-text.Height/2));
-        }
+        var group=new DrawingGroup();var brush=new SolidColorBrush(Color.FromRgb(ink.R,ink.G,ink.B));brush.Freeze();
+        var geometry=Geometry.Parse("F1 "+UI.AppIcons.Paths[name]).Clone();
+        geometry.Transform=new TransformGroup{Children={new ScaleTransform(18/UI.AppIcons.Grid,18/UI.AppIcons.Grid),new TranslateTransform(3,0)}};
+        using(var dc=group.Open()){dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,24,18));dc.DrawGeometry(brush,null,geometry);}
         return group;
     }
     private TextBox NumericField(Slider slider,string label)
@@ -872,29 +872,6 @@ public sealed class EditorWindow : Window
     {
         surface.InkStyle=change(surface.InkStyle);
         if(editingText is Annotation typing && textEditor!=null){editingText=typing with {Style=change(typing.Appearance)};UpdateTextEditorLayout();textEditor.Focus();}
-    }
-    private static Drawing LetterStyleIcon(string letter,FontWeight weight,FontStyle style,bool underline,ColorRgba ink)
-    {
-        var group=new DrawingGroup();var brush=new SolidColorBrush(Color.FromRgb(ink.R,ink.G,ink.B));brush.Freeze();
-        using(var dc=group.Open()) {
-            dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,24,18));
-            var text=new FormattedText(letter,System.Globalization.CultureInfo.InvariantCulture,FlowDirection.LeftToRight,new Typeface(new FontFamily("Segoe UI"),style,weight,FontStretches.Normal),16,brush,1);
-            if(underline)text.SetTextDecorations(TextDecorations.Underline);
-            dc.DrawText(text,new Point(12-text.Width/2,9-text.Height/2));
-        }
-        return group;
-    }
-    private static Drawing AlignIcon(TextAlign align,ColorRgba ink)
-    {
-        var group=new DrawingGroup();var brush=new SolidColorBrush(Color.FromRgb(ink.R,ink.G,ink.B));brush.Freeze();
-        using(var dc=group.Open()) {
-            dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,24,18));
-            foreach(var (y,width) in new[]{(3d,16d),(8d,10d),(13d,16d)}) {
-                var x=align switch {TextAlign.Center=>12-width/2,TextAlign.Right=>20-width,_=>4d};
-                dc.DrawRoundedRectangle(brush,null,new Rect(x,y,width,2),1,1);
-            }
-        }
-        return group;
     }
     private void UpdateTextEditorLayout()
     {

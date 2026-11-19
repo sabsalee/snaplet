@@ -36,7 +36,7 @@ internal sealed class SelectionWindow : Window
     private readonly Rectangle[] handles=new Rectangle[8];
     private readonly Border sizeTag=Chip();
     private readonly Border hint=Chip();
-    private readonly Border toast=Chip();
+    private readonly ContentControl toast=new() {IsHitTestVisible=false};
     private readonly Line crossX=Cross(),crossY=Cross();
     private readonly Line rulerX=Ruler(),rulerY=Ruler();
     private readonly Border rulerTag=Chip();
@@ -44,7 +44,7 @@ internal sealed class SelectionWindow : Window
     private readonly Canvas loupeCanvas=new() {Width=LoupeSamples*LoupeCell,Height=LoupeSamples*LoupeCell,ClipToBounds=true};
     private readonly Image loupeImage=new() {Stretch=Stretch.Fill};
     private readonly TextBlock loupeText=new() {Foreground=Brushes.White,FontSize=11,FontFamily=new FontFamily("Consolas, Segoe UI"),Margin=new Thickness(6,4,6,5)};
-    private readonly System.Windows.Threading.DispatcherTimer toastTimer=new() {Interval=TimeSpan.FromMilliseconds(1400)};
+    private readonly System.Windows.Threading.DispatcherTimer toastTimer=new() {Interval=TimeSpan.FromMilliseconds(1800)};
 
     /// <summary>Capture modes on the all-in-one bar, as commands the app can run.</summary>
     private static readonly (string Command,string Label)[] Modes=[("region","영역"),("pick-window","창"),("display","화면"),("desktop","전체 화면"),("delayed","3초 후"),("scroll","스크롤"),("ocr","텍스트"),("record","녹화")];
@@ -265,9 +265,9 @@ internal sealed class SelectionWindow : Window
                 break;
             case System.Windows.Input.Key.Tab or System.Windows.Input.Key.C or System.Windows.Input.Key.R or System.Windows.Input.Key.A when Live:
                 ShowToast("실시간 화면에서는 쓸 수 없습니다 · F로 화면을 고정하세요");break;
-            case System.Windows.Input.Key.Tab:CopyColor(shift?PixelProbe.Rgb(PixelAt(pointer.X,pointer.Y)):PixelProbe.Hex(PixelAt(pointer.X,pointer.Y)));break;
+            case System.Windows.Input.Key.Tab:{var under=PixelAt(pointer.X,pointer.Y);CopyColor(shift?PixelProbe.Rgb(under):PixelProbe.Hex(under),null,under);break;}
             case System.Windows.Input.Key.C when !Keyboard.Modifiers.HasFlag(ModifierKeys.Control):
-                CopyColor(PixelProbe.Hex(hasSelection?Average(selection):PixelAt(pointer.X,pointer.Y)),hasSelection?"선택 영역 평균색":null);break;
+                {var chosen=hasSelection?Average(selection):PixelAt(pointer.X,pointer.Y);CopyColor(PixelProbe.Hex(chosen),hasSelection?"선택 영역 평균색":null,chosen);break;}
             case System.Windows.Input.Key.R:ruler=!ruler;ShowToast(ruler?"측정자 켜짐 · 포인터 아래 같은 색 범위를 잽니다":"측정자 꺼짐");RefreshPointer();break;
             case System.Windows.Input.Key.A when mode==Mode.Adjusting || (mode==Mode.Idle && !selection.IsEmpty):
                 var fitted=Trim(selection);
@@ -310,8 +310,8 @@ internal sealed class SelectionWindow : Window
         var local=PixelProbe.TrimUniformBorder(Region(area),area.Width,area.Height,new PixelRect(0,0,area.Width,area.Height),TrimTolerance);
         return new PixelRect(area.X+local.X,area.Y+local.Y,local.Width,local.Height);
     }
-    private void CopyColor(string text,string? label=null) {
-        try{Clipboard.SetText(text);ShowToast($"{label??"색상"} {text} 복사됨");}
+    private void CopyColor(string text,string? label=null,ColorRgba? color=null) {
+        try{Clipboard.SetText(text);ShowToast(text,(label is null?"":label+" · ")+"클립보드에 복사됨",color is ColorRgba c?Color.FromRgb(c.R,c.G,c.B):null);}
         catch(ExternalException){ShowToast("다른 앱이 클립보드를 사용 중입니다");}
     }
 
@@ -373,17 +373,23 @@ internal sealed class SelectionWindow : Window
         var midY=a.Y+.5/ScaleY;var midX=c.X+.5/ScaleX;
         rulerX.X1=a.X;rulerX.X2=b.X;rulerX.Y1=rulerX.Y2=midY;
         rulerY.Y1=c.Y;rulerY.Y2=d.Y;rulerY.X1=rulerY.X2=midX;
-        ((TextBlock)rulerTag.Child).Text=$"↔ {left+right+1}  ↕ {up+down+1}";
+        ((TextBlock)rulerTag.Child).Text=$"가로 {left+right+1} · 세로 {up+down+1}";
         rulerTag.Measure(new Size(double.PositiveInfinity,double.PositiveInfinity));
         Canvas.SetLeft(rulerTag,Math.Clamp(midX+10,0,Math.Max(0,ActualWidth-rulerTag.DesiredSize.Width)));
         Canvas.SetTop(rulerTag,Math.Clamp(midY-rulerTag.DesiredSize.Height-10,0,Math.Max(0,ActualHeight-rulerTag.DesiredSize.Height)));
     }
-    private void ShowToast(string text) {
-        ((TextBlock)toast.Child).Text=text;toast.Visibility=Visibility.Visible;
+    /// <summary>A notice card at the top centre: "title · detail" text splits into two lines; a colour shows as a swatch.</summary>
+    private void ShowToast(string text,string? detail=null,Color? swatch=null) {
+        var (title,second)=detail is null?UI.Toast.Lines(text):(text,detail);
+        var card=UI.Toast.Card(title,second,swatch,swatch is null?"info":null,dark:false);
+        toast.Content=card;toast.Visibility=Visibility.Visible;LastToast=title+(second is null?"":" · "+second);
         toast.Measure(new Size(double.PositiveInfinity,double.PositiveInfinity));
-        Canvas.SetLeft(toast,Math.Max(0,(ActualWidth-toast.DesiredSize.Width)/2));Canvas.SetTop(toast,24);
+        Canvas.SetLeft(toast,Math.Max(0,(ActualWidth-toast.DesiredSize.Width)/2));Canvas.SetTop(toast,modeBar is null?8:62);
+        UI.Toast.Animate(card);
         toastTimer.Stop();toastTimer.Start();
     }
+    internal string LastToast {get;private set;}="";
+    internal void ShowNotice(string text,string? detail=null,Color? swatch=null)=>ShowToast(text,detail,swatch);
 
     // ---- handles and helpers -------------------------------------------------------------
     private Point[] HandlePoints() {
