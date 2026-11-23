@@ -47,5 +47,24 @@ internal static class EditorTheme
     {
         var dark=SystemUsesDark();Themed(window,dark);UI.WindowAppearance.SetDarkChrome(window,dark);UI.WindowAppearance.Apply(window,dark);UI.Ui.Dress(window);
     }
+    private static Brush? lightChecker,darkChecker;
+    /// <summary>
+    /// The editor's empty space: a soft transparency checkerboard, so whatever the export leaves transparent
+    /// (an enlarged canvas, a transparent backdrop) reads as transparent from the start instead of as grey.
+    /// The squares stay close to the old workspace grey so the picture still stands out.
+    /// </summary>
+    internal static Brush Checker(bool dark)=>dark
+        ? darkChecker ??= CheckerOf(Color.FromRgb(0x2B,0x2E,0x33),Color.FromRgb(0x35,0x38,0x3E))
+        : lightChecker ??= CheckerOf(Color.FromRgb(0xF1,0xF1,0xF4),Color.FromRgb(0xE1,0xE1,0xE6));
+    private static Brush CheckerOf(Color back,Color square)
+    {
+        var group=new DrawingGroup();
+        using(var dc=group.Open()) {
+            var fill=new SolidColorBrush(square);
+            dc.DrawRectangle(new SolidColorBrush(back),null,new Rect(0,0,20,20));dc.DrawRectangle(fill,null,new Rect(0,0,10,10));dc.DrawRectangle(fill,null,new Rect(10,10,10,10));
+        }
+        var brush=new DrawingBrush(group) {TileMode=TileMode.Tile,Viewport=new Rect(0,0,20,20),ViewportUnits=BrushMappingMode.Absolute,Stretch=Stretch.None};
+        brush.Freeze();return brush;
+    }
     internal static Color Ink(FrameworkElement scope)=>scope.TryFindResource("TextBrush") is SolidColorBrush brush?brush.Color:Colors.White;
 }

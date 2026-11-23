@@ -27,13 +27,17 @@ internal static class WindowFrame
     /// Makes <paramref name="band"/> the window's title area. Its children stay clickable; the band's own empty space
     /// drags the window and double-clicking it maximizes. Room is kept at the right for the system caption buttons.
     /// Returns false (and changes nothing) when the unified frame is not supported.
+    /// With <paramref name="captionButtons"/>, Windows draws no caption buttons at all and the given element (the
+    /// window's own close button) takes their place at the far right; double-clicking the band still maximizes,
+    /// dragging to a screen edge still snaps, and the taskbar button still minimizes.
     /// </summary>
-    internal static bool Unify(Window window, DockPanel band, double height)
+    internal static bool Unify(Window window, DockPanel band, double height, FrameworkElement? captionButtons = null)
     {
         if (!Supported) return false;
+        var custom = captionButtons is not null;
         WindowChrome.SetWindowChrome(window, new WindowChrome
         {
-            CaptionHeight = height, GlassFrameThickness = new Thickness(-1), UseAeroCaptionButtons = true,
+            CaptionHeight = height, GlassFrameThickness = new Thickness(-1), UseAeroCaptionButtons = !custom,
             ResizeBorderThickness = SystemParameters.WindowResizeBorderThickness, CornerRadius = new CornerRadius(0), NonClientFrameEdges = NonClientFrameEdges.None,
         });
         window.Background = Brushes.Transparent;
@@ -41,10 +45,12 @@ internal static class WindowFrame
         band.SetResourceReference(Panel.BackgroundProperty, "TitleBandBrush");
         band.Tag = Marker;
         foreach (UIElement child in band.Children) Interactive(child);
-        var room = new FrameworkElement { Width = CaptionButtons }; DockPanel.SetDock(room, Dock.Right); band.Children.Insert(0, room);
+        var room = captionButtons ?? new FrameworkElement { Width = CaptionButtons }; DockPanel.SetDock(room, Dock.Right); band.Children.Insert(0, room);
+        if (custom) Interactive(room);
         void Backdrop()
         {
             var hwnd = new WindowInteropHelper(window).Handle; if (hwnd == 0) return;
+            if (custom) HideCaptionButtons(hwnd);
             if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } target) target.BackgroundColor = Colors.Transparent;
             int mica = 2; DwmSetWindowAttribute(hwnd, 38, ref mica, sizeof(int));
         }
@@ -57,6 +63,31 @@ internal static class WindowFrame
         }
         window.StateChanged += (_, _) => Fit(); window.Loaded += (_, _) => Fit();
         return true;
+    }
+
+    private const int GwlStyle = -16, WmStyleChanging = 0x007C;
+    private const long WsSysMenu = 0x00080000;
+    /// <summary>Whether Windows has been told to draw no caption buttons on this window (for tests).</summary>
+    internal static bool HasCustomCaption(Window window) => WindowChrome.GetWindowChrome(window) is { UseAeroCaptionButtons: false };
+
+    /// <summary>
+    /// The extended frame draws minimize, maximize and close only for a window with a system menu, so dropping
+    /// WS_SYSMENU removes all three. WPF can put the style back when it refreshes the window; a hook strips it again.
+    /// Minimize and maximize stay in the style, so the taskbar button, Win+arrow keys and edge snapping keep working.
+    /// </summary>
+    private static void HideCaptionButtons(nint hwnd)
+    {
+        var style = GetWindowLongPtr(hwnd, GwlStyle);
+        if ((style & (nint)WsSysMenu) != 0) { SetWindowLongPtr(hwnd, GwlStyle, style & ~(nint)WsSysMenu); SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020); }
+        HwndSource.FromHwnd(hwnd)?.AddHook((nint _, int message, nint wParam, nint lParam, ref bool handled) =>
+        {
+            if (message == WmStyleChanging && (int)wParam == GwlStyle)
+            {
+                var next = (uint)Marshal.ReadInt32(lParam, 4); // STYLESTRUCT.styleNew
+                if ((next & WsSysMenu) != 0) Marshal.WriteInt32(lParam, 4, (int)(next & ~(uint)WsSysMenu));
+            }
+            return 0;
+        });
     }
 
     /// <summary>Marks controls inside a title band as clickable rather than part of the drag area.</summary>
@@ -100,6 +131,9 @@ internal static class WindowFrame
         return new Thickness(inset);
     }
 
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
