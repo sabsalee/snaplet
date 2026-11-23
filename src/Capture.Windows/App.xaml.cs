@@ -104,6 +104,7 @@ public partial class App : Application
         if(command=="scroll-finish"){scrollWindow?.Finish();return;}
         if(command=="last"){if(history.FirstOrDefault() is BitmapSource last)Edit(last);else ShowHome();return;}
         if(command=="home"){ShowHome();return;}
+        if(command=="toolbar"){ShowCaptureToolbar();return;}
         if(command=="history"){ShowGallery();return;}
         // A recording shortcut pressed while recording controls that recording instead of starting another.
         if(command.StartsWith("record",StringComparison.Ordinal) && Recording.RecordingController.Active is {} active){if(command=="record-pause")active.TogglePause();else if(command=="record-draw")active.ToggleDrawing();else active.Stop();return;}
@@ -453,23 +454,51 @@ public partial class App : Application
         if(capturing || scrollWindow!=null || backgroundExports>0 || editors.Values.Any(editor=>editor.IsExporting))return;
         updates.ApplyAndRestart(()=>{quitting=true;foreach(var editor in editors.Values.ToArray())editor.CloseForExit();Shutdown();});
     }
+    /// <summary>
+    /// The tray menu keeps only what is reached for from the tray: one entry for the capture toolbar (every capture and
+    /// recording mode lives there), the closed popup, recent captures, the clipboard image and opening a file.
+    /// </summary>
     private void ShowTrayMenu() {
         var menu=Editor.EditorTheme.Themed(new ContextMenu {Placement=PlacementMode.MousePoint},Editor.EditorTheme.SystemUsesDark());
-        void Add(string text,Action action){var item=new MenuItem {Header=text};item.Click+=(_,_)=>action();menu.Items.Add(item);}
+        MenuItem Item(string text,string glyph,Action? action){var item=new MenuItem {Header=text,Icon=UI.Ui.Icon(glyph,16),IsEnabled=action is not null};if(action is not null)item.Click+=(_,_)=>action();return item;}
+        void Add(string text,string glyph,Action? action)=>menu.Items.Add(Item(text,glyph,action));
         if(Recording.RecordingController.Active is {} recording) {
-            Add($"녹화 정지하고 저장 ({Capture.Core.RecordingControls.Clock(recording.Elapsed)})",recording.Stop);
-            Add(recording.Paused?"이어서 녹화":"녹화 일시정지",recording.TogglePause);
+            Add($"녹화 정지하고 저장 ({Capture.Core.RecordingControls.Clock(recording.Elapsed)})","stop",recording.Stop);
+            Add(recording.Paused?"이어서 녹화":"녹화 일시정지",recording.Paused?"play":"pause",recording.TogglePause);
             menu.Items.Add(new Separator());
         }
-        foreach(var (text,command) in new[]{("영역 캡처","region"),("창 캡처","window"),("현재 화면 캡처","display"),("모든 화면 캡처","desktop"),("3초 후 화면 캡처","delayed"),("직전 영역 반복","repeat"),("텍스트·QR 바로 인식","ocr"),("최근 캡처 편집","last")}) {var c=command;Add(text,()=>_=RunCommandAsync(c));}
-        Add("수동 스크롤 캡처…",()=>_=RunCommandAsync("scroll"));
-        if(Recording.RecordingController.Active is null){menu.Items.Add(new Separator());foreach(var (text,command) in new[]{("영역 녹화","record"),("창 녹화","record-window"),("현재 화면 녹화","record-screen")}){var c=command;Add(text,()=>_=RunCommandAsync(c));}}
-        var recent=new MenuItem {Header=settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)"};foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=UI.Ui.Thumbnail(bitmap,$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px")};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}menu.Items.Add(recent);
-        if(closedPopups.Count>0)Add("닫은 캡처 팝업 다시 열기",()=>{var image=closedPopups[0];closedPopups.RemoveAt(0);ShowPopup(image);});
-        if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제",()=>{foreach(var p in previews)p.SetClickThrough(false);});
-        if(previews.Any(p=>p.Pinned))Add("고정 이미지 모두 닫기",()=>{foreach(var p in previews.Where(p=>p.Pinned).ToArray())p.Close();});
-        menu.Items.Add(new Separator());Add("캡처 기록…",ShowGallery);Add("이미지 열기…",OpenImage);Add("클립보드 이미지 편집",ClipboardImage);Add("설정…",ShowSettings);Add("Snaplet 열기",ShowHome);Add("업데이트…",()=>ShowSettingsPage("updates"));Add("Snaplet 종료",()=>{if(Recording.RecordingController.Active is {} running){quitAfterRecording=true;running.Stop();}else Shutdown();});
+        Add("캡처 도구 모음 열기","region",()=>_=RunCommandAsync("toolbar"));
+        menu.Items.Add(new Separator());
+        // Always listed, greyed out when there is nothing to bring back, so the menu keeps its shape.
+        Add("닫은 캡처 팝업 다시 열기","undo",closedPopups.Count>0?()=>{if(closedPopups.Count==0)return;var image=closedPopups[0];closedPopups.RemoveAt(0);ShowPopup(image);}:null);
+        var recent=Item(settings.KeepHistoryOnDisk?"최근 캡처":"최근 캡처 (메모리)","history",null);recent.IsEnabled=true;
+        foreach(var image in history){var bitmap=image;var item=new MenuItem {Header=UI.Ui.Thumbnail(bitmap,$"{bitmap.PixelWidth} × {bitmap.PixelHeight} px")};item.Click+=(_,_)=>Edit(bitmap);recent.Items.Add(item);}
+        if(history.Count==0)recent.Items.Add(new MenuItem {Header="아직 캡처가 없습니다",IsEnabled=false});
+        recent.Items.Add(new Separator());recent.Items.Add(Item("캡처 기록 모두 보기…","image",ShowGallery));
+        menu.Items.Add(recent);
+        Add("클립보드 이미지 편집","clipboard",ClipboardImage);
+        Add("이미지 열기…","folder",OpenImage);
+        if(previews.Any(p=>p.Pinned)) {
+            menu.Items.Add(new Separator());
+            if(previews.Any(p=>p.ClickThrough))Add("고정 이미지 클릭 통과 해제","select",()=>{foreach(var p in previews)p.SetClickThrough(false);});
+            Add("고정 이미지 모두 닫기","pin",()=>{foreach(var p in previews.Where(p=>p.Pinned).ToArray())p.Close();});
+        }
+        menu.Items.Add(new Separator());
+        Add("설정…","settings",ShowSettings);
+        Add("Snaplet 종료","close",()=>{if(Recording.RecordingController.Active is {} running){quitAfterRecording=true;running.Stop();}else Shutdown();});
         menu.IsOpen=true;
+    }
+    private CaptureToolbar? captureToolbar;
+    /// <summary>Opens the capture toolbar on the pointer's screen, or brings back the one already open.</summary>
+    private void ShowCaptureToolbar() {
+        if(captureToolbar is not null){captureToolbar.Activate();return;}
+        // After the tray menu has closed, so the toolbar takes focus instead of losing it to the closing menu.
+        _=Dispatcher.InvokeAsync(()=>{
+            if(captureToolbar is not null || quitting)return;
+            captureToolbar=new CaptureToolbar(command=>_=RunCommandAsync(command),Recording.RecordingController.Active is not null);
+            captureToolbar.Closed+=(_,_)=>captureToolbar=null;
+            captureToolbar.Show();captureToolbar.Activate();
+        },DispatcherPriority.Background);
     }
     private void ShowTrayNotice() {
         if(tray is null)return;
