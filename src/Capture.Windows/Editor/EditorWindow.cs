@@ -22,6 +22,7 @@ public sealed class EditorWindow : Window
     private readonly EditorSurface surface;
     private readonly ScrollViewer scroll;
     private readonly Grid stage=new();
+    private readonly Grid workspace=new();
     private readonly Canvas textLayer=new();
     private readonly Border backdropFrame=new();
     private Button? backdropButton;
@@ -73,7 +74,8 @@ public sealed class EditorWindow : Window
     }
     // Secondary tools, shown inline while the toolbar has room. Once it runs out they fold behind ··· from the end,
     // and the last one chosen there takes the slot before ··· like the reference app.
-    private static readonly AnnotationKind[] MoreTools=[AnnotationKind.Blur,AnnotationKind.Highlight,AnnotationKind.Spotlight,AnnotationKind.Step,AnnotationKind.Ellipse,AnnotationKind.Line,AnnotationKind.Magnifier,AnnotationKind.Solid];
+    private static readonly AnnotationKind[] MoreTools=[AnnotationKind.Blur,AnnotationKind.Highlight,AnnotationKind.Spotlight,AnnotationKind.Step,AnnotationKind.Ellipse,AnnotationKind.Line,AnnotationKind.Magnifier];
+    // The opaque cover (AnnotationKind.Solid) is no longer a tool: a filled rectangle does the same. Old documents still draw theirs.
 
     public EditorWindow(BitmapSource image,EditableDocument? existingDocument=null,bool closeOnDismiss=false)
     {
@@ -84,15 +86,9 @@ public sealed class EditorWindow : Window
         surface=new(source,document) {HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
         ApplyTheme(EditorTheme.SystemUsesDark());
         Title="Snaplet — 이미지 편집";Width=1180;Height=800;MinWidth=700;MinHeight=450;
-        // Windows cascades new windows, which can push the window past the taskbar on a small screen.
-        SourceInitialized+=(_,_)=>{
-            var hwnd=new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            if(!Native.GetWindowRect(hwnd,out var r))return;
-            var info=new Native.MONITORINFOEX {Size=System.Runtime.InteropServices.Marshal.SizeOf<Native.MONITORINFOEX>()};
-            if(!Native.GetMonitorInfo(Native.MonitorFromPoint(new Native.POINT {X=r.Left+r.Width/2,Y=r.Top+r.Height/2},2),ref info))return;
-            var now=new PixelRect(r.Left,r.Top,r.Width,r.Height);var fit=WindowPlacement.FitInside(now,new PixelRect(info.Work.Left,info.Work.Top,info.Work.Width,info.Work.Height));
-            if(fit!=now)Native.SetWindowPos(hwnd,0,fit.X,fit.Y,fit.Width,fit.Height,0x4|0x10);
-        };
+        // Windows opens new windows on the primary monitor and can cascade them past the taskbar on a small screen.
+        // Open on the monitor the capture came from instead (OpenAt), centred in its work area, and keep the window inside it.
+        SourceInitialized+=(_,_)=>PlaceOnMonitor(OpenAt);
         SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");Ui.Dress(this);
         var root=new DockPanel();Content=root;
         // One toolbar row: pin · copy · save · file drag | crop · backdrop | tools ··· | colour under cursor · image menu. No bottom bar.
@@ -133,12 +129,16 @@ public sealed class EditorWindow : Window
             Item(menu,"확대 · Ctrl++",()=>ChangeZoom(1.25));Item(menu,"축소 · Ctrl+-",()=>ChangeZoom(.8));
             zoomButton.ContextMenu=menu;menu.PlacementTarget=zoomButton;menu.IsOpen=true;
         };
-        var imageMenu=ToolButton(info,"menu","이미지 메뉴 · 실행 취소·배경·자르기·내보내기",()=>{});
+        var imageMenu=ToolButton(info,"menu","이미지 메뉴 · 실행 취소·저장·인쇄·회전·자르기 비율",()=>{});
         imageMenu.Click+=(_,_)=>ShowImageMenu(imageMenu);
         var toolStrip=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
         toolbar.Children.Add(new ScrollViewer {Content=toolStrip,HorizontalScrollBarVisibility=ScrollBarVisibility.Hidden,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled});
-        // The toolbar doubles as the title bar; Windows keeps only its caption buttons at the right.
-        WindowFrame.Unify(this,toolbar,52);
+        // The toolbar doubles as the title bar. Windows' minimize/maximize/close give way to one close button in the toolbar's own
+        // icon style at the far right; double-clicking empty toolbar space still maximizes and the taskbar still minimizes.
+        var captionHost=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,8,0)};
+        var closeButton=ToolButton(captionHost,"close","닫기",Close);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(closeButton,"EditorClose");
+        if(!WindowFrame.Unify(this,toolbar,52,captionHost))captionHost.Children.Clear();
         void Tool(string glyph,string tip,AnnotationKind? kind) {var b=ToolButton(toolStrip,glyph,tip,()=>SetTool(kind));toolButtons.Add((kind,b));}
         Tool("select","선택 · V",null);Tool("arrow","화살표 · A",AnnotationKind.Arrow);Tool("text","글자 · T",AnnotationKind.Text);
         Tool("rectangle","사각형 · R",AnnotationKind.Rectangle);Tool("pixelate","모자이크 가림 · M",AnnotationKind.Pixelate);Tool("pen","펜 · P",AnnotationKind.Pen);
@@ -173,7 +173,6 @@ public sealed class EditorWindow : Window
             foreach(var entry in folded){var kind=entry.Kind;Item(menu,entry.Button.ToolTip?.ToString() ?? ToolName(kind),()=>SetTool(kind));}
             more.ContextMenu=menu;menu.PlacementTarget=more;menu.IsOpen=true;
         };
-        var workspace=new Grid();workspace.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");
         backdropPanel.SetResourceReference(Border.BackgroundProperty,"ToolbarBrush");backdropPanel.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");backdropPanel.SetResourceReference(TextElement.ForegroundProperty,"TextBrush");
         var body=new DockPanel();DockPanel.SetDock(backdropPanel,Dock.Left);body.Children.Add(backdropPanel);body.Children.Add(workspace);root.Children.Add(body);
         stage.Children.Add(surface);stage.Children.Add(textLayer);
@@ -314,8 +313,8 @@ public sealed class EditorWindow : Window
         Item(menu,"실행 취소 · Ctrl+Z",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Undo();}).IsEnabled=document.CanUndo;
         Item(menu,"다시 실행 · Ctrl+Y",()=>{if(!FinishTextEdit(true))return;surface.CancelGesture();document.Redo();}).IsEnabled=document.CanRedo;
         menu.Items.Add(new Separator());
-        Item(menu,"배경 꾸미기 · 그라데이션·여백·그림자·둥근 모서리",ToggleBackdropPanel);
-        Item(menu,"자르기 / 선택 · C",StartCrop);Item(menu,"전체 캔버스 보기",()=>{if(!FinishTextEdit(true))return;surface.ClearCrop();document.ResetCrop();});
+        // Crop, backdrop and export size have their own buttons (toolbar, and the size box at the canvas corner), so the menu keeps only what has none.
+        Item(menu,"전체 캔버스 보기",()=>{if(!FinishTextEdit(true))return;surface.ClearCrop();document.ResetCrop();});
         var snapping=new MenuItem {Header="객체 가장자리·중심에 맞추기 · Ctrl 일시 해제",IsCheckable=true,IsChecked=surface.SnapToObjects};
         snapping.Click+=(_,_)=>surface.SnapToObjects=snapping.IsChecked;menu.Items.Add(snapping);
         Item(menu,"선택 객체 복제 · Ctrl+D",surface.DuplicateSelected);Item(menu,"선택 객체 삭제 · Delete",surface.DeleteSelected);
@@ -333,19 +332,13 @@ public sealed class EditorWindow : Window
             item.Click+=(_,_)=>{surface.SetCropAspect(chosen);UpdateCropStatus();};aspect.Items.Add(item);
         }
         menu.Items.Add(aspect);
-        var scaleMenu=new MenuItem {Header=$"내보내기 크기 · {document.ExportScale:P0}"};
-        foreach(var (label,value) in new[]{("400%",4d),("200%",2d),("100% (원본)",1d),("75%",.75),("50% (200% 화면을 1배로)",.5),("33%",1/3d),("25%",.25)}) {
-            var item=new MenuItem {Header=label,IsCheckable=true,IsChecked=Math.Abs(document.ExportScale-value)<1e-9};var v=value;
-            item.Click+=(_,_)=>{if(!FinishTextEdit(true))return;document.SetExportScale(v);};scaleMenu.Items.Add(item);
-        }
-        menu.Items.Add(scaleMenu);
         Item(menu,"합쳐서 새 편집창",()=>{if(!FinishTextEdit(true))return;RasterizedRequested?.Invoke(ImageRenderer.Render(source,document));});
         var hide=new MenuItem {Header="복사·저장 후 숨기기",IsCheckable=true,IsChecked=hideAfterExport};hide.Click+=(_,_)=>hideAfterExport=hide.IsChecked;menu.Items.Add(hide);
         anchor.ContextMenu=menu;menu.PlacementTarget=anchor;menu.IsOpen=true;
     }
     private void ApplyTheme(bool dark)
     {
-        darkTheme=dark;EditorTheme.Themed(this,dark);
+        darkTheme=dark;EditorTheme.Themed(this,dark);workspace.Background=EditorTheme.Checker(dark);
         WindowAppearance.SetDarkChrome(this,dark);WindowAppearance.Apply(this,dark);
     }
     private void UpdateHoverColor(PointD? at)
@@ -355,9 +348,9 @@ public sealed class EditorWindow : Window
         hoverSwatch.Fill=hoverColor is ColorRgba fill?new SolidColorBrush(Color.FromRgb(fill.R,fill.G,fill.B)):Brushes.Transparent;
     }
     private static string ToolGlyph(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"blur",AnnotationKind.Highlight=>"highlight",AnnotationKind.Spotlight=>"spotlight",
-        AnnotationKind.Step=>"step",AnnotationKind.Ellipse=>"ellipse",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"redact"};
+        AnnotationKind.Step=>"step",AnnotationKind.Ellipse=>"ellipse",AnnotationKind.Line=>"line",AnnotationKind.Magnifier=>"lens",_=>"rectangle"};
     private static string ToolTipOf(AnnotationKind kind)=>kind switch {AnnotationKind.Blur=>"흐림 · B",AnnotationKind.Highlight=>"형광펜 · H",AnnotationKind.Spotlight=>"Spotlight · S",
-        AnnotationKind.Step=>"번호 / 포인터 · N",AnnotationKind.Ellipse=>"타원 · O",AnnotationKind.Line=>"선 · L",AnnotationKind.Magnifier=>"돋보기 · G",_=>"불투명 가림"};
+        AnnotationKind.Step=>"번호 / 포인터 · N",AnnotationKind.Ellipse=>"타원 · O",AnnotationKind.Line=>"선 · L",AnnotationKind.Magnifier=>"돋보기 · G",_=>ToolName(kind)};
     /// <summary>Test hook: lays the toolbar out for a given width (NaN: its real width), independent of how wide the test machine's screen lets the window grow.</summary>
     internal void LayoutToolbar(double toolbarWidth)=>layoutTools(toolbarWidth);
     private bool IsFolded(AnnotationKind kind)=>toolButtons.Any(x=>x.Kind==kind && x.Button!=moreToolSlot && x.Button.Visibility==Visibility.Collapsed);
@@ -529,7 +522,7 @@ public sealed class EditorWindow : Window
         var panel=new StackPanel {Width=250};popup.Child=PopupFrame(panel,10);
         void Apply(double scale){if(!FinishTextEdit(true))return;document.SetExportScale(scale);popup.IsOpen=false;}
         var presets=new WrapPanel();panel.Children.Add(presets);
-        foreach(var (label,value) in new[]{("25%",.25),("33%",1/3d),("50%",.5),("100%",1d),("200%",2d),("400%",4d)}) {
+        foreach(var (label,value) in new[]{("25%",.25),("33%",1/3d),("50%",.5),("75%",.75),("100%",1d),("200%",2d),("400%",4d)}) {
             var choice=new Button {Content=label,Margin=new Thickness(2),Padding=new Thickness(8,4,8,4),Style=(Style)Application.Current.FindResource("EditorIconButton")};var scale=value;
             if(Math.Abs(document.ExportScale-value)<1e-6)choice.SetResourceReference(BackgroundProperty,"SelectedToolBrush");
             choice.Click+=(_,_)=>Apply(scale);presets.Children.Add(choice);
@@ -1189,7 +1182,30 @@ public sealed class EditorWindow : Window
         } catch(Exception ex){ShowError("Esc로 닫기 전 내보내기 실패",ex);return;}
         Close();
     }
-    public void ShowDocument(){Show();Activate();if(textEditor!=null)textEditor.Focus();else surface.Focus();}
+    /// <summary>A screen point (physical pixels) on the monitor the editor should open on, usually where the capture was taken. Null keeps the window where it is.</summary>
+    internal Native.POINT? OpenAt {get;set;}
+    /// <summary>Moves the window to the monitor holding <paramref name="at"/> (centred) when it sits on another one, then fits it inside that monitor's work area.</summary>
+    private void PlaceOnMonitor(Native.POINT? at)
+    {
+        var hwnd=new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if(hwnd==0 || WindowState!=WindowState.Normal || !Native.GetWindowRect(hwnd,out var r))return;
+        var here=Native.MonitorFromPoint(new Native.POINT {X=r.Left+r.Width/2,Y=r.Top+r.Height/2},2);
+        var target=at is Native.POINT p?Native.MonitorFromPoint(p,2):here;
+        var info=new Native.MONITORINFOEX {Size=System.Runtime.InteropServices.Marshal.SizeOf<Native.MONITORINFOEX>()};
+        if(!Native.GetMonitorInfo(target,ref info))return;
+        var work=new PixelRect(info.Work.Left,info.Work.Top,info.Work.Width,info.Work.Height);
+        var now=new PixelRect(r.Left,r.Top,r.Width,r.Height);
+        if(target!=here)now=now with {X=work.X+(work.Width-now.Width)/2,Y=work.Y+(work.Height-now.Height)/2};
+        var fit=WindowPlacement.FitInside(now,work);
+        // SWP_NOZORDER|SWP_NOACTIVATE; moving onto a monitor with another scale lets WPF rescale through WM_DPICHANGED.
+        if(fit!=new PixelRect(r.Left,r.Top,r.Width,r.Height))Native.SetWindowPos(hwnd,0,fit.X,fit.Y,fit.Width,fit.Height,0x4|0x10);
+    }
+    public void ShowDocument()
+    {
+        // A hidden editor reopened from another monitor follows the pointer there, like a new one.
+        if(!IsVisible && OpenAt is not null && new System.Windows.Interop.WindowInteropHelper(this).Handle!=0)PlaceOnMonitor(OpenAt);
+        Show();Activate();if(textEditor!=null)textEditor.Focus();else surface.Focus();
+    }
     public void CloseForExit(){closingForExit=true;Close();}
     private void ShowError(string title,Exception ex)=>NoticeWindow.Alert(this,title,ex.Message);
 }

@@ -358,7 +358,9 @@ public partial class App : Application
         else Edit(ImageActions.Load(path));
     }
     private void Edit(BitmapSource image,Capture.Core.EditableDocument? document) {
-        if(editors.TryGetValue(image,out var existing)){existing.ShowDocument();return;}
+        // The editor opens on the monitor under the pointer: the one the capture or its preview was on, not the primary one.
+        Native.POINT? pointer=Native.GetCursorPos(out var at)?at:null;
+        if(editors.TryGetValue(image,out var existing)){existing.OpenAt=pointer;existing.ShowDocument();return;}
         // Release older hidden documents; visible editors are owned by the user.
         foreach(var pair in editors.Where(p=>!p.Value.IsVisible).ToArray()) {
             if(editors.Count<12 && editors.Values.Sum(window=>window.EstimatedImageBytes)<256_000_000)break;
@@ -370,7 +372,7 @@ public partial class App : Application
             opened=framed.Window;var w=opened.PixelWidth;var h=opened.PixelHeight;
             document=Capture.Core.EditableDocument.Restore(w,h,new(0,0,w,h),new(0,0,w,h),[],1,framed.Backdrop,1);
         }
-        var window=new EditorWindow(opened,document){EscapeAction=settings.EscapeAction,EscapeSaveFolder=settings.SaveFolder};editors[image]=window;
+        var window=new EditorWindow(opened,document){EscapeAction=settings.EscapeAction,EscapeSaveFolder=settings.SaveFolder,OpenAt=pointer};editors[image]=window;
         window.OcrRequested+=source=>_=RecognizeAsync(source);window.RasterizedRequested+=Edit;
         window.AddCaptureRequested+=()=>RunCommandAsync("region",null,window);
         window.PinRequested+=bitmap=>{
@@ -381,7 +383,7 @@ public partial class App : Application
         // An image opened from the empty main window takes its place, so the window appears to fill in.
         // Closing it brings the main window back where the editor was, instead of leaving only the tray.
         if(home is {IsVisible:true,WindowState:not WindowState.Minimized}) {
-            window.WindowStartupLocation=WindowStartupLocation.Manual;window.Left=home.Left;window.Top=home.Top;window.Width=home.Width;window.Height=home.Height;window.WindowState=home.WindowState;home.Hide();
+            window.OpenAt=null;window.WindowStartupLocation=WindowStartupLocation.Manual;window.Left=home.Left;window.Top=home.Top;window.Width=home.Width;window.Height=home.Height;window.WindowState=home.WindowState;home.Hide();
             window.Closing+=(_,_)=>{
                 if(quitting || home is null || home.IsVisible || editors.Values.Any(e=>e!=window && e.IsVisible))return;
                 if(window.WindowState==WindowState.Normal){home.Left=window.Left;home.Top=window.Top;home.Width=window.Width;home.Height=window.Height;}

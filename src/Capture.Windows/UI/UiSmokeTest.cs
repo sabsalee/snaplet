@@ -42,6 +42,11 @@ internal static class UiSmokeTest
             var unified=new Window {Width=600,Height=300};var band=new DockPanel {Height=52};var action=new Button();band.Children.Add(action);var body=new DockPanel();DockPanel.SetDock(band,Dock.Top);body.Children.Add(band);unified.Content=body;
             Check(WindowFrame.Unify(unified,band,52) && System.Windows.Shell.WindowChrome.GetWindowChrome(unified) is {CaptionHeight:52,UseAeroCaptionButtons:true},"the toolbar becomes the title bar and Windows keeps its caption buttons");
             Check(System.Windows.Shell.WindowChrome.GetIsHitTestVisibleInChrome(action) && WindowFrame.IsTitleBand(band) && band.Children.OfType<FrameworkElement>().Any(e=>e.Width==WindowFrame.CaptionButtons),"toolbar buttons stay clickable and the caption buttons keep their room");
+            var customWindow=new Window {Width=600,Height=300};var customBand=new DockPanel {Height=52};var closeX=new Button();customWindow.Content=customBand;
+            Check(WindowFrame.Unify(customWindow,customBand,52,closeX) && WindowFrame.HasCustomCaption(customWindow) && customBand.Children[0]==closeX && DockPanel.GetDock(closeX)==Dock.Right
+                && System.Windows.Shell.WindowChrome.GetIsHitTestVisibleInChrome(closeX) && !customBand.Children.OfType<FrameworkElement>().Any(e=>e.Width==WindowFrame.CaptionButtons),
+                "a window with its own close button asks Windows for no caption buttons and puts the button at the far right");
+            Check(!WindowFrame.HasCustomCaption(unified),"other windows keep the Windows caption buttons");
             var strip=new Window {Title="스트립 제목",Content=new Grid()};
             Check(WindowFrame.UnifyWithStrip(strip) && strip.Content is DockPanel {Children.Count:2} root && root.Children[0] is DockPanel first && WindowFrame.IsTitleBand(first) && Find<TextBlock>(first).Any(t=>t.Text=="스트립 제목"),"windows without a toolbar get a slim strip with their title");
         } finally {WindowFrame.Override=supported;}

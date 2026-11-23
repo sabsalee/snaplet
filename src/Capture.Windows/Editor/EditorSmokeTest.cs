@@ -185,7 +185,8 @@ public static class EditorSmokeTest
             int ShownTools()=>buttons.Count(b=>b.Visibility==Visibility.Visible);
             bool Shown(string tip)=>buttons.Any(b=>b.Visibility==Visibility.Visible && Equals(b.ToolTip,tip));
             window.LayoutToolbar(2000);
-            Check(Shown("흐림 · B") && Shown("돋보기 · G") && Shown("불투명 가림"),"a wide editor shows every tool in the toolbar");
+            Check(Shown("흐림 · B") && Shown("돋보기 · G"),"a wide editor shows every tool in the toolbar");
+            Check(!buttons.Any(b=>Equals(b.ToolTip,"불투명 가림")),"the opaque cover is gone from the toolbar: a filled rectangle does the same");
             var wideCount=ShownTools();
             window.LayoutToolbar(760);
             Check(ShownTools()<wideCount,"a narrow editor folds tools behind ···");
