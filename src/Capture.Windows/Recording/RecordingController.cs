@@ -57,6 +57,7 @@ internal sealed class RecordingController
 
     internal RecordingBar Bar => bar;
     internal RecordingSketch? Sketch => sketch;
+    internal RecordingFrame? Frame => frame;
 
     /// <summary>Turns drawing on or off; while off, clicks go to the app being recorded.</summary>
     public void ToggleDrawing() { if (sketch is null) return; sketch.Drawing = !sketch.Drawing; ShowDrawing(); }
@@ -83,7 +84,7 @@ internal sealed class RecordingController
         try
         {
             // The full screen needs no marks: the bar and the tray already say it is recording.
-            if (target.Kind != RecordingKind.Screen) { frame = new RecordingFrame(desktop); frame.Show(); }
+            if (target.Kind != RecordingKind.Screen) { frame = new RecordingFrame(desktop, new PixelRect(display.Bounds.Left, display.Bounds.Top, display.Bounds.Width, display.Bounds.Height)); frame.Show(); }
             sketch?.Show();
             bar.Show();
             ShowDrawing();
@@ -118,6 +119,7 @@ internal sealed class RecordingController
     {
         if (job is null) return;
         bool paused = job.State == RecordingState.Paused;
+        if (frame is not null) frame.Paused = paused;
         bar.Update(job.Duration, paused, ++ticks % 4 >= 2, job.HasSound ? job.SoundLevel : null, job.MicrophoneQuiet);
         Progress?.Invoke(job.Duration);
     }

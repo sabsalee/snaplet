@@ -161,38 +161,101 @@ internal sealed class RecordingBar : Window
     }
 }
 
-/// <summary>Red corner marks just outside the recorded region. Click-through and excluded from the video.</summary>
+/// <summary>
+/// Shows what is being recorded: the rest of the screen is gently dimmed on all four sides and red corner marks
+/// sit just outside the recorded region. Click-through, never activated, and excluded from the video.
+/// </summary>
+/// <remarks>
+/// Everything is laid out from the window's actual size rather than from a DPI read while the window is still
+/// being created: that read can be the primary screen's scale, which pushed three of the four corners outside
+/// the window on scaled screens.
+/// </remarks>
 internal sealed class RecordingFrame : Window
 {
-    private const int Gap = 4, ArmLength = 18, Stroke = 3;
+    private readonly FrameLayer layer;
+    private readonly PixelRect bounds;
+    private nint handle;
 
-    public RecordingFrame(PixelRect region)
+    public RecordingFrame(PixelRect region, PixelRect screen)
     {
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         Topmost = true; ShowInTaskbar = false; ShowActivated = false; IsHitTestVisible = false; Title = "Snaplet 녹화 범위";
-        var canvas = new Canvas();
-        Content = canvas;
+        bounds = FrameLayer.Cover(region, screen);
+        layer = new FrameLayer(region, bounds);
+        Content = layer;
         SourceInitialized += (_, _) =>
         {
-            var handle = new WindowInteropHelper(this).Handle;
+            handle = new WindowInteropHelper(this).Handle;
             // Transparent to the mouse and never activated, so the recorded app keeps every click.
             SetWindowLongPtr(handle, -20, GetWindowLongPtr(handle, -20) | 0x20 | 0x80 | 0x08000000);
             Native.SetWindowDisplayAffinity(handle, 0x11);
-            int x = region.X - Gap - Stroke, y = region.Y - Gap - Stroke, w = region.Width + 2 * (Gap + Stroke), h = region.Height + 2 * (Gap + Stroke);
-            Native.SetWindowPos(handle, -1, x, y, w, h, 0x0010);
-            var dpi = VisualTreeHelper.GetDpi(this);
-            double width = w / dpi.DpiScaleX, height = h / dpi.DpiScaleY, t = Stroke / dpi.DpiScaleX, arm = ArmLength / dpi.DpiScaleX;
-            void Corner(double cx, double cy, double dx, double dy)
-            {
-                canvas.Children.Add(new Rectangle { Width = arm, Height = t, Fill = RecordingLook.Live, RadiusX = t / 2, RadiusY = t / 2, Margin = new Thickness(dx < 0 ? cx - arm : cx, dy < 0 ? cy - t : cy, 0, 0) });
-                canvas.Children.Add(new Rectangle { Width = t, Height = arm, Fill = RecordingLook.Live, RadiusX = t / 2, RadiusY = t / 2, Margin = new Thickness(dx < 0 ? cx - t : cx, dy < 0 ? cy - arm : cy, 0, 0) });
-            }
-            Corner(0, 0, 1, 1); Corner(width, 0, -1, 1); Corner(0, height, 1, -1); Corner(width, height, -1, -1);
+            Place();
         };
+        // Moving onto a screen with another scale makes WPF resize the window after this event; put it back afterwards.
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(Place), System.Windows.Threading.DispatcherPriority.Background);
     }
+
+    /// <summary>The window's physical bounds: the region's screen, and the region with its marks if it reaches past it.</summary>
+    internal PixelRect Bounds => bounds;
+    internal bool Paused { get => layer.Paused; set => layer.Paused = value; }
+
+    private void Place() { if (handle != 0) Native.SetWindowPos(handle, -1, bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0010); }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
+}
+
+/// <summary>Paints the dimmed surround and the corner marks, scaled from physical pixels to whatever size the window has.</summary>
+internal sealed class FrameLayer : FrameworkElement
+{
+    /// <summary>Physical pixels between the region and the marks, the marks' thickness and the length of each arm.</summary>
+    internal const int Gap = 3, Stroke = 4, Arm = 22;
+    private static readonly SolidColorBrush Dim = Frozen(Color.FromArgb(84, 0, 0, 0)), Rim = Frozen(Color.FromArgb(110, 255, 255, 255));
+    private readonly PixelRect region, bounds;
+    private bool paused;
+
+    public FrameLayer(PixelRect region, PixelRect bounds) { this.region = region; this.bounds = bounds; IsHitTestVisible = false; }
+
+    /// <summary>The marks turn amber while paused, like the bar's light.</summary>
+    public bool Paused { get => paused; set { if (paused == value) return; paused = value; InvalidateVisual(); } }
+
+    /// <summary>The screen, grown to hold the region and its marks when the region reaches past the screen's edge.</summary>
+    internal static PixelRect Cover(PixelRect region, PixelRect screen)
+    {
+        int pad = Gap + Stroke;
+        int left = Math.Min(screen.X, region.X - pad), top = Math.Min(screen.Y, region.Y - pad);
+        int right = Math.Max(screen.Right, region.Right + pad), bottom = Math.Max(screen.Bottom, region.Bottom + pad);
+        return new PixelRect(left, top, right - left, bottom - top);
+    }
+
+    protected override void OnRender(DrawingContext dc)
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0 || bounds.Width <= 0 || bounds.Height <= 0) return;
+        double sx = ActualWidth / bounds.Width, sy = ActualHeight / bounds.Height;
+        Rect Physical(double x, double y, double w, double h) => new((x - bounds.X) * sx, (y - bounds.Y) * sy, w * sx, h * sy);
+        var hole = Physical(region.X, region.Y, region.Width, region.Height);
+        // The surround: the whole window with the recorded region cut out, so the region itself stays untouched.
+        var surround = new GeometryGroup { FillRule = FillRule.EvenOdd };
+        surround.Children.Add(new RectangleGeometry(new Rect(0, 0, ActualWidth, ActualHeight)));
+        surround.Children.Add(new RectangleGeometry(hole));
+        dc.DrawGeometry(Dim, null, surround);
+        // A faint line on the edge reads on dark content, where the dimming alone would not.
+        var rim = new Pen(Rim, sx); rim.Freeze();
+        dc.DrawRectangle(null, rim, Physical(region.X - .5, region.Y - .5, region.Width + 1, region.Height + 1));
+        var brush = paused ? RecordingLook.Paused : RecordingLook.Live;
+        double l = region.X - Gap - Stroke, t = region.Y - Gap - Stroke, r = region.Right + Gap + Stroke, b = region.Bottom + Gap + Stroke;
+        int arm = Math.Min(Arm, Math.Max(Stroke * 2, Math.Min(region.Width, region.Height) / 2 + Gap + Stroke));
+        void Bar(double x, double y, double w, double h) { var rect = Physical(x, y, w, h); dc.DrawRoundedRectangle(brush, null, rect, Math.Min(rect.Width, rect.Height) / 2, Math.Min(rect.Width, rect.Height) / 2); }
+        // Each corner is an L: one arm along the top or bottom edge, one along the left or right edge.
+        Bar(l, t, arm, Stroke); Bar(l, t, Stroke, arm);
+        Bar(r - arm, t, arm, Stroke); Bar(r - Stroke, t, Stroke, arm);
+        Bar(l, b - Stroke, arm, Stroke); Bar(l, b - arm, Stroke, arm);
+        Bar(r - arm, b - Stroke, arm, Stroke); Bar(r - Stroke, b - arm, Stroke, arm);
+    }
+
+    protected override void OnRenderSizeChanged(SizeChangedInfo info) { base.OnRenderSizeChanged(info); InvalidateVisual(); }
+
+    private static SolidColorBrush Frozen(Color color) { var brush = new SolidColorBrush(color); brush.Freeze(); return brush; }
 }
 
 /// <summary>
