@@ -58,6 +58,23 @@ internal static class UiSmokeTest
             home.Width=660;home.Height=540;Shot(home,"home-compact");
             Check(Find<Button>(home).Any(b=>b.IsVisible && AutomationProperties.GetName(b)=="설정 열기"),"compact home retains visible settings action");
         }finally{home.Close();}
+        {
+            var chosen=new List<string>();
+            var toolbar=new CaptureToolbar(chosen.Add,recording:false);
+            try {
+                Shot(toolbar,"capture-toolbar");
+                var names=Find<Button>(toolbar).Select(AutomationProperties.GetName).ToList();
+                Check(new[]{"영역 캡처","창 캡처","현재 화면","모든 화면","3초 후","스크롤","텍스트·QR","직전 영역","영역 녹화","창 녹화","화면 녹화","닫기 (Esc)"}.All(names.Contains),"the capture toolbar holds every capture and recording mode");
+                Check(Find<Button>(toolbar).All(b=>b.IsEnabled),"recording modes are available when nothing is recording");
+                Click(toolbar,"영역 녹화");Check(chosen.SequenceEqual(new[]{"record"}) && !toolbar.IsVisible,"a toolbar mode closes the bar before its command runs");
+            }finally{if(toolbar.IsVisible)toolbar.Close();}
+            var busy=new CaptureToolbar(chosen.Add,recording:true);
+            try {
+                Shot(busy,"capture-toolbar-recording");
+                Check(Find<Button>(busy).Where(b=>AutomationProperties.GetName(b).EndsWith("녹화",StringComparison.Ordinal)).All(b=>!b.IsEnabled),"recording modes are disabled while a recording runs");
+            }finally{if(busy.IsVisible)busy.Close();}
+            Check(AppSettings.Commands.Any(c=>c.Command=="toolbar") && AppSettings.DefaultHotkeys().Single(h=>h.Command=="toolbar").Key==System.Windows.Input.Key.None,"the capture toolbar has its own shortcut command, unassigned by default");
+        }
         AppSettings? saved=null;
         var preferences=new SettingsWindow(settings,value=>saved=value);
         try {
