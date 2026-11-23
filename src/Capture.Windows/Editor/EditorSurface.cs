@@ -248,7 +248,7 @@ internal sealed class EditorSurface : FrameworkElement
             if(region.Contains(start)){gesture=Gesture.CropMove;CaptureMouse();InvalidateVisual();return;}
             PendingCrop=null;InvalidateVisual();
         }
-        var hit=ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,start));
+        var hit=Document.Annotations.Reverse().FirstOrDefault(a=>Hit(a,start));
         if(hit?.Kind==AnnotationKind.Text && (Tool==AnnotationKind.Text || clickCount==2) && ImageRenderer.BoundsOf(hit).Contains(ImageRenderer.P(start))) {
             Selected=hit.Id;SelectionChanged?.Invoke();TextEditRequested?.Invoke(hit,false);return;
         }
@@ -344,7 +344,7 @@ internal sealed class EditorSurface : FrameworkElement
         var region=RegionActive?PendingCrop:null;
         var near=region is RectD crop?NearHandle(BoxHandles(ImageRenderer.RectOf(crop)),position):Selection is Annotation selected?NearHandle(Handles(selected),position):null;
         var insideRegion=region is RectD box && box.Contains(position);
-        var hit=CropTool || insideRegion?null:ImageRenderer.LayerOrder(Document.Annotations).Reverse().FirstOrDefault(a=>Hit(a,position));
+        var hit=CropTool || insideRegion?null:Document.Annotations.Reverse().FirstOrDefault(a=>Hit(a,position));
         hovered=Tool is null?hit?.Id:null;hoveredControl=near?.Index;
         var textInsertion=Tool==AnnotationKind.Text && hit?.Kind==AnnotationKind.Text;
         var editable=hit!=null && (Tool is null || hit.Id==Selected || textInsertion);
@@ -592,6 +592,10 @@ internal sealed class EditorSurface : FrameworkElement
         if(balanced==crop)return false;
         CancelGesture();Document.CropTo(FromPixels(balanced));InvalidateVisual();return true;
     }
+    /// <summary>Selects an object from outside the canvas, such as the layer panel.</summary>
+    internal void Select(Guid? id) {CancelGesture();Selected=id;SelectionChanged?.Invoke();InvalidateVisual();}
+    /// <summary>Outlines an object the pointer is over in the layer panel, as if the pointer were over it on the canvas.</summary>
+    internal void ShowHover(Guid? id) {if(hovered==id)return;hovered=id;InvalidateVisual();}
     internal void DeleteSelected() {CancelGesture();if(Selected is Guid id)Document.Delete(id);Selected=null;SelectionChanged?.Invoke();InvalidateVisual();}
     internal void ChangeSelected(Func<Annotation,Annotation> update) {FinishNumberEdit();if(Selection is Annotation a){var changed=update(a);if(changed.Kind is AnnotationKind.Image or AnnotationKind.Magnifier or AnnotationKind.Text)CommitAnnotation(changed,false);else Document.Replace(changed);SelectionChanged?.Invoke();InvalidateVisual();}}
     /// <summary>Set by the window: takes style changes while text is being typed, and returns true if it did.</summary>

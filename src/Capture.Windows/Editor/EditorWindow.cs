@@ -29,6 +29,10 @@ public sealed class EditorWindow : Window
     private readonly StackPanel propertyRow=new() {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
     private readonly WrapPanel propertyDetails=new() {MaxWidth=470,Margin=new Thickness(2,4,2,2)};
     private readonly Border inspector;
+    private readonly LayerPanel layers;
+    private readonly Border layerTab;
+    /// <summary>The layer panel stays open for the next editor once opened, until it is closed again.</summary>
+    private static bool layersOpen;
     private readonly TextBlock status=new(),dimensions=new(),zoomText=new(),hoverHex=new() {Text="—"};
     private readonly Border statusToast,viewInfoBox;
     private readonly System.Windows.Shapes.Ellipse hoverSwatch=new() {Width=14,Height=14,StrokeThickness=1,Margin=new Thickness(0,0,6,0),VerticalAlignment=VerticalAlignment.Center};
@@ -175,7 +179,11 @@ public sealed class EditorWindow : Window
         };
         var workspace=new Grid();workspace.SetResourceReference(Panel.BackgroundProperty,"WorkspaceBrush");
         backdropPanel.SetResourceReference(Border.BackgroundProperty,"ToolbarBrush");backdropPanel.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");backdropPanel.SetResourceReference(TextElement.ForegroundProperty,"TextBrush");
-        var body=new DockPanel();DockPanel.SetDock(backdropPanel,Dock.Left);body.Children.Add(backdropPanel);body.Children.Add(workspace);root.Children.Add(body);
+        var body=new DockPanel();DockPanel.SetDock(backdropPanel,Dock.Left);body.Children.Add(backdropPanel);
+        // Objects front to back, docked at the right edge; the canvas refits beside it.
+        layers=new LayerPanel(surface,document,()=>FinishTextEdit(true));DockPanel.SetDock(layers,Dock.Right);body.Children.Add(layers);
+        layers.CloseRequested+=()=>ShowLayers(false);layers.Notice+=text=>status.Text=text;
+        body.Children.Add(workspace);root.Children.Add(body);
         stage.Children.Add(surface);stage.Children.Add(textLayer);
         stage.HorizontalAlignment=HorizontalAlignment.Left;stage.VerticalAlignment=VerticalAlignment.Top;
         backdropShadow.HorizontalAlignment=HorizontalAlignment.Left;backdropShadow.VerticalAlignment=VerticalAlignment.Top;backdropShadow.IsHitTestVisible=false;
@@ -199,6 +207,15 @@ public sealed class EditorWindow : Window
         statusToast.SetResourceReference(Border.BackgroundProperty,"FloatingBrush");statusToast.SetResourceReference(Border.BorderBrushProperty,"FloatingBorderBrush");
         workspace.Children.Add(statusToast);
         workspace.Children.Add(viewInfoBox);
+        // A tab on the canvas's right edge opens the layer panel; it hides while the panel is open.
+        var layerButton=Ui.IconButton("layers","레이어 · Ctrl+L",()=>ShowLayers(true),34);
+        layerTab=new Border {Child=layerButton,CornerRadius=new CornerRadius(8,0,0,8),BorderThickness=new Thickness(1,1,0,1),Padding=new Thickness(2,4,1,4),
+            HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Center,
+            Effect=new System.Windows.Media.Effects.DropShadowEffect {BlurRadius=10,ShadowDepth=1,Direction=180,Opacity=.14}};
+        layerTab.SetResourceReference(Border.BackgroundProperty,"FloatingBrush");layerTab.SetResourceReference(Border.BorderBrushProperty,"FloatingBorderBrush");
+        System.Windows.Automation.AutomationProperties.SetName(layerTab,"레이어 패널 열기");
+        workspace.Children.Add(layerTab);
+        ShowLayers(layersOpen);
         var toastTimer=new DispatcherTimer {Interval=TimeSpan.FromSeconds(4)};toastTimer.Tick+=(_,_)=>{toastTimer.Stop();statusToast.Visibility=Visibility.Collapsed;};
         System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock)).AddValueChanged(status,(_,_)=>{
             toastTimer.Stop();statusToast.Visibility=string.IsNullOrEmpty(status.Text)?Visibility.Collapsed:Visibility.Visible;if(statusToast.Visibility==Visibility.Visible)toastTimer.Start();
@@ -1007,6 +1024,12 @@ public sealed class EditorWindow : Window
     }
     internal void NudgeKeyUp(Key key){if(nudgeKeys.Count==1 && nudgeKeys.Contains(key))FinishNudge();else nudgeKeys.Remove(key);}
     private void FinishNudge(){if(nudgeKeys.Count==0)return;nudgeKeys.Clear();document.EndEdit();}
+    internal bool LayersShown=>layers.Visibility==Visibility.Visible;
+    internal LayerPanel Layers=>layers;
+    internal void ShowLayers(bool show)
+    {
+        layersOpen=show;layers.Visibility=show?Visibility.Visible:Visibility.Collapsed;layerTab.Visibility=show?Visibility.Collapsed:Visibility.Visible;
+    }
     private void UpdateStatus(){var pad=2*document.Backdrop.PaddingPixels;var k=document.ExportScale;
         dimensions.Text=$"{Math.Round((document.Crop.Width+pad)*k):0}×{Math.Round((document.Crop.Height+pad)*k):0}"+(pad>0?" · 배경":"")+(k!=1?$" · {k:P0}":"");}
     private void OnKey(object sender,KeyEventArgs e)
@@ -1034,6 +1057,9 @@ public sealed class EditorWindow : Window
                 case Key.Enter:if(surface.Selection is {Kind:AnnotationKind.Highlight})surface.ChangeSelected(a=>a with {Style=a.Appearance with {MarkerCap=(MarkerCap)(((int)a.Appearance.MarkerCap+1)%3)}});else return;break;
                 case Key.C:_=CopyAsync();break;case Key.S:Save(shift);break;case Key.P:Print();break;
                 case Key.D:surface.DuplicateSelected();break;
+                case Key.L:ShowLayers(layers.Visibility!=Visibility.Visible);break;
+                case Key.OemCloseBrackets:layers.Restack(shift?LayerMove.Front:LayerMove.Forward);break;
+                case Key.OemOpenBrackets:layers.Restack(shift?LayerMove.Back:LayerMove.Backward);break;
                 case Key.D0:fitMode=true;Fit();break;case Key.D1:SetActualSize();break;case Key.D2:ZoomToSelection();break;
                 case Key.OemPlus:case Key.Add:ChangeZoom(1.25);break;case Key.OemMinus:case Key.Subtract:ChangeZoom(.8);break;
                 default:return;

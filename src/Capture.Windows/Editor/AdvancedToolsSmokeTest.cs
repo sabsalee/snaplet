@@ -54,6 +54,18 @@ internal static class AdvancedToolsSmokeTest
         check(Pixel(ImageRenderer.Render(white, spotlightDoc), 21, 21).R < 120, "elliptical spotlight leaves its rectangle corners dimmed");
         spotlightDoc.Delete(spotlightDoc.Annotations[1].Id); spotlightDoc.Undo();
         check(Pixel(ImageRenderer.Render(white, spotlightDoc), 80, 65).R == 255, "undo restores a removed spotlight hole in the grouped mask");
+        // Objects stack in the order they were made: a mark made after a spotlight stays bright on its shade.
+        var stackDoc = new EditableDocument(120, 100);
+        var earlier = new Annotation(Guid.NewGuid(), AnnotationKind.Rectangle, new(2, 82), new(18, 98), red, 2, Style: new(Fill: ShapeFill.Solid));
+        stackDoc.Add(earlier);
+        stackDoc.Add(new(Guid.NewGuid(), AnnotationKind.Spotlight, new(20, 20), new(60, 60), blue, Style: new(Dim: .6)));
+        stackDoc.Add(earlier with { Id = Guid.NewGuid(), Start = new(92, 2), End = new(118, 18) });
+        var stacked = ImageRenderer.Render(white, stackDoc);
+        check(Pixel(stacked, 105, 10).R == red.R && Pixel(stacked, 105, 10).G == red.G, "a mark made after a spotlight is drawn above its shade");
+        check(Pixel(stacked, 10, 90).R < red.R - 60, "a mark made before a spotlight is dimmed with the image");
+        check(Pixel(stacked, 30, 30).R == 255, "the spotlight hole still shows the image");
+        stackDoc.Reorder(earlier.Id, stackDoc.Annotations.Count - 1);
+        check(Pixel(ImageRenderer.Render(white, stackDoc), 10, 90).R == red.R, "bringing a mark to the front lifts it above the spotlight shade");
 
         var spotlightSurface=new EditorSurface(white,spotlightDoc) {Selected=spotlightDoc.Annotations[0].Id};
         spotlightSurface.SetSpotlightDim(.3);

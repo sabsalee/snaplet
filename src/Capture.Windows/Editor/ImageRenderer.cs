@@ -14,27 +14,35 @@ internal static class ImageRenderer
     internal static Brush BrushOf(ColorRgba c) => new SolidColorBrush(Color.FromArgb(c.A, c.R, c.G, c.B));
     internal static Point P(PointD p) => new(p.X, p.Y);
 
-    internal static IEnumerable<Annotation> LayerOrder(IEnumerable<Annotation> annotations)
-    {
-        var items=annotations.ToArray();return items.Where(a=>a.Kind==AnnotationKind.Image).Concat(items.Where(a=>a.Kind!=AnnotationKind.Image));
-    }
+    /// <summary>Paints the objects in document order, so each one sits above everything made before it.
+    /// All spotlights share one shade with a hole for each; it is laid where the lowest spotlight sits,
+    /// so marks made after that spotlight stay bright on the dimmed area.</summary>
     internal static void Paint(DrawingContext dc, BitmapSource source, IEnumerable<Annotation> annotations, Rect? canvasBounds=null,Guid? interactiveEffect=null)
     {
         var items=annotations.ToArray();
-        var scene=new DrawingGroup();using(var initial=scene.Open())initial.DrawImage(source,new Rect(0,0,source.PixelWidth,source.PixelHeight));
-        Drawing underlay=scene;Drawing all=scene;
-        int context=17;
-        foreach(var a in LayerOrder(items).Where(a=>a.Kind!=AnnotationKind.Spotlight)) {
-            var layer=new DrawingGroup();using(var painter=layer.Open())PaintAnnotation(painter,source,a,underlay,context,a.Id==interactiveEffect);
-            var next=new DrawingGroup();next.Children.Add(all);next.Children.Add(layer);all=next;
-            if(a.Kind!=AnnotationKind.Magnifier) {var sampling=new DrawingGroup();sampling.Children.Add(underlay);sampling.Children.Add(layer);underlay=sampling;}
-            context=HashCode.Combine(context,a);
-        }
-        dc.DrawDrawing(all);
         var canvas=canvasBounds ?? new Rect(0,0,source.PixelWidth,source.PixelHeight);
         // The caller supplies the export/preview crop through a clip; fallback includes expanded image objects.
         if(canvasBounds is null)foreach(var a in items)canvas.Union(BoundsOf(a));
-        AdvancedDrawing.DrawSpotlights(dc,canvas,items.Where(a=>a.Kind==AnnotationKind.Spotlight));
+        var spotlights=items.Where(a=>a.Kind==AnnotationKind.Spotlight).ToArray();
+        var shadeAt=spotlights.Length>0?spotlights[0].Id:Guid.Empty;
+        var scene=new DrawingGroup();using(var initial=scene.Open())initial.DrawImage(source,new Rect(0,0,source.PixelWidth,source.PixelHeight));
+        Drawing underlay=scene;Drawing all=scene;
+        int context=17;
+        foreach(var a in items) {
+            var layer=new DrawingGroup();
+            using(var painter=layer.Open()) {
+                if(a.Kind==AnnotationKind.Spotlight) {
+                    if(a.Id==shadeAt)AdvancedDrawing.DrawSpotlightShade(painter,canvas,spotlights);
+                    AdvancedDrawing.DrawSpotlightRing(painter,a);
+                } else PaintAnnotation(painter,source,a,underlay,context,a.Id==interactiveEffect);
+            }
+            var next=new DrawingGroup();next.Children.Add(all);next.Children.Add(layer);all=next;
+            if(a.Kind!=AnnotationKind.Magnifier) {var sampling=new DrawingGroup();sampling.Children.Add(underlay);sampling.Children.Add(layer);underlay=sampling;}
+            context=HashCode.Combine(context,a);
+            // The shade depends on every spotlight, so effects above it must refresh when any of them changes.
+            if(a.Id==shadeAt)foreach(var s in spotlights)context=HashCode.Combine(context,s);
+        }
+        dc.DrawDrawing(all);
     }
 
     internal static void PaintAnnotation(DrawingContext dc, BitmapSource source, Annotation a, Drawing? underlay=null, int context=0,bool interactiveEffect=false)

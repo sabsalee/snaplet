@@ -28,13 +28,15 @@ internal static class ProjectFileChecks
         check(restored.Width == 100 && restored.Height == 80 && restored.Canvas == document.Canvas && restored.Crop == document.Crop, "A project keeps the canvas and crop.");
         check(restored.Backdrop == document.Backdrop && restored.ExportScale == .5 && restored.NextCounter == 8, "A project keeps the backdrop, export size and next step number.");
         check(restored.Annotations.Count == 6 && !restored.CanUndo && !restored.CanRedo, "A project restores its objects with an empty undo history.");
-        var arrow = restored.Annotations[0];
+        Annotation Of(Annotation a) => restored.Annotations.Single(x => x.Id == a.Id);
+        check(restored.Annotations.Select(a => a.Id).SequenceEqual(document.Annotations.Select(a => a.Id)), "A project keeps the drawing order.");
+        var arrow = Of(rich);
         check(arrow.Id == rich.Id && arrow.Kind == rich.Kind && arrow.Start == rich.Start && arrow.End == rich.End && arrow.Color == rich.Color && arrow.Thickness == 5 && arrow.Text == "글자" && arrow.Control == rich.Control && arrow.Tail == rich.Tail, "An object keeps its geometry, colour and text.");
         check(arrow.Appearance == style, "An object keeps its whole style.");
-        check(restored.Annotations[1].Points!.SequenceEqual(pen.Points!), "A pen stroke keeps its points.");
-        check(restored.Annotations[2].Image!.CopyPixels().SequenceEqual(asset.CopyPixels()), "An inserted image keeps its pixels.");
-        check(ReferenceEquals(restored.Annotations[2].Image, restored.Annotations[3].Image), "An image used twice is stored once.");
-        check(restored.Annotations[4].SampleRegion == magnifier.SampleRegion, "A magnifier keeps its sample region.");
+        check(Of(pen).Points!.SequenceEqual(pen.Points!), "A pen stroke keeps its points.");
+        check(Of(first).Image!.CopyPixels().SequenceEqual(asset.CopyPixels()), "An inserted image keeps its pixels.");
+        check(ReferenceEquals(Of(first).Image, Of(second).Image), "An image used twice is stored once.");
+        check(Of(magnifier).SampleRegion == magnifier.SampleRegion, "A magnifier keeps its sample region.");
         restored.Undo(); check(restored.Annotations.Count == 6, "Undo cannot step before the opened state.");
         restored.Delete(rich.Id); check(restored.CanUndo && restored.Annotations.Count == 5, "A restored project stays editable."); restored.Undo();
         check(restored.Annotations.Count == 6, "Edits after opening can be undone.");
@@ -72,8 +74,13 @@ internal static class ProjectFileChecks
         Rejects(Zip(valid.Replace("\"Annotations\":[]", $"\"Annotations\":[{item.Replace("\"Thickness\":2", "\"Thickness\":-2")}]")), "An invalid object is rejected.");
         Rejects(Zip(valid.Replace("\"Annotations\":[]", $"\"Annotations\":[{item.Replace("\"Line\"", "\"Hologram\"")}]")), "An unknown object kind is rejected.");
         Rejects(Zip(valid.Replace("\"Annotations\":[]", $"\"Annotations\":[{item.Replace("\"Thickness\":2", "\"Image\":3,\"Thickness\":2")}]")), "An object pointing at a missing image is rejected.");
+        // Version 1 drew inserted images under every mark; reading one keeps that look now that the list is the drawing order.
+        var picture = item.Replace("\"Line\"", "\"Image\"").Replace("1111-111111111111", "1111-222222222222").Replace("\"Thickness\":2", "\"Image\":0,\"Thickness\":2");
+        var stacked = valid.Replace("\"Images\":[]", "\"Images\":[{\"Width\":2,\"Height\":1}]").Replace("\"Annotations\":[]", $"\"Annotations\":[{item},{picture}]");
+        check(ProjectFile.Read(new MemoryStream(Zip(stacked, image: new byte[8]))).Document.Annotations[0].Kind == AnnotationKind.Image, "A version 1 project draws its images under the other objects.");
+        check(ProjectFile.Read(new MemoryStream(Zip(stacked.Replace("\"Version\":1", "\"Version\":2"), image: new byte[8]))).Document.Annotations[0].Kind == AnnotationKind.Line, "A version 2 project keeps its drawing order.");
         bool newer = false;
-        try { ProjectFile.Read(new MemoryStream(Zip(valid.Replace("\"Version\":1", "\"Version\":2")))); }
+        try { ProjectFile.Read(new MemoryStream(Zip(valid.Replace("\"Version\":1", "\"Version\":3")))); }
         catch (InvalidDataException error) { newer = error.Message.Contains("업데이트", StringComparison.Ordinal); }
         check(newer, "A project from a newer version asks for an update.");
     }

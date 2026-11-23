@@ -128,12 +128,27 @@ public sealed class EditableDocument
         document.state = new(canvas, crop, Array.AsReadOnly(items), nextCounter, backdrop, exportScale);
         return document;
     }
+    /// <summary>Adds an object on top of the others. The list order is the drawing order, bottom first.
+    /// An added image goes just above the other images instead, so it lands under the marks drawn on the capture.</summary>
     public void Add(Annotation annotation)
     {
         var frozen = Freeze(annotation);
         if (state.Annotations.Any(a => a.Id == annotation.Id)) throw new ArgumentException("Annotation ID already exists.", nameof(annotation));
-        Commit(state with { Annotations = Array.AsReadOnly(state.Annotations.Append(frozen).ToArray()),
+        var items = state.Annotations.ToList();
+        items.Insert(frozen.Kind == AnnotationKind.Image ? items.FindLastIndex(a => a.Kind == AnnotationKind.Image) + 1 : items.Count, frozen);
+        Commit(state with { Annotations = Array.AsReadOnly(items.ToArray()),
             NextCounter = CounterAfter(frozen, state.NextCounter) });
+    }
+    /// <summary>Moves an object to <paramref name="index"/> in the drawing order (0 is the bottom) as one undoable step.</summary>
+    public void Reorder(Guid id, int index)
+    {
+        var items = state.Annotations.ToList();
+        int from = items.FindIndex(a => a.Id == id);
+        if (from < 0) return;
+        index = Math.Clamp(index, 0, items.Count - 1);
+        if (from == index) return;
+        var item = items[from]; items.RemoveAt(from); items.Insert(index, item);
+        Commit(state with { Annotations = Array.AsReadOnly(items.ToArray()) });
     }
     public void Replace(Annotation annotation)
     {
