@@ -65,10 +65,12 @@ internal sealed class LayerPanel : Border
         empty.SetResourceReference(TextBlock.ForegroundProperty, "MutedBrush");
         insertMark.SetResourceReference(BackgroundProperty, "AccentBrush");
         var list = new Grid { Background = Brushes.Transparent }; list.Children.Add(rows); list.Children.Add(empty); list.Children.Add(insertMark);
-        layout.Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(6, 0, 6, 6) });
+        // The list sits in a plain StackPanel so it is never mistaken for the canvas viewer, whose content is a Grid or a framed Grid.
+        var listHost = new StackPanel(); listHost.Children.Add(list);
+        layout.Children.Add(new ScrollViewer { Content = listHost, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(6, 0, 6, 6) });
 
         rows.MouseMove += (_, e) => DragTo(e);
-        rows.MouseLeftButtonUp += (_, _) => Drop();
+        rows.MouseLeftButtonUp += (_, _) => DropRow();
         rows.LostMouseCapture += (_, _) => EndDrag();
         document.Changed += (_, _) => Refresh();
         surface.SelectionChanged += Refresh;
@@ -201,7 +203,7 @@ internal sealed class LayerPanel : Border
         insertMark.Visibility = Visibility.Visible;
     }
 
-    private void Drop()
+    private void DropRow()
     {
         if (pressed is Guid id && dragging && dropSlot >= 0)
         {
