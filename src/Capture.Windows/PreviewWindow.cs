@@ -151,6 +151,7 @@ internal sealed class PreviewWindow : Window
         var tools=new DockPanel{LastChildFill=false,Margin=new Thickness(6,5,6,3)};
         var left=new StackPanel{Orientation=Orientation.Horizontal};
         left.Children.Add(IconTool("close","미리보기 닫기",Close));
+        left.Children.Add(IconTool("edit","편집",RequestEdit));
         left.Children.Add(Divider());
         left.Children.Add(IconTool("copy","이미지 복사",Copy));
         left.Children.Add(IconTool("save","이미지 저장",SaveAs));
@@ -159,7 +160,6 @@ internal sealed class PreviewWindow : Window
         left.Children.Add(FileHandle());
         var right=new StackPanel{Orientation=Orientation.Horizontal};DockPanel.SetDock(right,Dock.Right);
         right.Children.Add(IconTool("ocr","텍스트 추출",()=>OcrRequested?.Invoke(image)));
-        right.Children.Add(IconTool("edit","편집",RequestEdit));
         tools.Children.Add(right);tools.Children.Add(left);
         // Fit inside the card without enlarging; the toolbar sets the card's minimum width.
         var fit=Math.Min(1,Math.Min(PopupImageWidth/image.PixelWidth,PopupImageHeight/image.PixelHeight));
