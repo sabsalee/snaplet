@@ -643,7 +643,7 @@ public sealed class EditorWindow : Window
             }
             if(kind is not AnnotationKind.Image) {
                 var sizeLabel=kind switch {AnnotationKind.Blur or AnnotationKind.Pixelate=>"효과 강도",AnnotationKind.Text=>"글자 크기",AnnotationKind.Step=>"번호 크기",AnnotationKind.Magnifier or AnnotationKind.Spotlight=>"테두리 굵기",_=>"굵기"};
-                var slider=new Slider {Style=(Style)Application.Current.FindResource("WedgeSlider"),Width=84,Minimum=1,Maximum=20,Value=surface.Thickness,Margin=new Thickness(4,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=$"{sizeLabel} · 마우스 휠로 조절 (Shift 5칸)"};
+                var slider=new Slider {Style=(Style)Application.Current.FindResource("WedgeSlider"),Width=80,Minimum=1,Maximum=20,Value=surface.Thickness,Margin=new Thickness(4,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=$"{sizeLabel} · 마우스 휠로 조절 (Shift 5칸)"};
                 System.Windows.Automation.AutomationProperties.SetName(slider,"크기 / 굵기 / 효과 강도");
                 propertyRow.Children.Add(slider);propertyRow.Children.Add(NumericField(slider,sizeLabel,1));
                 Wire(slider,1,value=>surface.Thickness=value);
@@ -676,10 +676,11 @@ public sealed class EditorWindow : Window
                 Segment(FillIcon(ShapeFill.Outline,oval,icon,square:!oval),"테두리",style.Fill==ShapeFill.Outline && (oval || style.CornerRadius==0),()=>surface.InkStyle=oval?surface.InkStyle with {Fill=ShapeFill.Outline}:surface.InkStyle with {Fill=ShapeFill.Outline,CornerRadius=0});
                 Segment(FillIcon(ShapeFill.Hatched,oval,icon),"사선 채움",style.Fill==ShapeFill.Hatched,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Hatched});
                 Segment(FillIcon(ShapeFill.Solid,oval,icon),"단색 채움",style.Fill==ShapeFill.Solid,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Solid});
-                if(!oval)Segment(FillIcon(ShapeFill.Translucent,false,icon),"반투명 채움",style.Fill==ShapeFill.Translucent,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Translucent});
                 Divider(propertyRow);
                 IconToggle(FillIcon(ShapeFill.Outline,oval,icon,bubble:true),"말꼬리",style.ShapeTail,"말꼬리 · 말풍선처럼 꼬리를 붙입니다 · 파란 원을 드래그해 방향·길이 조절",on=>surface.InkStyle=surface.InkStyle with {ShapeTail=on});
-                var finish=Options();Chip(finish,"손그림",style.Sketch,"살짝 휘어진 선과 부드러운 모서리",on=>surface.InkStyle=surface.InkStyle with {Sketch=on});DetailRow("마감",finish);
+                var finish=Options();Chip(finish,"손그림",style.Sketch,"살짝 휘어진 선과 부드러운 모서리",on=>surface.InkStyle=surface.InkStyle with {Sketch=on});
+                if(!oval)Chip(finish,"반투명 채움",style.Fill==ShapeFill.Translucent,"테두리 색으로 안쪽을 옅게 채웁니다",on=>surface.InkStyle=surface.InkStyle with {Fill=on?ShapeFill.Translucent:ShapeFill.Outline});
+                DetailRow("마감",finish);
                 if(!oval)ValueSlider("모서리 둥글기 · 민트색 마름모로도 조절",0,48,style.CornerRadius,2,"",value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
                 if(style.ShapeTail)ValueSlider("말꼬리 너비",8,64,style.TailWidth,2,"",value=>surface.InkStyle=surface.InkStyle with {TailWidth=value});
                 break;
@@ -758,7 +759,7 @@ public sealed class EditorWindow : Window
         }
         detailsFrame.Visibility=propertyDetails.Children.Count>0 && (inspectorExpanded || !compact)?Visibility.Visible:Visibility.Collapsed;
         Button Segment(Drawing drawing,string label,bool selected,Action apply,Panel? target=null) {
-            var button=new Button {Content=new Image {Source=new DrawingImage(drawing),Width=24,Height=18,Stretch=Stretch.Uniform},ToolTip=label,Width=34,Height=30,Padding=new Thickness(4),Margin=new Thickness(1,0,1,0),Style=(Style)Application.Current.FindResource("EditorIconButton")};
+            var button=new Button {Content=new Image {Source=new DrawingImage(drawing),Width=24,Height=18,Stretch=Stretch.Uniform},ToolTip=label,Width=32,Height=30,Padding=new Thickness(4),Margin=new Thickness(1,0,1,0),Style=(Style)Application.Current.FindResource("EditorIconButton")};
             if(selected)button.SetResourceReference(BackgroundProperty,"SelectedToolBrush");else button.Background=Brushes.Transparent;
             System.Windows.Automation.AutomationProperties.SetName(button,label.Split('·')[0].Trim());
             button.Click+=(_,_)=>{apply();surface.ApplyStyle();SyncInspector();};(target ?? propertyRow).Children.Add(button);

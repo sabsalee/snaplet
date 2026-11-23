@@ -198,7 +198,7 @@
  <!-- Icon on/off option of the property panel row; the icon comes from Tag so Content can keep the option's name. -->
  <Style x:Key="InspectorIconToggle" TargetType="CheckBox">
   <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Cursor" Value="Hand"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-  <Setter Property="Width" Value="34"/><Setter Property="Height" Value="30"/><Setter Property="Margin" Value="1,0"/><Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="Width" Value="32"/><Setter Property="Height" Value="30"/><Setter Property="Margin" Value="1,0"/><Setter Property="VerticalAlignment" Value="Center"/>
   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
    <Border x:Name="Chrome" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="4"><ContentPresenter Content="{TemplateBinding Tag}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
    <ControlTemplate.Triggers>
