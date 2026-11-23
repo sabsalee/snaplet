@@ -148,6 +148,14 @@ internal static class AdvancedDrawing
 
     internal static void DrawSpotlights(DrawingContext dc, Rect canvas, IEnumerable<Annotation> annotations)
     {
+        var spotlights = annotations.Where(a => a.Kind == AnnotationKind.Spotlight).ToArray();
+        DrawSpotlightShade(dc, canvas, spotlights);
+        foreach (var a in spotlights) DrawSpotlightRing(dc, a);
+    }
+
+    /// <summary>The dimmed area around every spotlight, painted once for all of them so their holes join.</summary>
+    internal static void DrawSpotlightShade(DrawingContext dc, Rect canvas, IEnumerable<Annotation> annotations)
+    {
         var spotlights = annotations.Where(a => a.Kind == AnnotationKind.Spotlight && !a.Bounds.IsEmpty).ToArray();
         if (spotlights.Length == 0 || canvas.IsEmpty) return;
         Geometry? holes = null;
@@ -160,14 +168,16 @@ internal static class AdvancedDrawing
         var dim = new SolidColorBrush(Color.FromArgb((byte)Math.Round(255 * spotlights.Max(a => a.Appearance.Dim * a.Appearance.Opacity)), 0, 0, 0));
         dim.Freeze();
         dc.DrawGeometry(dim, null, outside);
-        foreach (var a in spotlights)
-        {
-            // The outline sits mostly outside the lit area, so it never covers what it points at.
-            var ring = ImageRenderer.RectOf(a.Bounds); var width = Math.Max(1, a.Thickness);
-            ring.Inflate(width * .17, width * .17);
-            dc.PushOpacity(a.Appearance.Opacity);
-            dc.DrawGeometry(null, new Pen(ImageRenderer.BrushOf(a.Color), width) { LineJoin = PenLineJoin.Round }, Frame(ring, a.Appearance.Elliptical));
-            dc.Pop();
-        }
+    }
+
+    /// <summary>The outline of one spotlight. It sits mostly outside the lit area, so it never covers what it points at.</summary>
+    internal static void DrawSpotlightRing(DrawingContext dc, Annotation a)
+    {
+        if (a.Bounds.IsEmpty) return;
+        var ring = ImageRenderer.RectOf(a.Bounds); var width = Math.Max(1, a.Thickness);
+        ring.Inflate(width * .17, width * .17);
+        dc.PushOpacity(a.Appearance.Opacity);
+        dc.DrawGeometry(null, new Pen(ImageRenderer.BrushOf(a.Color), width) { LineJoin = PenLineJoin.Round }, Frame(ring, a.Appearance.Elliptical));
+        dc.Pop();
     }
 }

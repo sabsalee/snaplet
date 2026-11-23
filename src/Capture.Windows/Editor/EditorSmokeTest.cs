@@ -229,6 +229,7 @@ public static class EditorSmokeTest
         ExperienceSmokeTest.Run(outputDirectory,Check);
         AdvancedToolsSmokeTest.Run(outputDirectory,Check);
         AdvancedInspectorSmokeTest.Run(outputDirectory,Check);
+        LayerPanelSmokeTest.Run(outputDirectory,Check);
         var report = JsonSerializer.Serialize(new { component = "WPF editor renderer", passed = checks.Count, checks, limitations = new[] { "Uses routed WPF commands/text events, not physical mouse or keyboard input", "Does not verify live screen capture, clipboard interoperability, monitor DPI transitions or visual latency" } }, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(Path.Combine(outputDirectory, "editor-smoke.json"), report);
         return report;

@@ -72,8 +72,13 @@ internal static class ProjectFileChecks
         Rejects(Zip(valid.Replace("\"Annotations\":[]", $"\"Annotations\":[{item.Replace("\"Thickness\":2", "\"Thickness\":-2")}]")), "An invalid object is rejected.");
         Rejects(Zip(valid.Replace("\"Annotations\":[]", $"\"Annotations\":[{item.Replace("\"Line\"", "\"Hologram\"")}]")), "An unknown object kind is rejected.");
         Rejects(Zip(valid.Replace("\"Annotations\":[]", $"\"Annotations\":[{item.Replace("\"Thickness\":2", "\"Image\":3,\"Thickness\":2")}]")), "An object pointing at a missing image is rejected.");
+        // Version 1 drew inserted images under every mark; reading one keeps that look now that the list is the drawing order.
+        var picture = item.Replace("\"Line\"", "\"Image\"").Replace("1111-111111111111", "1111-222222222222").Replace("\"Thickness\":2", "\"Image\":0,\"Thickness\":2");
+        var stacked = valid.Replace("\"Images\":[]", "\"Images\":[{\"Width\":2,\"Height\":1}]").Replace("\"Annotations\":[]", $"\"Annotations\":[{item},{picture}]");
+        check(ProjectFile.Read(new MemoryStream(Zip(stacked, image: new byte[8])))).Document.Annotations[0].Kind == AnnotationKind.Image, "A version 1 project draws its images under the other objects.");
+        check(ProjectFile.Read(new MemoryStream(Zip(stacked.Replace("\"Version\":1", "\"Version\":2"), image: new byte[8])))).Document.Annotations[0].Kind == AnnotationKind.Line, "A version 2 project keeps its drawing order.");
         bool newer = false;
-        try { ProjectFile.Read(new MemoryStream(Zip(valid.Replace("\"Version\":1", "\"Version\":2")))); }
+        try { ProjectFile.Read(new MemoryStream(Zip(valid.Replace("\"Version\":1", "\"Version\":3")))); }
         catch (InvalidDataException error) { newer = error.Message.Contains("업데이트", StringComparison.Ordinal); }
         check(newer, "A project from a newer version asks for an update.");
     }

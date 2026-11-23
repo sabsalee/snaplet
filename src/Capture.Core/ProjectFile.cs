@@ -14,7 +14,8 @@ public sealed record ProjectContents(byte[] SourceImage, EditableDocument Docume
 public static class ProjectFile
 {
     public const string Extension = ".snaplet";
-    public const int CurrentVersion = 1;
+    /// <summary>2: the object list is the drawing order. Version 1 drew inserted images under everything else.</summary>
+    public const int CurrentVersion = 2;
     private const string ProjectEntry = "project.json", SourceEntry = "source.png";
     private const long MaxProjectBytes = 64L * 1024 * 1024, MaxSourceBytes = 512L * 1024 * 1024, MaxImageBytes = 256_000_000;
     private const int MaxAnnotations = 100_000;
@@ -74,6 +75,7 @@ public static class ProjectFile
             var annotations = data.Annotations.Select(a => new Annotation(a.Id, a.Kind, ToPoint(a.Start), ToPoint(a.End), ToColor(a.Color), a.Thickness, a.Text ?? "",
                 a.Points?.Select(ToPoint).ToArray(), a.Control is null ? null : ToPoint(a.Control), a.Tail is null ? null : ToPoint(a.Tail), a.Style,
                 a.Image is int index ? images[index] : null, a.SampleRegion is null ? null : ToRect(a.SampleRegion))).ToArray();
+            if (data.Version < 2) annotations = annotations.Where(a => a.Kind == AnnotationKind.Image).Concat(annotations.Where(a => a.Kind != AnnotationKind.Image)).ToArray();
             var b = data.Backdrop;
             var document = EditableDocument.Restore(data.Width, data.Height, ToRect(data.Canvas), ToRect(data.Crop), annotations, data.NextCounter,
                 new(b.Enabled, b.Fill, b.Preset, ToColor(b.Color), b.Padding, b.CornerRadius, b.Shadow), data.ExportScale);

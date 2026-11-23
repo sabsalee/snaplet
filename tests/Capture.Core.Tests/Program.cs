@@ -239,6 +239,7 @@ BackdropChecks.Run(Check);
 ColorChecks.Run(Check);
 ScrollBandChecks.Run(Check);
 ProjectFileChecks.Run(Check);
+LayerOrderChecks.Run(Check);
 RecordingChecks.Run(Check);
 RecordingEngineChecks.Run(Check);
 RecordingAudioChecks.Run(Check);
