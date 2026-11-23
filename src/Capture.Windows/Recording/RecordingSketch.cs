@@ -20,11 +20,13 @@ internal enum SketchTool { Arrow, Rectangle, Pen, Highlight, Step, Spotlight }
 internal sealed class RecordingSketch : Window
 {
     private readonly SketchCanvas canvas;
+    private readonly PixelRect region;
     private nint handle;
     private bool drawing;
 
     public RecordingSketch(PixelRect region)
     {
+        this.region = region;
         WindowStyle = WindowStyle.None; AllowsTransparency = true; ResizeMode = ResizeMode.NoResize;
         Topmost = true; ShowInTaskbar = false; ShowActivated = false; Title = "Snaplet 녹화 중 그리기";
         // Almost clear: fully transparent pixels would not receive the mouse while drawing.
@@ -34,9 +36,11 @@ internal sealed class RecordingSketch : Window
         SourceInitialized += (_, _) =>
         {
             handle = new WindowInteropHelper(this).Handle;
-            Native.SetWindowPos(handle, -1, region.X, region.Y, region.Width, region.Height, 0x0010);
+            Place();
             SetPassThrough(true);
         };
+        // Moving onto a screen with another scale makes WPF resize the window after this event; put it back afterwards.
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(new Action(Place), DispatcherPriority.Background);
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) Drawing = false;
@@ -44,6 +48,8 @@ internal sealed class RecordingSketch : Window
             else if (e.Key == Key.Delete) canvas.Clear();
         };
     }
+
+    private void Place() { if (handle != 0) Native.SetWindowPos(handle, -1, region.X, region.Y, region.Width, region.Height, 0x0010); }
 
     public event Action<bool>? DrawingChanged;
     internal SketchCanvas Canvas => canvas;
@@ -167,6 +173,9 @@ internal sealed class SketchCanvas : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         var bounds = new Rect(0, 0, ActualWidth, ActualHeight);
+        // An element only takes the mouse where it paints. Without this clear fill a press on empty screen went
+        // past the canvas to the window itself, so no mark ever started.
+        dc.DrawRectangle(Brushes.Transparent, null, bounds);
         var now = DateTime.UtcNow;
         var shown = marks.Select(m => (m.Mark, Opacity: FadeAfter > TimeSpan.Zero ? Math.Clamp(1 - (now - m.Drawn - FadeAfter).TotalMilliseconds / 400, 0, 1) : 1)).ToList();
         if (current is not null) shown.Add((current, 1));

@@ -189,6 +189,10 @@ internal static class RecordingSmokeTest
             controller.Bar.Click("화면에 그리기");
             if (!sketch.Drawing || (GetWindowLongPtr(handle, -20) & 0x20) != 0) throw new InvalidOperationException("그리기 버튼이 그리기 층을 켜지 않았습니다.");
             var canvas = sketch.Canvas;
+            // A drag on empty screen must reach the canvas, not fall through to the window behind it.
+            foreach (var probe in new[] { new System.Windows.Point(20, 20), new System.Windows.Point(sketch.ActualWidth / 2, sketch.ActualHeight / 2), new System.Windows.Point(sketch.ActualWidth - 20, sketch.ActualHeight - 20) })
+                if (sketch.InputHitTest(probe) != canvas) throw new InvalidOperationException($"그리기 층의 빈 곳({probe.X:0},{probe.Y:0})이 마우스를 받지 않습니다.");
+            var frameLine = CheckFrame(controller, desktop, folder);
             void Drag(string tool, double x1, double y1, double x2, double y2)
             {
                 controller.Bar.Click(tool);
@@ -222,7 +226,7 @@ internal static class RecordingSmokeTest
             if ((GetWindowLongPtr(handle, -20) & 0x20) == 0) throw new InvalidOperationException("그리기를 끄면 클릭이 다시 아래 앱으로 지나가야 합니다.");
             controller.Stop();
             var result = await run.WaitAsync(TimeSpan.FromSeconds(30)) ?? throw new InvalidOperationException("그리기 녹화가 저장되지 않았습니다.");
-            return $"PASS: 7 marks drawn with 6 tools, undo, colour change; marks on the captured screen, spotlight dims outside; click-through toggles; saved {Path.GetFileName(result.Path)}";
+            return $"PASS: 7 marks drawn with 6 tools, undo, colour change; empty canvas takes the mouse; marks on the captured screen, spotlight dims outside; click-through toggles; {frameLine}; saved {Path.GetFileName(result.Path)}";
         }
         finally { window.Close(); }
     }
@@ -297,6 +301,34 @@ internal static class RecordingSmokeTest
     private static string Describe(Mp4Info info) => string.Join(", ", info.Tracks.Select(t => FormattableString.Invariant($"{t.Handler} {t.Width}x{t.Height} {t.Duration.TotalSeconds:0.00}s")));
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
+
+    /// <summary>The range window covers the region's screen, dims around the region and shows all four corners.</summary>
+    private static string CheckFrame(RecordingController controller, PixelRect region, string folder)
+    {
+        var frame = controller.Frame ?? throw new InvalidOperationException("영역 녹화에 범위 표시가 없습니다.");
+        var handle = new WindowInteropHelper(frame).Handle;
+        if (!Native.GetWindowRect(handle, out var r) || r.Left != frame.Bounds.X || r.Top != frame.Bounds.Y || r.Width != frame.Bounds.Width || r.Height != frame.Bounds.Height)
+            throw new InvalidOperationException($"범위 표시 창의 위치가 기대와 다릅니다: {r.Left},{r.Top} {r.Width}×{r.Height}");
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(frame.Bounds.Width, frame.Bounds.Height, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        var visual = new System.Windows.Media.DrawingVisual();
+        using (var dc = visual.RenderOpen()) { dc.PushTransform(new System.Windows.Media.ScaleTransform(frame.Bounds.Width / frame.ActualWidth, frame.Bounds.Height / frame.ActualHeight)); dc.DrawRectangle(new System.Windows.Media.VisualBrush((System.Windows.Media.Visual)frame.Content), null, new Rect(0, 0, frame.ActualWidth, frame.ActualHeight)); }
+        bitmap.Render(visual);
+        var pixels = new byte[frame.Bounds.Width * frame.Bounds.Height * 4]; bitmap.CopyPixels(pixels, frame.Bounds.Width * 4, 0);
+        (byte B, byte G, byte R, byte A) At(int x, int y) { int i = ((y - frame.Bounds.Y) * frame.Bounds.Width + (x - frame.Bounds.X)) * 4; return (pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]); }
+        int reach = FrameLayer.Gap + FrameLayer.Stroke / 2;
+        foreach (var (x, y, name) in new[] { (region.X - reach, region.Y - reach, "왼쪽 위"), (region.Right + reach - 1, region.Y - reach, "오른쪽 위"), (region.X - reach, region.Bottom + reach - 1, "왼쪽 아래"), (region.Right + reach - 1, region.Bottom + reach - 1, "오른쪽 아래") })
+        {
+            var mark = At(x, y);
+            if (!(mark.A > 200 && mark.R > 180 && mark.G < 110)) throw new InvalidOperationException($"범위 표시의 {name} 모서리가 보이지 않습니다: {mark}");
+        }
+        var inside = At(region.X + region.Width / 2, region.Y + region.Height / 2);
+        if (inside.A != 0) throw new InvalidOperationException($"녹화 범위 안이 어두워졌습니다: {inside}");
+        var outside = new[] { At(region.X + region.Width / 2, region.Bottom + 30), At(region.Right + 30, region.Y + region.Height / 2) };
+        if (outside.Any(p => p.A < 40)) throw new InvalidOperationException("녹화 범위 바깥이 어두워지지 않았습니다.");
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using (var file = File.Create(Path.Combine(folder, "ui-recording-frame.png"))) encoder.Save(file);
+        return "range window covers the screen, four corners shown, outside dimmed, inside clear";
+    }
 
     private static void Save(Window window, string path)
     {
