@@ -163,6 +163,64 @@
    <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
  </Style>
+ <!-- Value field of the floating property panel: a quiet chip that shows its frame on hover and becomes an input on focus. -->
+ <Style x:Key="InspectorNumber" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+  <Setter Property="FontSize" Value="12"/><Setter Property="Height" Value="26"/><Setter Property="Padding" Value="2,0"/><Setter Property="Margin" Value="2,0"/>
+  <Setter Property="TextAlignment" Value="Center"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Background" Value="{DynamicResource RaisedBrush}"/><Setter Property="BorderBrush" Value="Transparent"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
+   <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"/></Border>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource HoverBorderBrush}"/></Trigger>
+    <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource InputBrush}"/></Trigger>
+    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.4"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+ <!-- On/off option of the floating property panel, shaped like a pill with a check when on. -->
+ <Style x:Key="InspectorChip" TargetType="CheckBox">
+  <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="FontSize" Value="12"/><Setter Property="Cursor" Value="Hand"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+  <Setter Property="Height" Value="28"/><Setter Property="Padding" Value="10,0"/><Setter Property="Margin" Value="2,0"/><Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+   <Border x:Name="Chip" Background="Transparent" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="14" Padding="{TemplateBinding Padding}">
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+     <Path x:Name="Tick" Data="M 0,4 L 3,7 L 9,1" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.7" Width="10" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+     <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+    </StackPanel>
+   </Border>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chip" Property="Background" Value="{DynamicResource HoverBrush}"/></Trigger>
+    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chip" Property="Background" Value="{DynamicResource SelectedBrush}"/><Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Tick" Property="Visibility" Value="Visible"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+ <!-- Icon on/off option of the property panel row; the icon comes from Tag so Content can keep the option's name. -->
+ <Style x:Key="InspectorIconToggle" TargetType="CheckBox">
+  <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Cursor" Value="Hand"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+  <Setter Property="Width" Value="32"/><Setter Property="Height" Value="30"/><Setter Property="Margin" Value="1,0"/><Setter Property="VerticalAlignment" Value="Center"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+   <Border x:Name="Chrome" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="4"><ContentPresenter Content="{TemplateBinding Tag}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBrush}"/></Trigger>
+    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SelectedToolBrush}"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+ <!-- One option of a text segmented control in the property panel; the selected one gets SelectedToolBrush from code. -->
+ <Style x:Key="InspectorSegment" TargetType="Button">
+  <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Background" Value="Transparent"/><Setter Property="FontSize" Value="12"/><Setter Property="Cursor" Value="Hand"/>
+  <Setter Property="Height" Value="26"/><Setter Property="MinWidth" Value="48"/><Setter Property="Padding" Value="10,0"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+   <Border x:Name="Segment" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+   <ControlTemplate.Triggers>
+    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Segment" Property="BorderBrush" Value="{DynamicResource HoverBorderBrush}"/></Trigger>
+    <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Segment" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+   </ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
  <Style x:Key="ScrollPage" TargetType="RepeatButton"><Setter Property="Focusable" Value="False"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></Setter.Value></Setter></Style>
  <Style TargetType="ScrollBar">
   <Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource ScrollThumbBrush}"/><Setter Property="Width" Value="10"/><Setter Property="MinWidth" Value="0"/>

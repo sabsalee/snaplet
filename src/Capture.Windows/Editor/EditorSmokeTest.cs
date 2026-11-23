@@ -202,7 +202,7 @@ public static class EditorSmokeTest
             Check(!window.UsesDarkTheme && Capture.Windows.UI.WindowAppearance.GetDarkChrome(window)==false,"light editor theme requests a light title bar");
             var panel=Descendants(window).OfType<Border>().Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="속성 패널");
             var panelAt=panel.TransformToAncestor((Visual)window.Content).Transform(new Point(0,0));
-            Check(panel.IsVisible && panelAt.X>((FrameworkElement)window.Content).ActualWidth/2 && panelAt.Y<130,"property panel floats at the top right below the toolbar");
+            Check(panel.IsVisible && panelAt.X>((FrameworkElement)window.Content).ActualWidth/2 && panelAt.Y<130,$"property panel floats at the top right below the toolbar (at {panelAt.X:0},{panelAt.Y:0}, {panel.ActualWidth:0} wide in {((FrameworkElement)window.Content).ActualWidth:0})");
             Check(Descendants(panel).OfType<Slider>().Count(s=>s.IsVisible)==1 && !Descendants(panel).OfType<ComboBox>().Any(c=>c.IsVisible),"compact property panel shows one size slider and keeps secondary controls behind ···");
             var content=(FrameworkElement)window.Content;
             var ui=new RenderTargetBitmap((int)Math.Ceiling(content.ActualWidth),(int)Math.Ceiling(content.ActualHeight),96,96,PixelFormats.Pbgra32);ui.Render(content);
