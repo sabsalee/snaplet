@@ -30,7 +30,7 @@ public sealed class EditorWindow : Window
     private readonly WrapPanel propertyDetails=new() {MaxWidth=470,Margin=new Thickness(2,4,2,2)};
     private readonly Border inspector;
     private readonly TextBlock status=new(),dimensions=new(),zoomText=new(),hoverHex=new() {Text="—"};
-    private readonly Border statusToast;
+    private readonly Border statusToast,viewInfoBox;
     private readonly System.Windows.Shapes.Ellipse hoverSwatch=new() {Width=14,Height=14,StrokeThickness=1,Margin=new Thickness(0,0,6,0),VerticalAlignment=VerticalAlignment.Center};
     private readonly List<(AnnotationKind? Kind,Button Button)> toolButtons=[];
     private readonly Button moreToolSlot;
@@ -84,7 +84,7 @@ public sealed class EditorWindow : Window
         surface=new(source,document) {HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
         ApplyTheme(EditorTheme.SystemUsesDark());
         Title="Snaplet — 이미지 편집";Width=1180;Height=800;MinWidth=700;MinHeight=450;
-        // Windows cascades new windows, which can push the bottom bar past the taskbar on a small screen.
+        // Windows cascades new windows, which can push the window past the taskbar on a small screen.
         SourceInitialized+=(_,_)=>{
             var hwnd=new System.Windows.Interop.WindowInteropHelper(this).Handle;
             if(!Native.GetWindowRect(hwnd,out var r))return;
@@ -95,23 +95,17 @@ public sealed class EditorWindow : Window
         };
         SetResourceReference(BackgroundProperty,"PageBrush");SetResourceReference(ForegroundProperty,"TextBrush");Ui.Dress(this);
         var root=new DockPanel();Content=root;
-        // One toolbar row like the reference: export · pin · file drag | tools ··· | colour under cursor · image size · zoom.
+        // One toolbar row: pin · copy · save · file drag | crop · backdrop | tools ··· | colour under cursor · image menu. No bottom bar.
         var toolbar=new DockPanel {LastChildFill=true,Height=52};toolbar.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
         var toolbarFrame=new Border {Child=toolbar,BorderThickness=new Thickness(0,0,0,1)};toolbarFrame.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
         DockPanel.SetDock(toolbarFrame,Dock.Top);root.Children.Add(toolbarFrame);
-        // Bottom bar: what the image is on the left, handing it out in the middle, finishing on the right.
-        var bottomGrid=new Grid {Height=44};bottomGrid.SetResourceReference(Panel.BackgroundProperty,"ToolbarBrush");
-        bottomGrid.ColumnDefinitions.Add(new());bottomGrid.ColumnDefinitions.Add(new(){Width=GridLength.Auto});bottomGrid.ColumnDefinitions.Add(new());
-        var bottomLeft=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,0,0)};bottomGrid.Children.Add(bottomLeft);
-        var bottomCenter=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(bottomCenter,1);bottomGrid.Children.Add(bottomCenter);
-        var bottomRight=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,0,10,0)};Grid.SetColumn(bottomRight,2);bottomGrid.Children.Add(bottomRight);
-        var bottomFrame=new Border {Child=bottomGrid,BorderThickness=new Thickness(0,1,0,0)};bottomFrame.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
-        DockPanel.SetDock(bottomFrame,Dock.Bottom);root.Children.Add(bottomFrame);
         var actions=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,2,0)};DockPanel.SetDock(actions,Dock.Left);toolbar.Children.Add(actions);
-        ToolButton(bottomRight,"pin","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
-        ToolButton(bottomRight,"copy","복사 · Ctrl+C · Alt를 누르면 창 유지",async()=>await CopyAsync());
-        var saveButton=Ui.Button("저장",()=>Save(false),style:"PrimaryButton");saveButton.Margin=new Thickness(6,0,0,0);saveButton.Height=30;saveButton.MinHeight=0;saveButton.MinWidth=64;saveButton.Padding=new Thickness(14,0,14,0);saveButton.VerticalAlignment=VerticalAlignment.Center;saveButton.VerticalContentAlignment=VerticalAlignment.Center;saveButton.Content=new TextBlock {Text="저장",Foreground=Brushes.White,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center,HorizontalAlignment=HorizontalAlignment.Center};saveButton.ToolTip="저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S · Alt를 누르면 창 유지";bottomRight.Children.Add(saveButton);
-        FileDragButton(bottomCenter);
+        // Handing the result out comes first, at the far left: pin · copy · save, then the file handle.
+        ToolButton(actions,"pin","편집 결과 고정",()=>{if(!FinishTextEdit(true))return;PinRequested?.Invoke(BackdropRenderer.Export(source,document));});
+        ToolButton(actions,"copy","복사 · Ctrl+C · Alt를 누르면 창 유지",async()=>await CopyAsync());
+        ToolButton(actions,"save","저장 · Ctrl+S / 다른 이름으로 저장 · Ctrl+Shift+S · Alt를 누르면 창 유지",()=>Save(false));
+        FileDragButton(actions);
+        Divider(actions);
         ToolButton(actions,"region","자르기 · C",StartCrop);
         backdropButton=ToolButton(actions,"backdrop","배경 꾸미기 · 여백·그라데이션·그림자·둥근 모서리",()=>{});backdropButton.Click+=(_,_)=>ToggleBackdropPanel();
         Divider(actions);
@@ -120,10 +114,19 @@ public sealed class EditorWindow : Window
         hoverSwatch.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"BorderBrush");
         var hoverInfo=InfoBlock(hoverValue,"Tab 복사");hoverInfo.ToolTip="커서 아래 색 · Tab으로 HEX 복사 · I 스포이트·대비 검사";hoverInfo.MinWidth=96;info.Children.Add(hoverInfo);
         System.Windows.Automation.AutomationProperties.SetName(hoverInfo,"커서 아래 색");
-        var sizeButton=new Button {Content=InfoBlock(dimensions,"이미지 크기"),ToolTip="내보내기 크기 (배경·내보내기 배율 포함) · 클릭하여 변경",Padding=new Thickness(6,2,6,2),MinHeight=40,Style=(Style)Application.Current.FindResource("EditorIconButton")};
-        System.Windows.Automation.AutomationProperties.SetName(sizeButton,"이미지 크기");bottomLeft.Children.Add(sizeButton);sizeButton.Click+=(_,_)=>ShowSizePopup(sizeButton);
-        var zoomButton=new Button {Content=InfoBlock(zoomText,"확대"),ToolTip="확대율 · 클릭하여 보기 옵션",Padding=new Thickness(6,2,6,2),Margin=new Thickness(2,0,0,0),MinHeight=40,Style=(Style)Application.Current.FindResource("EditorIconButton")};
-        System.Windows.Automation.AutomationProperties.SetName(zoomButton,"확대율");bottomLeft.Children.Add(zoomButton);
+        // Image size and zoom float in a small rounded box at the canvas's bottom right; both still open their menus on click.
+        var viewInfo=new StackPanel {Orientation=Orientation.Horizontal};
+        var sizeButton=new Button {Content=dimensions,ToolTip="내보내기 크기 (배경·내보내기 배율 포함) · 클릭하여 변경",Padding=new Thickness(8,3,8,3),MinHeight=0,MinWidth=0,Height=26,Style=(Style)Application.Current.FindResource("EditorIconButton")};
+        System.Windows.Automation.AutomationProperties.SetName(sizeButton,"이미지 크기");viewInfo.Children.Add(sizeButton);sizeButton.Click+=(_,_)=>ShowSizePopup(sizeButton);
+        var infoDivider=new Border {Width=1,Height=14,Margin=new Thickness(1,0,1,0),VerticalAlignment=VerticalAlignment.Center};infoDivider.SetResourceReference(Border.BackgroundProperty,"BorderBrush");viewInfo.Children.Add(infoDivider);
+        var zoomButton=new Button {Content=zoomText,ToolTip="확대율 · 클릭하여 보기 옵션",Padding=new Thickness(8,3,8,3),MinHeight=0,MinWidth=0,Height=26,Style=(Style)Application.Current.FindResource("EditorIconButton")};
+        System.Windows.Automation.AutomationProperties.SetName(zoomButton,"확대율");viewInfo.Children.Add(zoomButton);
+        foreach(var text in new[]{dimensions,zoomText}){text.FontSize=12;text.FontWeight=FontWeights.SemiBold;text.VerticalAlignment=VerticalAlignment.Center;text.SetResourceReference(TextBlock.ForegroundProperty,"TextBrush");}
+        viewInfoBox=new Border {Child=viewInfo,CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),Padding=new Thickness(2),
+            HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Margin=new Thickness(0,0,22,22),
+            Effect=new System.Windows.Media.Effects.DropShadowEffect {BlurRadius=10,ShadowDepth=1,Direction=270,Opacity=.14}};
+        viewInfoBox.SetResourceReference(Border.BackgroundProperty,"FloatingBrush");viewInfoBox.SetResourceReference(Border.BorderBrushProperty,"FloatingBorderBrush");
+        System.Windows.Automation.AutomationProperties.SetName(viewInfoBox,"이미지 크기와 확대율");
         zoomButton.Click+=(_,_)=>{
             var menu=Menu();Item(menu,"화면 맞춤 · Ctrl+0",()=>{fitMode=true;Fit();});Item(menu,"100% · Ctrl+1",SetActualSize);Item(menu,"선택 영역 확대 · Ctrl+2",ZoomToSelection);
             Item(menu,"빠른 확대 · Z",QuickZoom);Item(menu,"선택 왼쪽 위 확대 · Q",()=>ZoomToCorner(false));Item(menu,"선택 오른쪽 아래 확대 · W",()=>ZoomToCorner(true));
@@ -191,10 +194,11 @@ public sealed class EditorWindow : Window
         workspace.Children.Add(inspector);
         // Transient messages replace the old status footer; the reference editor has none.
         status.FontSize=12;status.TextWrapping=TextWrapping.Wrap;status.SetResourceReference(TextBlock.ForegroundProperty,"TextBrush");
-        statusToast=new Border {Child=status,CornerRadius=new CornerRadius(8),Padding=new Thickness(10,6,10,6),Margin=new Thickness(14,0,14,14),MaxWidth=640,BorderThickness=new Thickness(1),
+        statusToast=new Border {Child=status,CornerRadius=new CornerRadius(8),Padding=new Thickness(10,6,10,6),Margin=new Thickness(14,0,200,14),MaxWidth=640,BorderThickness=new Thickness(1),
             HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Bottom,IsHitTestVisible=false,Visibility=Visibility.Collapsed};
         statusToast.SetResourceReference(Border.BackgroundProperty,"FloatingBrush");statusToast.SetResourceReference(Border.BorderBrushProperty,"FloatingBorderBrush");
         workspace.Children.Add(statusToast);
+        workspace.Children.Add(viewInfoBox);
         var toastTimer=new DispatcherTimer {Interval=TimeSpan.FromSeconds(4)};toastTimer.Tick+=(_,_)=>{toastTimer.Stop();statusToast.Visibility=Visibility.Collapsed;};
         System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty,typeof(TextBlock)).AddValueChanged(status,(_,_)=>{
             toastTimer.Stop();statusToast.Visibility=string.IsNullOrEmpty(status.Text)?Visibility.Collapsed:Visibility.Visible;if(statusToast.Visibility==Visibility.Visible)toastTimer.Start();
@@ -286,8 +290,8 @@ public sealed class EditorWindow : Window
         var handle=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
         var glyph=button.Content as FrameworkElement;var pill=new Border {Child=handle,CornerRadius=new CornerRadius(8),BorderThickness=new Thickness(1),Padding=new Thickness(6,3,6,3)};
         pill.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");button.Content=pill;button.Height=34;
-        var caption=new TextBlock {Text="끌어서 놓기",FontSize=12,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,6,0)};caption.SetResourceReference(TextBlock.ForegroundProperty,"TextBrush");
-        if(glyph!=null){glyph.Width=glyph.Height=16;handle.Children.Add(Ui.Grip());handle.Children.Add(glyph);}handle.Children.Add(caption);handle.Children.Add(Ui.Grip());
+        // Compact in the toolbar: grip · file · grip, with the explanation in the tooltip.
+        if(glyph!=null){glyph.Width=glyph.Height=16;handle.Children.Add(Ui.Grip());handle.Children.Add(glyph);}handle.Children.Add(Ui.Grip());
         button.Cursor=Cursors.SizeAll;
         Point? pressed=null;
         button.PreviewMouseLeftButtonDown+=(_,e)=>pressed=e.GetPosition(button);
