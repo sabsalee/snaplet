@@ -718,7 +718,7 @@ public sealed class EditorWindow : Window
             case AnnotationKind.Highlight:
                 Divider(propertyRow);
                 Segment(IconDrawing("highlight",icon),"마커 선",style.HighlightShape==MarkerShape.Line,()=>surface.InkStyle=surface.InkStyle with {HighlightShape=MarkerShape.Line});
-                Segment(IconDrawing("pen",icon),"자유 그리기",style.HighlightShape==MarkerShape.Free,()=>surface.InkStyle=surface.InkStyle with {HighlightShape=MarkerShape.Free});
+                Segment(IconDrawing("pen",icon),"자유 그리기",style.HighlightShape==MarkerShape.Freehand,()=>surface.InkStyle=surface.InkStyle with {HighlightShape=MarkerShape.Freehand});
                 Segment(FillIcon(ShapeFill.Translucent,false,icon,square:true),"사각 영역",style.HighlightShape==MarkerShape.Rectangle,()=>surface.InkStyle=surface.InkStyle with {HighlightShape=MarkerShape.Rectangle});
                 TextChoice("끝 마감",new[]{"평평한 마감","둥근 마감","손그림 마감"},new[]{"평평","둥글게","손그림"},(int)style.MarkerCap,index=>surface.InkStyle=surface.InkStyle with {MarkerCap=(MarkerCap)index});
                 break;
