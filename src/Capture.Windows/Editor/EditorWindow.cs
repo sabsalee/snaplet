@@ -27,7 +27,8 @@ public sealed class EditorWindow : Window
     private Button? backdropButton;
     private readonly Border backdropShadow=new() {Background=Brushes.Black};
     private readonly StackPanel propertyRow=new() {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
-    private readonly WrapPanel propertyDetails=new() {MaxWidth=470,Margin=new Thickness(2,4,2,2)};
+    private readonly StackPanel propertyDetails=new() {Margin=new Thickness(0,6,0,0)};
+    private readonly Border detailsFrame=new() {BorderThickness=new Thickness(0,1,0,0),Margin=new Thickness(0,4,0,2),Padding=new Thickness(4,0,4,0)};
     private readonly Border inspector;
     private readonly TextBlock status=new(),dimensions=new(),zoomText=new(),hoverHex=new() {Text="—"};
     private readonly Border statusToast,viewInfoBox;
@@ -53,7 +54,7 @@ public sealed class EditorWindow : Window
     private readonly HashSet<Key> nudgeKeys=[];
     internal TextBox? ActiveTextEditor=>textEditor;
     internal bool UsesDarkTheme=>darkTheme;
-    /// <summary>Shows the secondary property controls (presets, numeric input, tails, modes) below the compact row.</summary>
+    /// <summary>Shows the set-and-forget property controls (finish, alignment, radius, tail width) below the compact row.</summary>
     internal bool InspectorExpanded {get=>inspectorExpanded;set{inspectorExpanded=value;SyncInspector();}}
     private string? savedPath;
     public long EstimatedImageBytes => (long)source.PixelWidth*source.PixelHeight*4 + document.RetainedImageBytes*2;
@@ -185,7 +186,8 @@ public sealed class EditorWindow : Window
         scroll=new ScrollViewer {Content=backdropFrame,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Padding=new Thickness(30),HorizontalContentAlignment=HorizontalAlignment.Center,VerticalContentAlignment=VerticalAlignment.Center};workspace.Children.Add(scroll);
         AcceptDroppedImages();
         // Floating, icon-only property panel at the top right below the toolbar; it overlays the canvas instead of shifting it.
-        var panel=new StackPanel();panel.Children.Add(propertyRow);panel.Children.Add(propertyDetails);
+        detailsFrame.Child=propertyDetails;detailsFrame.SetResourceReference(Border.BorderBrushProperty,"DividerBrush");
+        var panel=new StackPanel();panel.Children.Add(propertyRow);panel.Children.Add(detailsFrame);
         inspector=new Border {CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Padding=new Thickness(6,4,6,4),MinHeight=44,Child=panel,
             HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,10,14,0),
             Effect=new System.Windows.Media.Effects.DropShadowEffect {BlurRadius=14,ShadowDepth=2,Direction=270,Opacity=.18}};
@@ -615,151 +617,210 @@ public sealed class EditorWindow : Window
         inspector.Visibility=typing!=null || a!=null || surface.Tool!=null || surface.CropTool?Visibility.Visible:Visibility.Collapsed;
         if((typing ?? a) is Annotation shown){surface.Ink=shown.Color;surface.Thickness=shown.Thickness;surface.InkStyle=shown.Appearance;}
         foreach(var (kind,button) in toolButtons) {if(kind==surface.Tool && !surface.CropTool)button.SetResourceReference(BackgroundProperty,"SelectedToolBrush");else button.Background=Brushes.Transparent;}
-        // Preserve both mouse drags and keyboard adjustment of the active slider.
-        if(Mouse.Captured is Thumb || Keyboard.FocusedElement is Slider focused && focused.IsDescendantOf(inspector))return;
+        // Preserve mouse drags, wheel turns and keyboard adjustment of the active control: rebuilding would pull it out from under the pointer or caret.
+        if(Mouse.Captured is Thumb || wheelEditing)return;
+        if(Keyboard.FocusedElement is FrameworkElement focused && focused is Slider or TextBox && focused.IsDescendantOf(inspector))return;
         propertyRow.Children.Clear();propertyDetails.Children.Clear();
         if(typing==null && a==null && surface.Tool==null){inspector.Visibility=Visibility.Collapsed;return;}
         var collapse=ToolButton(propertyRow,inspectorCollapsed?"next":"previous",inspectorCollapsed?"속성 패널 펼치기":"속성 패널 접기",()=>{inspectorCollapsed=!inspectorCollapsed;SyncInspector();});
         collapse.MinWidth=24;collapse.Height=32;collapse.FontSize=16;
-        if(inspectorCollapsed){propertyDetails.Visibility=Visibility.Collapsed;return;}
+        if(inspectorCollapsed){detailsFrame.Visibility=Visibility.Collapsed;return;}
         var ink=EditorTheme.Ink(this);var icon=new ColorRgba(ink.R,ink.G,ink.B);
         syncingControls=true;
         try {
-            var kind=typing?.Kind ?? a?.Kind ?? surface.Tool;
+            var kind=(typing?.Kind ?? a?.Kind ?? surface.Tool)!.Value;
+            // Row: the controls each tool is adjusted with most. Details (···): fine-tuning that is set once and left alone.
             if(kind is AnnotationKind.Arrow or AnnotationKind.Text or AnnotationKind.Step or AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Highlight or AnnotationKind.Pen or AnnotationKind.Line) {
-                var presetLabel=new StackPanel{Orientation=Orientation.Horizontal};presetLabel.Children.Add(new TextBlock{Text="프리셋",VerticalAlignment=VerticalAlignment.Center});var caret=UI.Ui.Icon("expand",12);caret.Margin=new Thickness(6,1,0,0);presetLabel.Children.Add(caret);
-                var presets=new Button {Content=presetLabel,Padding=new Thickness(10,5,10,5),Margin=new Thickness(2),ToolTip="완성된 스타일을 미리 보고 한 번에 적용"};UI.Ui.BindIcon(caret,presets);System.Windows.Automation.AutomationProperties.SetName(presets,"프리셋");
-                System.Windows.Automation.AutomationProperties.SetName(presets,"스타일 프리셋");
-                presets.Click+=(_,_)=>ShowPresets(presets,kind.Value);propertyDetails.Children.Add(presets);
+                Button? presets=null;
+                presets=ToolButton(propertyRow,"spark","스타일 프리셋 · 완성된 스타일을 미리 보고 한 번에 적용",()=>ShowPresets(presets!,kind));
+                presets.Height=32;presets.MinWidth=32;presets.FontSize=17;
             }
             if(kind is not (AnnotationKind.Image or AnnotationKind.Blur or AnnotationKind.Pixelate)) {
-                var dot=new System.Windows.Shapes.Ellipse {Width=18,Height=18,Fill=ImageRenderer.BrushOf(surface.Ink with {A=255}),StrokeThickness=1};dot.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"HandleBorderBrush");
+                var dot=new System.Windows.Shapes.Ellipse {Width=20,Height=20,Fill=ImageRenderer.BrushOf(surface.Ink with {A=255}),StrokeThickness=1.5};dot.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty,"HandleBorderBrush");
                 var color=new Button {Content=dot,ToolTip="색상 / 직접 HEX 입력",Width=32,Height=32,Padding=new Thickness(0),Margin=new Thickness(1,0,1,0),Style=(Style)Application.Current.FindResource("EditorIconButton")};
                 System.Windows.Automation.AutomationProperties.SetName(color,"색상 / 직접 HEX 입력");
                 color.Click+=(_,_)=>ShowColors(color);propertyRow.Children.Add(color);
             }
             if(kind is not AnnotationKind.Image) {
-                var slider=new Slider {Style=(Style)Application.Current.FindResource("WedgeSlider"),Minimum=1,Maximum=20,Value=surface.Thickness,Margin=new Thickness(4,0,6,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="크기 / 굵기 / 효과 강도"};
-                propertyRow.Children.Add(slider);
+                var sizeLabel=kind switch {AnnotationKind.Blur or AnnotationKind.Pixelate=>"효과 강도",AnnotationKind.Text=>"글자 크기",AnnotationKind.Step=>"번호 크기",AnnotationKind.Magnifier or AnnotationKind.Spotlight=>"테두리 굵기",_=>"굵기"};
+                var slider=new Slider {Style=(Style)Application.Current.FindResource("WedgeSlider"),Minimum=1,Maximum=20,Value=surface.Thickness,Margin=new Thickness(4,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip=$"{sizeLabel} · 마우스 휠로 조절 (Shift 5칸)"};
                 System.Windows.Automation.AutomationProperties.SetName(slider,"크기 / 굵기 / 효과 강도");
-                var caption=new TextBlock {Text="크기",FontSize=11,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5)};caption.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");propertyDetails.Children.Add(caption);
-                var sizeReadout=NumericField(slider,"크기 / 굵기");propertyDetails.Children.Add(sizeReadout);
-                slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
-                slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
-                slider.ValueChanged+=(_,_)=>{if(syncingControls)return;surface.Thickness=slider.Value;sizeReadout.Text=$"{slider.Value:0.#}";surface.ApplyStyle();};
-                Group(caption,sizeReadout);
+                propertyRow.Children.Add(slider);propertyRow.Children.Add(NumericField(slider,sizeLabel,1));
+                Wire(slider,1,value=>surface.Thickness=value);
             }
-            if(kind==AnnotationKind.Magnifier) {
-                Choice(new[]{"사각 렌즈","곡선 렌즈"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
-                ValueSlider("확대 배율",1,8,surface.InkStyle.Magnification,value=>{
-                    surface.InkStyle=surface.InkStyle with {Magnification=value};
-                    if(surface.Selection is Annotation lens) {var sample=AdvancedDrawing.SampleBounds(lens);surface.ChangeSelected(x=>x with {End=new(x.Start.X+sample.Width*value,x.Start.Y+sample.Height*value),Style=surface.InkStyle});}
-                });
-            }
-            if(kind==AnnotationKind.Spotlight) {
-                Choice(new[]{"사각 Spotlight","타원 Spotlight"},surface.InkStyle.Elliptical?1:0,index=>surface.InkStyle=surface.InkStyle with {Elliptical=index==1});
-                ValueSlider("주변 어둡기 · 숫자 1–9",.1,.9,surface.InkStyle.Dim,value=>surface.SetSpotlightDim(value));
-            }
-            if(kind==AnnotationKind.Image)ValueSlider("이미지 불투명도",.05,1,surface.InkStyle.Opacity,value=>surface.InkStyle=surface.InkStyle with {Opacity=value});
-            if(kind==AnnotationKind.Highlight) {
-                Choice(new[]{"마커 선","자유 그리기","사각 영역"},(int)surface.InkStyle.HighlightShape,index=>surface.InkStyle=surface.InkStyle with {HighlightShape=(MarkerShape)index});
-                Choice(new[]{"평평한 마감","둥근 마감","손그림 마감"},(int)surface.InkStyle.MarkerCap,index=>surface.InkStyle=surface.InkStyle with {MarkerCap=(MarkerCap)index});
-            }
-            if(a!=null && kind is AnnotationKind.Blur or AnnotationKind.Pixelate) {
-                var textOnly=new Button {Content="텍스트만 처리",ToolTip="OCR로 찾은 글자 영역만 처리합니다",Margin=new Thickness(5),Padding=new Thickness(8,4,8,4)};
-                textOnly.Click+=async(_,_)=>{textOnly.IsEnabled=false;try{await ProcessTextOnlyAsync(a);}finally{textOnly.IsEnabled=true;}};propertyDetails.Children.Add(textOnly);
-            }
-            if(kind==AnnotationKind.Arrow) {
+            var style=surface.InkStyle;
+            switch(kind) {
+            case AnnotationKind.Arrow:
+                Divider(propertyRow);
                 foreach(var (label,head) in new[]{("리본 화살표",ArrowHead.Filled),("열린 화살표",ArrowHead.Open),("가는 화살표",ArrowHead.Simple),("양방향",ArrowHead.Double)}) {
-                    var style=surface.InkStyle with {ArrowHead=head};var group=new DrawingGroup();
-                    using(var dc=group.Open())ImageRenderer.PaintAnnotation(dc,source,new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),AnnotationKind.Arrow,new(3,14),new(35,14),icon,1.6,Style:style));
-                    Segment(group,label,head==surface.InkStyle.ArrowHead,()=>surface.InkStyle=style);
+                    var headStyle=style with {ArrowHead=head};var group=new DrawingGroup();
+                    using(var dc=group.Open())ImageRenderer.PaintAnnotation(dc,source,new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),AnnotationKind.Arrow,new(3,14),new(35,14),icon,1.6,Style:headStyle));
+                    Segment(group,label,head==style.ArrowHead,()=>surface.InkStyle=headStyle);
                 }
-                if(surface.InkStyle.ArrowHead==ArrowHead.Filled) {
+                if(style.ArrowHead==ArrowHead.Filled) {
                     // One button steps through the filled silhouettes; its icon shows the current one.
                     var group=new DrawingGroup();
-                    using(var dc=group.Open())ImageRenderer.PaintAnnotation(dc,source,new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),AnnotationKind.Arrow,new(3,14),new(35,14),icon,1.6,Style:surface.InkStyle));
+                    using(var dc=group.Open())ImageRenderer.PaintAnnotation(dc,source,new Annotation(Guid.Parse("a25323c7-bb59-4ef2-aacb-3cb304ef3011"),AnnotationKind.Arrow,new(3,14),new(35,14),icon,1.6,Style:style));
+                    Divider(propertyRow);
                     Segment(group,"화살표 모양 바꾸기",false,()=>surface.InkStyle=surface.InkStyle with {RibbonStyle=(RibbonStyle)(((int)surface.InkStyle.RibbonStyle+1)%Enum.GetValues<RibbonStyle>().Length)});
                 }
-                if(a!=null){var reverse=ToolButton(propertyDetails,"swap","시작점과 끝점 반전",()=>surface.ChangeSelected(x=>x with {Start=x.End,End=x.Start}));reverse.Height=32;}
-            }
-            if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse) {
+                if(a!=null){var reverse=ToolButton(propertyRow,"swap","시작점과 끝점 반전",()=>surface.ChangeSelected(x=>x with {Start=x.End,End=x.Start}));reverse.Height=32;reverse.MinWidth=32;reverse.FontSize=17;}
+                break;
+            case AnnotationKind.Rectangle or AnnotationKind.Ellipse: {
                 // The reference panel's four fills: rounded outline, outline, hatched, solid. Ellipses swap the rounded outline for translucent.
-                var oval=kind==AnnotationKind.Ellipse;var style=surface.InkStyle;
+                var oval=kind==AnnotationKind.Ellipse;
                 var rounded=style.CornerRadius>0?style.CornerRadius:Math.Max(1,EditorPresets.For(AnnotationKind.Rectangle)[0].Style.CornerRadius);
+                Divider(propertyRow);
                 if(oval)Segment(FillIcon(ShapeFill.Translucent,true,icon),"반투명 채움",style.Fill==ShapeFill.Translucent,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Translucent});
                 else Segment(FillIcon(ShapeFill.Outline,false,icon),"둥근 테두리",style.Fill==ShapeFill.Outline && style.CornerRadius>0,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Outline,CornerRadius=rounded});
                 Segment(FillIcon(ShapeFill.Outline,oval,icon,square:!oval),"테두리",style.Fill==ShapeFill.Outline && (oval || style.CornerRadius==0),()=>surface.InkStyle=oval?surface.InkStyle with {Fill=ShapeFill.Outline}:surface.InkStyle with {Fill=ShapeFill.Outline,CornerRadius=0});
                 Segment(FillIcon(ShapeFill.Hatched,oval,icon),"사선 채움",style.Fill==ShapeFill.Hatched,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Hatched});
                 Segment(FillIcon(ShapeFill.Solid,oval,icon),"단색 채움",style.Fill==ShapeFill.Solid,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Solid});
-                Choice(new[]{"테두리","반투명 채움","단색 채움","사선 채움"},(int)surface.InkStyle.Fill,index=>surface.InkStyle=surface.InkStyle with {Fill=(ShapeFill)index});
-                var sketch=new CheckBox {Content="손그림",IsChecked=surface.InkStyle.Sketch,Margin=new Thickness(8,8,4,0),ToolTip="살짝 휘어진 선과 부드러운 모서리"};propertyDetails.Children.Add(sketch);
-                sketch.Click+=(_,_)=>{surface.InkStyle=surface.InkStyle with {Sketch=sketch.IsChecked==true};surface.ApplyStyle();};
+                if(!oval)Segment(FillIcon(ShapeFill.Translucent,false,icon),"반투명 채움",style.Fill==ShapeFill.Translucent,()=>surface.InkStyle=surface.InkStyle with {Fill=ShapeFill.Translucent});
+                Divider(propertyRow);
+                Chip(propertyRow,"말꼬리",style.ShapeTail,"말풍선처럼 꼬리를 붙입니다 · 파란 원을 드래그해 방향·길이 조절",on=>surface.InkStyle=surface.InkStyle with {ShapeTail=on});
+                var finish=Options();Chip(finish,"손그림",style.Sketch,"살짝 휘어진 선과 부드러운 모서리",on=>surface.InkStyle=surface.InkStyle with {Sketch=on});DetailRow("마감",finish);
+                if(!oval)ValueSlider("모서리 둥글기 · 민트색 마름모로도 조절",0,48,style.CornerRadius,2,"",value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
+                if(style.ShapeTail)ValueSlider("말꼬리 너비",8,64,style.TailWidth,2,"",value=>surface.InkStyle=surface.InkStyle with {TailWidth=value});
+                break;
             }
-            if(kind==AnnotationKind.Rectangle || kind==AnnotationKind.Text && surface.InkStyle.Bubble)
-                ValueSlider("모서리 둥글기",0,48,surface.InkStyle.CornerRadius,value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
-            if(kind==AnnotationKind.Text) {
-                Segment(IconDrawing("text",icon),"글자만",!surface.InkStyle.Bubble,()=>ChangeTextStyle(s=>s with {Bubble=false,ShowTail=false}));
-                Segment(FillIcon(ShapeFill.Solid,false,icon),"배경 있는 글자",surface.InkStyle.Bubble && !surface.InkStyle.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=false}));
-                Segment(FillIcon(ShapeFill.Solid,false,icon,bubble:true),"말풍선 · 말꼬리 있음",surface.InkStyle.Bubble && surface.InkStyle.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=true}));
-                var font=new ComboBox {Width=132,Margin=new Thickness(4,0,2,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="글꼴"};
+            case AnnotationKind.Text: {
+                Divider(propertyRow);
+                Segment(IconDrawing("text",icon),"글자만",!style.Bubble,()=>ChangeTextStyle(s=>s with {Bubble=false,ShowTail=false}));
+                Segment(FillIcon(ShapeFill.Solid,false,icon),"배경 있는 글자",style.Bubble && !style.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=false}));
+                Segment(FillIcon(ShapeFill.Solid,false,icon,bubble:true),"말풍선 · 말꼬리 있음",style.Bubble && style.ShowTail,()=>ChangeTextStyle(s=>s with {Bubble=true,ShowTail=true}));
+                Divider(propertyRow);
+                var font=new ComboBox {Width=132,Height=30,MinHeight=30,Margin=new Thickness(2,0,4,0),VerticalAlignment=VerticalAlignment.Center,ToolTip="글꼴"};
                 System.Windows.Automation.AutomationProperties.SetName(font,"글꼴");
                 font.Items.Add($"기본 ({TextFonts.DefaultName})");foreach(var name in TextFonts.Installed)font.Items.Add(name);
-                var chosen=surface.InkStyle.FontFamily;font.SelectedIndex=chosen is null?0:Math.Max(0,font.Items.IndexOf(chosen));
-                font.SelectionChanged+=(_,_)=>{ChangeTextStyle(s=>s with {FontFamily=font.SelectedIndex<=0?null:(string)font.SelectedItem});surface.ApplyStyle();};
+                var chosen=style.FontFamily;font.SelectedIndex=chosen is null?0:Math.Max(0,font.Items.IndexOf(chosen));
+                font.SelectionChanged+=(_,_)=>{if(syncingControls)return;ChangeTextStyle(s=>s with {FontFamily=font.SelectedIndex<=0?null:(string)font.SelectedItem});surface.ApplyStyle();};
                 propertyRow.Children.Add(font);
-                Segment(IconDrawing("bold",icon),"굵게",surface.InkStyle.Bold,()=>ChangeTextStyle(s=>s with {Bold=!s.Bold}));
-                Segment(IconDrawing("italic",icon),"기울임",surface.InkStyle.Italic,()=>ChangeTextStyle(s=>s with {Italic=!s.Italic}));
-                Segment(IconDrawing("underline",icon),"밑줄",surface.InkStyle.Underline,()=>ChangeTextStyle(s=>s with {Underline=!s.Underline}));
-                if(!surface.InkStyle.Bubble)Segment(IconDrawing("outline",icon),"외곽선",surface.InkStyle.Outlined,()=>ChangeTextStyle(s=>s with {Outlined=!s.Outlined}));
+                Segment(IconDrawing("bold",icon),"굵게 · Ctrl+B",style.Bold,()=>ChangeTextStyle(s=>s with {Bold=!s.Bold}));
+                Segment(IconDrawing("italic",icon),"기울임 · Ctrl+I",style.Italic,()=>ChangeTextStyle(s=>s with {Italic=!s.Italic}));
+                Segment(IconDrawing("underline",icon),"밑줄 · Ctrl+U",style.Underline,()=>ChangeTextStyle(s=>s with {Underline=!s.Underline}));
+                if(!style.Bubble)Segment(IconDrawing("outline",icon),"외곽선",style.Outlined,()=>ChangeTextStyle(s=>s with {Outlined=!s.Outlined}));
+                var aligns=Options();
                 foreach(var (label,align) in new[]{("왼쪽 정렬",TextAlign.Left),("가운데 정렬",TextAlign.Center),("오른쪽 정렬",TextAlign.Right)})
-                    Segment(IconDrawing(align switch{TextAlign.Center=>"align-center",TextAlign.Right=>"align-right",_=>"align-left"},icon),label,surface.InkStyle.Align==align,()=>ChangeTextStyle(s=>s with {Align=align}));
-                if(a!=null){var edit=ToolButton(propertyDetails,"edit","글자 편집 · 더블클릭",()=>BeginTextEdit(a,false));edit.Height=32;}
+                    Segment(IconDrawing(align switch{TextAlign.Center=>"align-center",TextAlign.Right=>"align-right",_=>"align-left"},icon),label,style.Align==align,()=>ChangeTextStyle(s=>s with {Align=align}),aligns);
+                DetailRow("정렬",aligns);
+                if(style.Bubble)ValueSlider("모서리 둥글기",0,48,style.CornerRadius,2,"",value=>surface.InkStyle=surface.InkStyle with {CornerRadius=value});
+                if(AnnotationGeometry.HasTail(a ?? new Annotation(Guid.NewGuid(),kind,new(0,0),new(80,40),surface.Ink,Style:style)))
+                    ValueSlider("말꼬리 너비",8,64,style.TailWidth,2,"",value=>surface.InkStyle=surface.InkStyle with {TailWidth=value});
+                if(a!=null){var edit=new Button {Content="글자 편집",ToolTip="더블클릭으로도 편집합니다",Padding=new Thickness(12,0,12,0),Height=28,FontSize=12};edit.Click+=(_,_)=>BeginTextEdit(a,false);DetailRow("내용",edit);}
+                break;
             }
-            if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Step || kind==AnnotationKind.Text && surface.InkStyle.Bubble) {
-                var shapeTail=kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse;
-                var tail=new CheckBox {Content="말꼬리",IsChecked=shapeTail?surface.InkStyle.ShapeTail:surface.InkStyle.ShowTail,Margin=new Thickness(8,8,4,0),ToolTip="파란 원을 드래그해 방향·길이 조절 · 민트색 마름모로 모서리 조절"};propertyDetails.Children.Add(tail);
-                tail.Click+=(_,_)=>{surface.InkStyle=shapeTail?surface.InkStyle with {ShapeTail=tail.IsChecked==true}:surface.InkStyle with {ShowTail=tail.IsChecked==true};surface.ApplyStyle();SyncInspector();};
-            }
-            if(kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Text && AnnotationGeometry.HasTail(a ?? new Annotation(Guid.NewGuid(),kind.Value,new(0,0),new(80,40),surface.Ink,Style:surface.InkStyle)))
-                ValueSlider("말꼬리 너비",8,64,surface.InkStyle.TailWidth,value=>surface.InkStyle=surface.InkStyle with {TailWidth=value});
-            if(a?.Kind==AnnotationKind.Step) {
-                var value=new TextBox {Text=a.Text,Width=48,Padding=new Thickness(6,4,6,4),Margin=new Thickness(7,5,0,5),ToolTip="번호 0–99 · Enter 적용"};propertyDetails.Children.Add(value);
-                System.Windows.Automation.AutomationProperties.SetName(value,"번호");
-                value.KeyDown+=(_,e)=>{if(e.Key==Key.Enter && int.TryParse(value.Text,out int n) && n is >=0 and <=99){surface.ChangeSelected(x=>x with {Text=n.ToString()});surface.Focus();e.Handled=true;}};
+            case AnnotationKind.Step:
+                Divider(propertyRow);
+                if(a!=null)StepNumberField(a);
+                Chip(propertyRow,"포인터",style.ShowTail,"번호에 방향 꼬리를 붙입니다 · 끝 핸들로 방향 조절",on=>surface.InkStyle=surface.InkStyle with {ShowTail=on});
+                break;
+            case AnnotationKind.Highlight:
+                Divider(propertyRow);
+                Segment(IconDrawing("highlight",icon),"마커 선",style.HighlightShape==MarkerShape.Line,()=>surface.InkStyle=surface.InkStyle with {HighlightShape=MarkerShape.Line});
+                Segment(IconDrawing("pen",icon),"자유 그리기",style.HighlightShape==MarkerShape.Free,()=>surface.InkStyle=surface.InkStyle with {HighlightShape=MarkerShape.Free});
+                Segment(FillIcon(ShapeFill.Translucent,false,icon,square:true),"사각 영역",style.HighlightShape==MarkerShape.Rectangle,()=>surface.InkStyle=surface.InkStyle with {HighlightShape=MarkerShape.Rectangle});
+                TextChoice("끝 마감",new[]{"평평한 마감","둥근 마감","손그림 마감"},new[]{"평평","둥글게","손그림"},(int)style.MarkerCap,index=>surface.InkStyle=surface.InkStyle with {MarkerCap=(MarkerCap)index});
+                break;
+            case AnnotationKind.Magnifier:
+                Divider(propertyRow);
+                Segment(FillIcon(ShapeFill.Outline,false,icon),"사각 렌즈",!style.Elliptical,()=>surface.InkStyle=surface.InkStyle with {Elliptical=false});
+                Segment(FillIcon(ShapeFill.Outline,true,icon),"곡선 렌즈",style.Elliptical,()=>surface.InkStyle=surface.InkStyle with {Elliptical=true});
+                Divider(propertyRow);
+                RowValue("확대 배율",1,8,style.Magnification,.25,"×",value=>{
+                    surface.InkStyle=surface.InkStyle with {Magnification=value};
+                    if(surface.Selection is Annotation lens) {var sample=AdvancedDrawing.SampleBounds(lens);surface.ChangeSelected(x=>x with {End=new(x.Start.X+sample.Width*value,x.Start.Y+sample.Height*value),Style=surface.InkStyle});}
+                });
+                break;
+            case AnnotationKind.Spotlight:
+                Divider(propertyRow);
+                Segment(FillIcon(ShapeFill.Outline,false,icon,square:true),"사각 Spotlight",!style.Elliptical,()=>surface.InkStyle=surface.InkStyle with {Elliptical=false});
+                Segment(FillIcon(ShapeFill.Outline,true,icon),"타원 Spotlight",style.Elliptical,()=>surface.InkStyle=surface.InkStyle with {Elliptical=true});
+                Divider(propertyRow);
+                RowValue("주변 어둡기 · 숫자 1–9",.1,.9,style.Dim,.05,"%",value=>surface.SetSpotlightDim(value));
+                break;
+            case AnnotationKind.Image:
+                RowValue("불투명도 · 이미지 불투명도",.05,1,style.Opacity,.05,"%",value=>surface.InkStyle=surface.InkStyle with {Opacity=value});
+                break;
+            case AnnotationKind.Blur or AnnotationKind.Pixelate when a!=null:
+                Divider(propertyRow);
+                var textOnly=new Button {Content="텍스트만 처리",ToolTip="OCR로 찾은 글자 영역만 처리합니다",Height=30,FontSize=12,Padding=new Thickness(12,0,12,0),Margin=new Thickness(2,0,2,0),VerticalAlignment=VerticalAlignment.Center};
+                textOnly.Click+=async(_,_)=>{textOnly.IsEnabled=false;try{await ProcessTextOnlyAsync(a);}finally{textOnly.IsEnabled=true;}};propertyRow.Children.Add(textOnly);
+                break;
             }
         } finally {syncingControls=false;}
-        // Rarely used controls stay one click away behind ···; tools without compact controls show them directly.
+        // Set-and-forget controls stay one click away behind ···; a tool whose row would be empty shows them directly.
         var compact=propertyRow.Children.Count>1;
         if(compact && propertyDetails.Children.Count>0) {
-            var more=ToolButton(propertyRow,"more","추가 속성 · 프리셋·숫자 입력·말꼬리·모드",()=>{inspectorExpanded=!inspectorExpanded;SyncInspector();});
+            var more=ToolButton(propertyRow,"more","세부 설정 · 마감·정렬·둥글기·말꼬리 너비",()=>{inspectorExpanded=!inspectorExpanded;SyncInspector();});
             more.Height=32;more.MinWidth=30;more.FontSize=16;if(inspectorExpanded)more.SetResourceReference(BackgroundProperty,"SelectedToolBrush");
             System.Windows.Automation.AutomationProperties.SetName(more,"속성 더 보기");
         }
-        propertyDetails.Visibility=propertyDetails.Children.Count>0 && (inspectorExpanded || !compact)?Visibility.Visible:Visibility.Collapsed;
-        void Segment(Drawing drawing,string label,bool selected,Action apply) {
-            var button=new Button {Content=new Image {Source=new DrawingImage(drawing),Width=26,Height=20,Stretch=Stretch.Uniform},ToolTip=label,Width=34,Height=32,Padding=new Thickness(4),Margin=new Thickness(1,0,1,0),Style=(Style)Application.Current.FindResource("EditorIconButton")};
+        detailsFrame.Visibility=propertyDetails.Children.Count>0 && (inspectorExpanded || !compact)?Visibility.Visible:Visibility.Collapsed;
+        Button Segment(Drawing drawing,string label,bool selected,Action apply,Panel? target=null) {
+            var button=new Button {Content=new Image {Source=new DrawingImage(drawing),Width=24,Height=18,Stretch=Stretch.Uniform},ToolTip=label,Width=34,Height=30,Padding=new Thickness(4),Margin=new Thickness(1,0,1,0),Style=(Style)Application.Current.FindResource("EditorIconButton")};
             if(selected)button.SetResourceReference(BackgroundProperty,"SelectedToolBrush");else button.Background=Brushes.Transparent;
-            System.Windows.Automation.AutomationProperties.SetName(button,label);
-            button.Click+=(_,_)=>{apply();surface.ApplyStyle();SyncInspector();};propertyRow.Children.Add(button);
+            System.Windows.Automation.AutomationProperties.SetName(button,label.Split('·')[0].Trim());
+            button.Click+=(_,_)=>{apply();surface.ApplyStyle();SyncInspector();};(target ?? propertyRow).Children.Add(button);
+            return button;
         }
-        void ValueSlider(string label,double minimum,double maximum,double value,Action<double> update) {
-            var caption=new TextBlock {Text=label.Split('·')[0].Trim(),FontSize=11,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5)};caption.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");propertyDetails.Children.Add(caption);
-            var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=85,Margin=new Thickness(6),ToolTip=label,VerticalAlignment=VerticalAlignment.Center};
-            System.Windows.Automation.AutomationProperties.SetName(control,label);propertyDetails.Children.Add(control);
-            var readout=NumericField(control,label);propertyDetails.Children.Add(readout);
+        void Wire(Slider control,double step,Action<double> update) {
             control.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>document.BeginEdit()));
             control.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,_)=>{document.EndEdit();SyncInspector();}));
-            control.ValueChanged+=(_,_)=>{if(syncingControls)return;try{readout.Text=$"{control.Value:0.#}";update(control.Value);surface.ApplyStyle();}catch(Exception error) when(error is InvalidOperationException or ArgumentException){document.CancelEdit();status.Text=error.Message;SyncInspector();}};
-            Group(caption,control,readout);
+            control.ValueChanged+=(_,_)=>{if(syncingControls)return;try{update(control.Value);surface.ApplyStyle();}catch(Exception error) when(error is InvalidOperationException or ArgumentException){wheelIdle?.Stop();wheelEditing=false;document.CancelEdit();status.Text=error.Message;SyncInspector();}};
+            WheelAdjust(control,control,step);
         }
-        void Group(params UIElement[] controls) {
-            var row=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
-            foreach(var control in controls){propertyDetails.Children.Remove(control);row.Children.Add(control);}propertyDetails.Children.Add(row);
+        void RowValue(string label,double minimum,double maximum,double value,double step,string unit,Action<double> update) {
+            var caption=new TextBlock {Text=label.Split('·')[0].Trim(),FontSize=12,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(4,0,6,0)};caption.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");
+            var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=84,VerticalAlignment=VerticalAlignment.Center,ToolTip=label+" · 마우스 휠로 조절"};
+            System.Windows.Automation.AutomationProperties.SetName(control,label);
+            var group=new StackPanel {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
+            group.Children.Add(caption);group.Children.Add(control);group.Children.Add(NumericField(control,label,step,unit));propertyRow.Children.Add(group);
+            Wire(control,step,update);WheelAdjust(caption,control,step);
         }
-        void Choice(string[] labels,int selected,Action<int> update) {
-            var combo=new ComboBox {ItemsSource=labels,SelectedIndex=selected,MinWidth=90,Margin=new Thickness(4),VerticalAlignment=VerticalAlignment.Center};propertyDetails.Children.Add(combo);
-            combo.SelectionChanged+=(_,_)=>{if(syncingControls || combo.SelectedIndex<0)return;update(combo.SelectedIndex);surface.ApplyStyle();};
+        void ValueSlider(string label,double minimum,double maximum,double value,double step,string unit,Action<double> update) {
+            var control=new Slider {Minimum=minimum,Maximum=maximum,Value=value,Width=128,Margin=new Thickness(0,0,6,0),ToolTip=label+" · 마우스 휠로 조절",VerticalAlignment=VerticalAlignment.Center};
+            System.Windows.Automation.AutomationProperties.SetName(control,label);
+            var row=DetailRow(label.Split('·')[0].Trim(),control,NumericField(control,label.Split('·')[0].Trim(),step,unit));
+            Wire(control,step,update);WheelAdjust(row.Children[0],control,step);
+        }
+        StackPanel DetailRow(string caption,params UIElement[] controls) {
+            var row=new StackPanel {Orientation=Orientation.Horizontal,Margin=new Thickness(2,3,2,3)};
+            var label=new TextBlock {Text=caption,FontSize=12,Width=82,VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis};label.SetResourceReference(TextBlock.ForegroundProperty,"MutedBrush");
+            row.Children.Add(label);foreach(var control in controls)row.Children.Add(control);propertyDetails.Children.Add(row);return row;
+        }
+        StackPanel Options()=>new() {Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Center};
+        void TextChoice(string caption,string[] names,string[] labels,int selected,Action<int> update) {
+            var frame=new Border {BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8),Padding=new Thickness(2)};frame.SetResourceReference(Border.BorderBrushProperty,"BorderBrush");
+            var buttons=Options();frame.Child=buttons;
+            for(int i=0;i<labels.Length;i++) {
+                var index=i;var button=new Button {Content=labels[i],ToolTip=names[i],Style=(Style)Application.Current.FindResource("InspectorSegment")};
+                System.Windows.Automation.AutomationProperties.SetName(button,names[i]);
+                if(i==selected){button.SetResourceReference(BackgroundProperty,"SelectedToolBrush");button.FontWeight=FontWeights.SemiBold;}
+                button.Click+=(_,_)=>{update(index);surface.ApplyStyle();SyncInspector();};buttons.Children.Add(button);
+            }
+            DetailRow(caption,frame);
+        }
+        void Chip(Panel target,string text,bool on,string tip,Action<bool> change) {
+            var chip=new CheckBox {Content=text,IsChecked=on,ToolTip=tip,Style=(Style)Application.Current.FindResource("InspectorChip")};
+            System.Windows.Automation.AutomationProperties.SetName(chip,text);
+            chip.Click+=(_,_)=>{change(chip.IsChecked==true);surface.ApplyStyle();SyncInspector();};target.Children.Add(chip);
+        }
+        void StepNumberField(Annotation step) {
+            int Current()=>int.TryParse(surface.Selection?.Text,out var n)?n:0;
+            var value=new TextBox {Text=step.Text,Width=40,Style=(Style)Application.Current.FindResource("InspectorNumber"),ToolTip="번호 0–99 · 휠·↑↓로 바꾸기 · 숫자 입력 후 Enter"};
+            System.Windows.Automation.AutomationProperties.SetName(value,"번호");
+            void Set(int n){n=Math.Clamp(n,0,99);surface.ChangeSelected(x=>x with {Text=n.ToString()});value.Text=n.ToString();}
+            value.GotKeyboardFocus+=(_,_)=>value.SelectAll();
+            value.PreviewMouseLeftButtonDown+=(_,e)=>{if(value.IsKeyboardFocusWithin)return;value.Focus();e.Handled=true;};
+            value.PreviewKeyDown+=(_,e)=>{
+                if(e.Key==Key.Enter){if(int.TryParse(value.Text,out int n) && n is >=0 and <=99){Set(n);surface.Focus();SyncInspector();}else{value.BorderBrush=Brushes.IndianRed;value.SelectAll();}e.Handled=true;}
+                else if(e.Key==Key.Escape){value.Text=step.Text;surface.Focus();e.Handled=true;}
+                else if(e.Key is Key.Up or Key.Down){Set(Current()+(e.Key==Key.Up?1:-1));value.SelectAll();e.Handled=true;}
+            };
+            var pending=0;
+            value.PreviewMouseWheel+=(_,e)=>{e.Handled=true;pending+=e.Delta;var notches=pending/120;if(notches==0)return;pending-=notches*120;BeginWheelEdit();Set(Current()+notches);};
+            propertyRow.Children.Add(value);
         }
     }
     /// <summary>Icon for a fill segment, drawn in the panel's text colour on a 24×18 grid.</summary>
@@ -790,19 +851,76 @@ public sealed class EditorWindow : Window
         using(var dc=group.Open()){dc.DrawRectangle(Brushes.Transparent,null,new Rect(0,0,24,18));dc.DrawGeometry(brush,null,geometry);}
         return group;
     }
-    private TextBox NumericField(Slider slider,string label)
+    /// <summary>Editable value beside a slider: wheel and ↑↓ step it, typing plus Enter or leaving the field applies it, Esc restores it.</summary>
+    /// <param name="unit">"%" shows a 0–1 value as a percentage; any other unit is appended as is.</param>
+    private TextBox NumericField(Slider slider,string label,double step,string unit="")
     {
-        var input=new TextBox {Text=$"{slider.Value:0.#}",Width=44,FontSize=11,Padding=new Thickness(5,4,5,4),Margin=new Thickness(2),VerticalContentAlignment=VerticalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,ToolTip=$"{label} · {slider.Minimum:0.#}–{slider.Maximum:0.#} · 숫자 입력 후 Enter 적용 / Esc 취소"};
+        var percent=unit=="%";
+        string Format(double value)=>percent?$"{value*100:0}%":$"{value:0.##}{unit}";
+        var owner=surface.Selected;
+        var input=new TextBox {Text=Format(slider.Value),Width=percent || unit.Length>0?50:42,Style=(Style)Application.Current.FindResource("InspectorNumber"),
+            ToolTip=$"{label} · {Format(slider.Minimum)}–{Format(slider.Maximum)} · 휠·↑↓로 조절 (Shift 5칸) · 숫자 입력 후 Enter"};
         System.Windows.Automation.AutomationProperties.SetName(input,label+" 숫자 입력");
+        bool TryRead(out double value) {
+            var text=input.Text.Trim().TrimEnd('%','×','x','X').Trim();
+            if(!double.TryParse(text,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.CurrentCulture,out value) &&
+               !double.TryParse(text,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out value))return false;
+            if(percent)value/=100;
+            if(!double.IsFinite(value))return false;
+            value=Math.Clamp(value,slider.Minimum,slider.Maximum);return true;
+        }
+        void Step(int notches)=>slider.Value=Math.Clamp(Math.Round(slider.Value+notches*step,4),slider.Minimum,slider.Maximum);
+        slider.ValueChanged+=(_,_)=>{if(!input.IsKeyboardFocusWithin)input.Text=Format(slider.Value);};
+        input.GotKeyboardFocus+=(_,_)=>input.SelectAll();
+        // The first click selects the whole value so typing replaces it, as in design tools.
+        input.PreviewMouseLeftButtonDown+=(_,e)=>{if(input.IsKeyboardFocusWithin)return;input.Focus();e.Handled=true;};
         input.PreviewKeyDown+=(_,e)=>{
-            if(e.Key==Key.Escape){input.Text=$"{slider.Value:0.#}";FocusEditing();e.Handled=true;}
+            if(e.Key==Key.Escape){input.Text=Format(slider.Value);input.ClearValue(Control.BorderBrushProperty);FocusEditing();e.Handled=true;}
             else if(e.Key==Key.Enter) {
                 e.Handled=true;
-                if(double.TryParse(input.Text,out var number) && double.IsFinite(number) && number>=slider.Minimum && number<=slider.Maximum) {input.ClearValue(Control.BorderBrushProperty);slider.Value=number;FocusEditing();}
+                if(TryRead(out var number)){input.ClearValue(Control.BorderBrushProperty);slider.Value=number;input.Text=Format(slider.Value);FocusEditing();SyncInspector();}
                 else {input.BorderBrush=Brushes.IndianRed;input.SelectAll();}
             }
+            else if(e.Key is Key.Up or Key.Down) {
+                e.Handled=true;Step((e.Key==Key.Up?1:-1)*((Keyboard.Modifiers&ModifierKeys.Shift)!=0?5:1));input.Text=Format(slider.Value);input.SelectAll();
+            }
         };
+        input.LostKeyboardFocus+=(_,_)=>{
+            // Leaving the field applies a typed value, but never to an object selected after the field was built.
+            if(input.Text!=Format(slider.Value) && surface.Selected==owner && TryRead(out var number))slider.Value=number;
+            input.ClearValue(Control.BorderBrushProperty);input.Text=Format(slider.Value);
+            if(!wheelEditing)Dispatcher.BeginInvoke(new Action(SyncInspector),DispatcherPriority.Background);
+        };
+        WheelAdjust(input,slider,step);
         return input;
+    }
+    private DispatcherTimer? wheelIdle;
+    private bool wheelEditing;
+    /// <summary>Wheel turns over a property join one undo step, closed by a short pause or by any other pointer or key input.</summary>
+    private void BeginWheelEdit()
+    {
+        if(wheelIdle==null) {
+            wheelIdle=new DispatcherTimer {Interval=TimeSpan.FromMilliseconds(450)};wheelIdle.Tick+=(_,_)=>EndWheelEdit();
+            surface.PreviewMouseDown+=(_,_)=>EndWheelEdit();PreviewKeyDown+=(_,_)=>EndWheelEdit();
+        }
+        if(!wheelEditing){wheelEditing=true;document.BeginEdit();}
+        wheelIdle.Stop();wheelIdle.Start();
+    }
+    /// <summary>Test hook: closes the current wheel turn as a pause would.</summary>
+    internal void FinishWheelEdit()=>EndWheelEdit();
+    private void EndWheelEdit(){wheelIdle?.Stop();if(!wheelEditing)return;wheelEditing=false;document.EndEdit();SyncInspector();}
+    /// <summary>Lets the wheel over <paramref name="element"/> step the slider; Shift takes five steps. High-resolution wheels add up to whole notches.</summary>
+    private void WheelAdjust(UIElement element,Slider slider,double step)
+    {
+        var pending=0;
+        element.PreviewMouseWheel+=(_,e)=>{
+            e.Handled=true;if(!slider.IsEnabled)return;
+            pending+=e.Delta;var notches=pending/120;if(notches==0)return;pending-=notches*120;
+            if((Keyboard.Modifiers&ModifierKeys.Shift)!=0)notches*=5;
+            var next=Math.Clamp(Math.Round(slider.Minimum+Math.Round((slider.Value-slider.Minimum)/step+notches)*step,4),slider.Minimum,slider.Maximum);
+            if(Math.Abs(next-slider.Value)<1e-9)return;
+            BeginWheelEdit();slider.Value=next;
+        };
     }
     private void ShowPresets(Button anchor,AnnotationKind kind)
     {

@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Capture.Core;
@@ -39,8 +41,9 @@ internal static class AdvancedInspectorSmokeTest
                 window.UpdateLayout();
                 var descendants = Descendants(window).ToArray();
                 var sliders = descendants.OfType<Slider>().Where(c => c.IsVisible).ToArray();
-                var combos = descendants.OfType<ComboBox>().Where(c => c.IsVisible).ToArray();
-                bool HasChoice(string text) => combos.Any(c => c.Items.Cast<object>().Any(item => Equals(item, text)));
+                // Modes are segmented buttons named after each choice, so every option is one click away.
+                var choices = descendants.OfType<Button>().Where(c => c.IsVisible).Select(AutomationProperties.GetName).ToHashSet();
+                bool HasChoice(string text) => choices.Contains(text);
                 Slider? SliderNamed(string text) => sliders.FirstOrDefault(c => c.ToolTip is string tip && tip.Contains(text, StringComparison.Ordinal));
                 switch (annotation.Kind)
                 {
@@ -92,6 +95,15 @@ internal static class AdvancedInspectorSmokeTest
                 using var file = File.Create(Path.Combine(directory, $"advanced-inspector-{annotation.Kind.ToString().ToLowerInvariant()}.png"));
                 encoder.Save(file);
             }
+            // Wheel over a property: each notch is one step, and the whole turn undoes at once.
+            surface.Selected = spotlight.Id; surface.ChangeSelected(a => a); window.UpdateLayout();
+            var dimSlider = Descendants(window).OfType<Slider>().First(c => c.IsVisible && c.ToolTip is string tip && tip.Contains("주변 어둡기", StringComparison.Ordinal));
+            for (int i = 0; i < 2; i++) dimSlider.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, 0, 120) { RoutedEvent = UIElement.PreviewMouseWheelEvent });
+            window.FinishWheelEdit(); window.UpdateLayout();
+            check(Math.Abs(document.Annotations.Single(x => x.Id == spotlight.Id).Appearance.Dim - .45) < .001, "mouse wheel over a property slider steps its value");
+            check(Descendants(window).OfType<TextBox>().Any(c => c.IsVisible && c.Text == "45%"), "fractional properties read as percentages");
+            document.Undo();
+            check(Math.Abs(document.Annotations.Single(x => x.Id == spotlight.Id).Appearance.Dim - .35) < .001, "a run of wheel steps is one undoable edit");
         }
         finally { window.CloseForExit(); }
     }
